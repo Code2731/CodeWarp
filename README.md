@@ -1,116 +1,85 @@
 # CodeWarp
 
-Warp 스타일의 아름다운 터미널 GUI · 자체 구현 AI 코딩 에이전트 · OpenRouter를 통한 모델 완전 자유.
+Warp 스타일의 AI 코딩 데스크톱. **Iced (Rust 네이티브 GUI)** 기반.
 
-> 개발자가 진짜 쓰고 싶을 만큼 예쁘고, 접근성이 좋으며, 어떤 LLM이든 자유롭게 쓸 수 있는 차세대 AI 코딩 데스크톱 앱.
-
----
-
-## 현재 상태 — Phase 0 (2026-05)
-
-스캐폴딩 + 핵심 흐름 동작 확인까지 완료.
-
-- [x] Tauri 2.0 + React 19 + TypeScript 베이스
-- [x] 다크 테마 3단 레이아웃 (좌: 컨텍스트 / 중: 블록 터미널 / 우: Plan·Diff·History)
-- [x] OpenRouter API 키 OS Credential Manager 저장 (`keyring`)
-- [x] 모델 리스트 페치 + 셀렉터
-- [x] 단일턴 채팅 스트리밍 (Tauri `Channel` + OpenRouter SSE)
-
-다음 단계는 [로드맵](#로드맵) 참고.
+> 개발자가 진짜 쓰고 싶을 만큼 정교하고, 어떤 LLM이든 자유롭게 쓸 수 있는 AI 코딩 에이전트.
 
 ---
 
-## 핵심 지향점
+## 현재 상태 — Phase 2 (2026-05)
 
-1. **시각적 폴리시** — Warp 수준의 블록 기반 UI, 부드러운 애니메이션, 타이포그래피·여백·다크 톤 모두 정교하게.
-2. **모델 자유도** — OpenRouter로 Claude / GPT / Gemini / Qwen / Llama 등 어떤 모델이든. 로컬 Ollama 자동 감지(예정).
-3. **진짜 코딩 에이전트** — 파일 IO · 검색 · 리팩토링 · LSP 인지를 자체 구현. 외부 코어 의존 없음.
-4. **접근성 우선** — 키보드 네비게이션, 스크린리더, 고대비/색맹 모드 (WCAG 2.1 AA 목표).
+- [x] **Phase 0** — Tauri 2.0 + React 19로 OpenRouter 단일턴 채팅까지 (커밋 이력에 보존)
+- [x] **Phase 1A** — Markdown 렌더링 시도 + Tauri webview의 scroll/overflow 한계 확인
+- [x] **Phase 2-1** — Iced 0.14 베이스 부팅 + Pretendard 폰트 임베드 (한국어 표시)
+- [x] **Phase 2-2** — keyring(OS Credential Manager) + OpenRouter HTTP 포팅
+- [x] **Phase 2-3** — 3-pane 레이아웃 + 모델 셀렉터 + 채팅 1턴 SSE 스트리밍
+- [x] **Phase 2-3 추가** — 블록 단위 복사 버튼, 좁은 스크롤바, IME 입력 지원
+- [ ] **Phase 2-4** — 자동 스크롤, 부분 텍스트 선택 복사, Markdown + syntax highlight
+- [ ] Phase 2-5 — 도구 호출 루프 (read/write/glob/grep)
+- [ ] Phase 2-6 — Plan ↔ Build 모드, 명령 팔레트, PTY 터미널
 
----
+## 왜 Iced로 바꿨나
+
+Tauri(webview2/Edge) 환경에서 `::-webkit-scrollbar`, `flex + overflow` 조합이 일관성 없게 동작하는 알려진 케이스 ([tauri#8829](https://github.com/tauri-apps/tauri/discussions/8829), [tauri#5501](https://github.com/tauri-apps/tauri/discussions/5501))가 있어, SDD에 적어둔 **2단계 ("Rust Native (Iced 또는 egui) → Warp급 성능")** 로 직진.
+
+Warp 본체도 2026년 4월 오픈소스화되어 ([warpdotdev/Warp](https://github.com/warpdotdev/Warp)) 자체 GPU UI 프레임워크 `warpui`(MIT)를 공개했다. 검증되면 차후 도입 검토.
+
+## 아키텍처
+
+```
+┌──────────────────────────────────────────────┐
+│  iced::application (Elm-architecture)         │
+│  ─ State (App)                                │
+│  ─ Message (UI 이벤트, 비동기 결과, 토큰 청크) │
+│  ─ update(state, msg) -> Task                 │
+│  ─ view(state) -> Element                     │
+│                                               │
+│  Subsystems                                   │
+│  ─ keystore.rs   : keyring (OS Credential)    │
+│  ─ openrouter.rs : reqwest + SSE 스트림       │
+│  ─ tokio         : async runtime              │
+│  ─ async-stream  : Stream<ChatEvent>          │
+└──────────────────────────────────────────────┘
+```
+
+Tauri/webview/JS 의존성 일체 없음. 단일 Cargo 프로젝트.
 
 ## 빠른 시작
 
 ### 사전 요구사항
 
-- Node.js 20+
-- Rust 1.80+ (`rustup`으로 stable)
-- 플랫폼별 Tauri 의존성: <https://v2.tauri.app/start/prerequisites/>
+- Rust 1.80+ (`rustup`)
+- Windows / macOS / Linux 데스크톱
 - OpenRouter API 키 — <https://openrouter.ai/keys>
 
-### 개발 모드 실행
+### 개발 모드
 
 ```bash
 git clone https://github.com/Code2731/CodeWarp.git
 cd CodeWarp
-npm install
-npm run tauri dev
+cargo run
 ```
 
-첫 실행 시 우측 상단 ⚙ 클릭 → Settings 모달에 API 키 입력 → 모델 셀렉터에서 모델 선택 → 입력창에 메시지 후 Enter.
+처음 실행하면 Settings 화면이 뜹니다. OpenRouter 키를 입력하면 OS Credential Manager(Windows) / Keychain(macOS) / Secret Service(Linux)에 저장되며, 모델 리스트가 자동으로 페치됩니다.
 
-### 프로덕션 빌드
+### 릴리스 빌드
 
 ```bash
-npm run tauri build
+cargo build --release
 ```
 
-`src-tauri/target/release/bundle/` 에 OS별 인스톨러가 생성됩니다.
+`target/release/codewarp(.exe)` 생성.
 
----
+## 보안
 
-## 아키텍처
+- **API 키는 평문으로 디스크에 저장하지 않습니다.** OS의 Credential Manager에 위임합니다.
+- 키 자체는 코드/로그/git 어디에도 출력되지 않습니다 (저장 시 길이만 로그 가능).
 
-```
-┌────────────────────────────────────────────────┐
-│  Frontend (React 19 + Vite)                     │
-│  ─ src/App.tsx, src/components/*, src/lib/api.ts│
-└────────────────┬───────────────────────────────┘
-                 │  Tauri invoke / Channel
-                 ▼
-┌────────────────────────────────────────────────┐
-│  Backend (Rust, src-tauri/src/lib.rs)           │
-│  ─ keyring        : OS Credential Manager       │
-│  ─ reqwest        : OpenRouter HTTP/SSE         │
-│  ─ Channel<Event> : 토큰 스트리밍               │
-└────────────────────────────────────────────────┘
-```
+## 폰트
 
-API 키는 평문으로 디스크에 저장하지 않고 OS Credential Manager(Windows) / Keychain(macOS) / Secret Service(Linux)에 위임합니다.
-
----
-
-## 로드맵
-
-### v0.1 MVP (진행 중)
-
-- [x] Phase 0: 스캐폴딩 + OpenRouter 단일턴
-- [ ] Markdown + 코드 syntax highlight
-- [ ] 다회 채팅 + 세션 관리
-- [ ] 도구 호출 루프 (read/write/glob/grep)
-- [ ] Plan ↔ Build 모드
-- [ ] 명령 팔레트 (Cmd/Ctrl+K)
-- [ ] PTY 터미널 (`portable-pty` + `xterm.js`)
-- [ ] 접근성 기본 구현
-
-### v0.5 폴리시
-
-- [ ] 고급 애니메이션 / 12개 테마 프리셋
-- [ ] Diff Preview (side-by-side / unified)
-- [ ] LSP 통합
-
-### v1.0 출시
-
-- [ ] Pro 결제 / 자동 업데이트
-- [ ] 팀 세션 공유
-- [ ] Self-hosted / SSO
-
----
-
-## 기여
-
-지금 단계는 매우 초기라 기여보다는 이슈/제안 환영합니다.
+[Pretendard](https://github.com/orioncactus/pretendard) (Regular weight)를 binary에 임베드합니다. **SIL Open Font License 1.1** 라이선스이며, `assets/fonts/LICENSE.txt`에 전체 라이선스가 포함되어 있습니다.
 
 ## 라이선스
 
-추후 결정 (오픈소스 + 상용 듀얼 라이선스 검토 중).
+- 본 코드: MIT OR Apache-2.0
+- Pretendard 폰트: SIL Open Font License 1.1 (`assets/fonts/LICENSE.txt`)

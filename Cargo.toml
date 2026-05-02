@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/Code2731/CodeWarp"
 
 [dependencies]
-iced = { version = "0.14", features = ["tokio", "advanced"] }
+iced = { version = "0.14", features = ["tokio", "advanced", "highlighter", "markdown"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }

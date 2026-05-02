@@ -6,6 +6,7 @@ mod openrouter;
 
 use std::sync::Arc;
 
+use iced::widget::markdown;
 use iced::widget::operation::snap_to_end;
 use iced::widget::scrollable::{Direction, Scrollbar, Viewport};
 use iced::widget::text_editor::{Action, Edit};
@@ -17,14 +18,28 @@ use iced::{Alignment, Element, Font, Length, Size, Task, Theme};
 
 use openrouter::{ChatEvent, ChatMessage, OpenRouterModel};
 
+// 본문용 — 한국어/영문 동시 지원 (Pretendard, OFL)
 const PRETENDARD_REGULAR: &[u8] =
     include_bytes!("../assets/fonts/Pretendard-Regular.otf");
+const PRETENDARD_SEMIBOLD: &[u8] =
+    include_bytes!("../assets/fonts/Pretendard-SemiBold.otf");
+const PRETENDARD_BOLD: &[u8] =
+    include_bytes!("../assets/fonts/Pretendard-Bold.otf");
+// 코드용 monospace (JetBrains Mono, OFL)
+const JETBRAINS_MONO_REGULAR: &[u8] =
+    include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf");
+const JETBRAINS_MONO_BOLD: &[u8] =
+    include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf");
 
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
         .title(App::title)
         .theme(App::theme)
         .font(PRETENDARD_REGULAR)
+        .font(PRETENDARD_SEMIBOLD)
+        .font(PRETENDARD_BOLD)
+        .font(JETBRAINS_MONO_REGULAR)
+        .font(JETBRAINS_MONO_BOLD)
         .default_font(Font::with_name("Pretendard"))
         .window(iced::window::Settings {
             size: Size::new(1280.0, 800.0),
@@ -63,9 +78,20 @@ impl BlockBody {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ViewMode {
+    /// 마크다운으로 예쁘게 렌더 (기본). 코드 블록은 syntax highlight.
+    Rendered,
+    /// 원문(read-only text_editor). 부분 텍스트 드래그 선택 + Ctrl+C 가능.
+    Raw,
+}
+
 struct Block {
     id: u64,
     body: BlockBody,
+    view_mode: ViewMode,
+    /// assistant Rendered용 캐시. 토큰 도착 시마다 갱신.
+    md_items: Vec<markdown::Item>,
 }
 
 struct App {
@@ -107,6 +133,8 @@ enum Message {
     CopyBlock(u64),
     StreamScrolled(Viewport),
     EditorAction(u64, Action),
+    ToggleBlockView(u64),
+    LinkClicked(markdown::Uri),
 }
 
 impl App {
@@ -290,11 +318,15 @@ impl App {
                 self.blocks.push(Block {
                     id: user_id,
                     body: BlockBody::User(text),
+                    view_mode: ViewMode::Rendered,
+                    md_items: Vec::new(),
                 });
                 let ai_id = self.next_id();
                 self.blocks.push(Block {
                     id: ai_id,
                     body: BlockBody::Assistant(text_editor::Content::new()),
+                    view_mode: ViewMode::Rendered,
+                    md_items: Vec::new(),
                 });
                 self.streaming_block_id = Some(ai_id);
                 self.input.clear();
@@ -325,6 +357,8 @@ impl App {
                         if let Some(b) = block {
                             if let BlockBody::Assistant(content) = &mut b.body {
                                 content.perform(Action::Edit(Edit::Paste(Arc::new(t))));
+                                let raw = content.text();
+                                b.md_items = markdown::parse(&raw).collect();
                             }
                         }
                     }
@@ -339,6 +373,8 @@ impl App {
                                     if content.text().is_empty() { "" } else { "\n\n" };
                                 let msg = format!("{}[에러] {}", prefix, e);
                                 content.perform(Action::Edit(Edit::Paste(Arc::new(msg))));
+                                let raw = content.text();
+                                b.md_items = markdown::parse(&raw).collect();
                             }
                         }
                         self.streaming_block_id = None;
@@ -367,6 +403,19 @@ impl App {
                         content.perform(action);
                     }
                 }
+                Task::none()
+            }
+            Message::ToggleBlockView(id) => {
+                if let Some(b) = self.blocks.iter_mut().find(|b| b.id == id) {
+                    b.view_mode = match b.view_mode {
+                        ViewMode::Rendered => ViewMode::Raw,
+                        ViewMode::Raw => ViewMode::Rendered,
+                    };
+                }
+                Task::none()
+            }
+            Message::LinkClicked(_uri) => {
+                // TODO: 시스템 브라우저 열기 (webbrowser crate 등)
                 Task::none()
             }
         }
@@ -497,16 +546,31 @@ impl App {
                 } else {
                     Space::new().width(Length::Shrink).height(Length::Shrink).into()
                 };
+                let toggle_btn: Element<Message> =
+                    if has_content && matches!(&b.body, BlockBody::Assistant(_)) {
+                        let label = match b.view_mode {
+                            ViewMode::Rendered => "원문",
+                            ViewMode::Raw => "예쁘게",
+                        };
+                        button(text(label).size(10))
+                            .on_press(Message::ToggleBlockView(b.id))
+                            .padding([2, 8])
+                            .into()
+                    } else {
+                        Space::new().width(Length::Shrink).height(Length::Shrink).into()
+                    };
                 let header = row![
                     text(role_label).size(11),
                     Space::new().width(Length::Fill),
+                    toggle_btn,
                     copy_btn,
                 ]
+                .spacing(6)
                 .align_y(Alignment::Center);
 
-                let body_view: Element<Message> = match &b.body {
-                    BlockBody::User(s) => text(s).size(13).into(),
-                    BlockBody::Assistant(content) => {
+                let body_view: Element<Message> = match (&b.body, b.view_mode) {
+                    (BlockBody::User(s), _) => text(s).size(13).into(),
+                    (BlockBody::Assistant(content), ViewMode::Raw) => {
                         let id = b.id;
                         text_editor(content)
                             .on_action(move |action| Message::EditorAction(id, action))
@@ -514,6 +578,13 @@ impl App {
                             .padding(0)
                             .size(13)
                             .into()
+                    }
+                    (BlockBody::Assistant(_), ViewMode::Rendered) => {
+                        let mut settings: markdown::Settings = (&Theme::Dark).into();
+                        settings.style.inline_code_font = Font::with_name("JetBrains Mono");
+                        settings.style.code_block_font = Font::with_name("JetBrains Mono");
+                        markdown::view(b.md_items.iter(), settings)
+                            .map(Message::LinkClicked)
                     }
                 };
 

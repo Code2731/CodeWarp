@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type ChatMessage } from "../lib/api";
+import MarkdownView from "./MarkdownView";
 
 type Role = "user" | "assistant";
 
@@ -21,11 +22,40 @@ export default function BlockTerminal({ selectedModel }: Props) {
   const [streaming, setStreaming] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
 
+  // 사용자가 위로 휠하면 즉시 follow OFF, 끝으로 다시 가면 ON.
+  // 토큰마다 자동 스크롤이 사용자 의도를 덮어쓰는 일을 방지.
+  const followBottomRef = useRef(true);
   useEffect(() => {
-    streamRef.current?.scrollTo({
-      top: streamRef.current.scrollHeight,
-      behavior: "smooth",
+    const el = streamRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) followBottomRef.current = false;
+    };
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.clientHeight - el.scrollTop;
+      if (distance < 4) followBottomRef.current = true;
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = streamRef.current;
+    if (!el || !followBottomRef.current) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if (followBottomRef.current) el.scrollTop = el.scrollHeight;
+      });
     });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
   }, [blocks]);
 
   async function send() {
@@ -56,6 +86,8 @@ export default function BlockTerminal({ selectedModel }: Props) {
       { role: "user", content: text },
     ];
 
+    // 새 메시지 전송 시 자동 스크롤 다시 ON
+    followBottomRef.current = true;
     setBlocks((b) => [...b, userBlock, aiBlock]);
     setInput("");
     setStreaming(true);
@@ -137,7 +169,13 @@ export default function BlockTerminal({ selectedModel }: Props) {
                 )}
               </div>
               <div className="block__body">
-                {b.content || (b.pending ? "…" : "")}
+                {b.errored ? (
+                  b.content
+                ) : b.role === "assistant" && b.content ? (
+                  <MarkdownView text={b.content} />
+                ) : (
+                  b.content || (b.pending ? "…" : "")
+                )}
               </div>
             </div>
           ))

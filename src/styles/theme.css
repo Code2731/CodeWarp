@@ -94,43 +94,54 @@ textarea:focus {
   background: rgba(200, 168, 102, 0.3);
 }
 
-/* 스크롤바 */
+/* 스크롤바 (항상 보이게) */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 40px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: rgba(255, 255, 255, 0.35);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* === 앱 레이아웃 === */
 
 .app {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   background: var(--bg-base);
+  overflow: hidden;
 }
 
 .app__main {
-  display: grid;
-  grid-template-columns: 240px 1fr 320px;
+  flex: 1 1 0;
+  display: flex;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* === TopBar === */
 
 .topbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -196,11 +207,14 @@ textarea:focus {
 /* === Sidebar (left) === */
 
 .sidebar {
+  flex: 0 0 240px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 14px 10px;
   min-width: 0;
+  min-height: 0;
 }
 
 .sidebar__section-title {
@@ -237,17 +251,20 @@ textarea:focus {
 /* === BlockTerminal (center) === */
 
 .terminal {
-  display: flex;
-  flex-direction: column;
+  flex: 1 1 0;
+  position: relative;
   background: var(--bg-base);
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .terminal__stream {
-  flex: 1;
-  overflow-y: auto;
-  padding: 18px 22px;
+  position: absolute;
+  inset: 0 0 64px 0;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  padding: 18px 22px 28px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -267,6 +284,8 @@ textarea:focus {
   overflow: hidden;
   background: var(--bg-block-ai);
   animation: block-in 0.2s ease;
+  min-width: 0;
+  max-width: 100%;
 }
 
 @keyframes block-in {
@@ -340,26 +359,181 @@ textarea:focus {
   color: var(--text-primary);
 }
 
+/* assistant 블록은 markdown으로 렌더되므로 UI 폰트 + 일반 줄바꿈 */
+.block--assistant .block__body {
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.block--assistant .block__body p {
+  margin: 0 0 8px;
+}
+.block--assistant .block__body p:last-child {
+  margin-bottom: 0;
+}
+
+.block--assistant .block__body h1,
+.block--assistant .block__body h2,
+.block--assistant .block__body h3,
+.block--assistant .block__body h4 {
+  margin: 14px 0 6px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.block--assistant .block__body h1 { font-size: 18px; }
+.block--assistant .block__body h2 { font-size: 16px; }
+.block--assistant .block__body h3 { font-size: 14.5px; }
+.block--assistant .block__body h4 { font-size: 13.5px; color: var(--text-secondary); }
+
+.block--assistant .block__body ul,
+.block--assistant .block__body ol {
+  margin: 6px 0 8px;
+  padding-left: 22px;
+}
+
+.block--assistant .block__body li {
+  margin: 2px 0;
+}
+
+.block--assistant .block__body a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+.block--assistant .block__body a:hover {
+  text-decoration: underline;
+}
+
+.block--assistant .block__body blockquote {
+  border-left: 3px solid var(--border-strong);
+  margin: 8px 0;
+  padding: 2px 12px;
+  color: var(--text-secondary);
+}
+
+.block--assistant .block__body hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 12px 0;
+}
+
+.block--assistant .block__body table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.block--assistant .block__body th,
+.block--assistant .block__body td {
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+}
+.block--assistant .block__body th {
+  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+}
+
+.block--assistant .block__body code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+/* === Code fence (블록 코드) === */
+.md-code {
+  margin: 10px 0;
+  background: #1d1f27;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.md-code__bar {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 4px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.md-code__lang {
+  flex: 1;
+  text-transform: lowercase;
+  letter-spacing: 0.4px;
+}
+
+.md-code__copy {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  background: transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.md-code__copy:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.md-code__pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  background: transparent;
+}
+
+.md-code__pre code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: var(--text-primary);
+}
+
+/* highlight.js의 .hljs는 atom-one-dark.css에서 background 지정 — 우리 wrapper가 처리하므로 상쇄 */
+.md-code__pre .hljs {
+  background: transparent;
+  padding: 0;
+}
+
 .terminal__input {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
   display: flex;
   gap: 8px;
   padding: 12px 16px;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-panel);
+  box-sizing: border-box;
 }
 
 .terminal__input textarea {
   flex: 1;
   resize: none;
-  min-height: 40px;
-  max-height: 160px;
+  min-height: 0;
+  height: 100%;
   font-size: 13px;
   line-height: 1.45;
 }
 
 .terminal__send {
-  align-self: flex-end;
-  padding: 8px 14px;
+  align-self: stretch;
+  padding: 0 14px;
   background: var(--accent);
   color: #1a1408;
   border-color: transparent;
@@ -379,11 +553,14 @@ textarea:focus {
 /* === RightPanel === */
 
 .rightpanel {
+  flex: 0 0 320px;
   background: var(--bg-panel);
   border-left: 1px solid var(--border-subtle);
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 14px;
   min-width: 0;
+  min-height: 0;
 }
 
 .rightpanel__tabs {
@@ -419,6 +596,7 @@ textarea:focus {
 /* === StatusBar === */
 
 .statusbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 14px;

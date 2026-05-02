@@ -4,10 +4,15 @@
 mod keystore;
 mod openrouter;
 
+use std::sync::Arc;
+
+use iced::widget::operation::snap_to_end;
+use iced::widget::scrollable::{Direction, Scrollbar, Viewport};
+use iced::widget::text_editor::{Action, Edit};
 use iced::widget::{
-    button, column, container, pick_list, row, scrollable, text, text_input, Space,
+    button, column, container, pick_list, row, scrollable, text, text_editor, text_input,
+    Id as ScrollId, Space,
 };
-use iced::widget::scrollable::{Direction, Scrollbar};
 use iced::{Alignment, Element, Font, Length, Size, Task, Theme};
 
 use openrouter::{ChatEvent, ChatMessage, OpenRouterModel};
@@ -29,20 +34,40 @@ fn main() -> iced::Result {
         .run()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Role {
-    User,
-    Assistant,
+/// 사용자 입력은 짧은 plain text, AI 응답은 read-only text_editor (부분 선택 + 복사 가능).
+enum BlockBody {
+    User(String),
+    Assistant(text_editor::Content),
 }
 
-#[derive(Debug, Clone)]
+impl BlockBody {
+    fn role_label(&self) -> &'static str {
+        match self {
+            BlockBody::User(_) => "you",
+            BlockBody::Assistant(_) => "ai",
+        }
+    }
+
+    fn to_text(&self) -> String {
+        match self {
+            BlockBody::User(s) => s.clone(),
+            BlockBody::Assistant(c) => c.text(),
+        }
+    }
+
+    fn is_empty_for_history(&self) -> bool {
+        match self {
+            BlockBody::User(s) => s.trim().is_empty(),
+            BlockBody::Assistant(c) => c.text().trim().is_empty(),
+        }
+    }
+}
+
 struct Block {
     id: u64,
-    role: Role,
-    content: String,
+    body: BlockBody,
 }
 
-#[derive(Default)]
 struct App {
     has_key: bool,
     key_input: String,
@@ -59,6 +84,9 @@ struct App {
     streaming_block_id: Option<u64>,
 
     show_settings: bool,
+
+    stream_id: ScrollId,
+    follow_bottom: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +105,8 @@ enum Message {
     Send,
     ChatChunk(ChatEvent),
     CopyBlock(u64),
+    StreamScrolled(Viewport),
+    EditorAction(u64, Action),
 }
 
 impl App {
@@ -90,13 +120,27 @@ impl App {
 
     fn new() -> (Self, Task<Message>) {
         let has_key = keystore::has_api_key();
-        let mut app = Self::default();
-        app.has_key = has_key;
-        app.show_settings = !has_key;
-        app.status = if has_key {
+        let saved_model = keystore::read_selected_model();
+        let status = if has_key {
             "준비됨".into()
         } else {
             "OpenRouter API 키 미등록".into()
+        };
+        let app = Self {
+            has_key,
+            key_input: String::new(),
+            status,
+            busy: false,
+            models: Vec::new(),
+            model_ids: Vec::new(),
+            selected_model: saved_model,
+            blocks: Vec::new(),
+            next_block_id: 0,
+            input: String::new(),
+            streaming_block_id: None,
+            show_settings: !has_key,
+            stream_id: ScrollId::new("stream"),
+            follow_bottom: true,
         };
         let task = if has_key {
             Task::done(Message::FetchModels)
@@ -157,6 +201,7 @@ impl App {
                         self.models.clear();
                         self.model_ids.clear();
                         self.selected_model = None;
+                        let _ = keystore::clear_selected_model();
                         self.status = "키 삭제됨".into();
                     }
                     Err(e) => self.status = format!("삭제 실패: {}", e),
@@ -181,8 +226,17 @@ impl App {
                     Ok(models) => {
                         let n = models.len();
                         self.model_ids = models.iter().map(|m| m.id.clone()).collect();
-                        if self.selected_model.is_none() {
+                        // 저장된 모델이 리스트에 있으면 유지, 없으면 첫 번째로 fallback
+                        let saved_in_list = self
+                            .selected_model
+                            .as_ref()
+                            .map(|id| self.model_ids.iter().any(|m| m == id))
+                            .unwrap_or(false);
+                        if !saved_in_list {
                             self.selected_model = self.model_ids.first().cloned();
+                            if let Some(id) = &self.selected_model {
+                                let _ = keystore::write_selected_model(id);
+                            }
                         }
                         self.models = models;
                         self.status = format!("모델 {} 로드됨", n);
@@ -192,6 +246,7 @@ impl App {
                 Task::none()
             }
             Message::SelectModel(id) => {
+                let _ = keystore::write_selected_model(&id);
                 self.selected_model = Some(id);
                 Task::none()
             }
@@ -217,13 +272,13 @@ impl App {
                 let mut messages: Vec<ChatMessage> = self
                     .blocks
                     .iter()
-                    .filter(|b| !b.content.trim().is_empty())
+                    .filter(|b| !b.body.is_empty_for_history())
                     .map(|b| ChatMessage {
-                        role: match b.role {
-                            Role::User => "user".into(),
-                            Role::Assistant => "assistant".into(),
+                        role: match &b.body {
+                            BlockBody::User(_) => "user".into(),
+                            BlockBody::Assistant(_) => "assistant".into(),
                         },
-                        content: b.content.clone(),
+                        content: b.body.to_text(),
                     })
                     .collect();
                 messages.push(ChatMessage {
@@ -234,27 +289,29 @@ impl App {
                 let user_id = self.next_id();
                 self.blocks.push(Block {
                     id: user_id,
-                    role: Role::User,
-                    content: text,
+                    body: BlockBody::User(text),
                 });
                 let ai_id = self.next_id();
                 self.blocks.push(Block {
                     id: ai_id,
-                    role: Role::Assistant,
-                    content: String::new(),
+                    body: BlockBody::Assistant(text_editor::Content::new()),
                 });
                 self.streaming_block_id = Some(ai_id);
                 self.input.clear();
                 self.status = "응답 생성 중…".into();
+                self.follow_bottom = true; // 새 메시지 전송 시 follow ON
 
-                Task::run(
-                    openrouter::chat_stream(api_key, model, messages),
-                    Message::ChatChunk,
-                )
+                Task::batch(vec![
+                    snap_to_end(self.stream_id.clone()),
+                    Task::run(
+                        openrouter::chat_stream(api_key, model, messages),
+                        Message::ChatChunk,
+                    ),
+                ])
             }
             Message::CopyBlock(id) => {
                 if let Some(b) = self.blocks.iter().find(|b| b.id == id) {
-                    return iced::clipboard::write(b.content.clone());
+                    return iced::clipboard::write(b.body.to_text());
                 }
                 Task::none()
             }
@@ -266,7 +323,9 @@ impl App {
                 match event {
                     ChatEvent::Token(t) => {
                         if let Some(b) = block {
-                            b.content.push_str(&t);
+                            if let BlockBody::Assistant(content) = &mut b.body {
+                                content.perform(Action::Edit(Edit::Paste(Arc::new(t))));
+                            }
                         }
                     }
                     ChatEvent::Done => {
@@ -275,14 +334,37 @@ impl App {
                     }
                     ChatEvent::Error(e) => {
                         if let Some(b) = block {
-                            b.content = if b.content.is_empty() {
-                                format!("[에러] {}", e)
-                            } else {
-                                format!("{}\n\n[에러] {}", b.content, e)
-                            };
+                            if let BlockBody::Assistant(content) = &mut b.body {
+                                let prefix =
+                                    if content.text().is_empty() { "" } else { "\n\n" };
+                                let msg = format!("{}[에러] {}", prefix, e);
+                                content.perform(Action::Edit(Edit::Paste(Arc::new(msg))));
+                            }
                         }
                         self.streaming_block_id = None;
                         self.status = format!("에러: {}", e);
+                    }
+                }
+                if self.follow_bottom {
+                    snap_to_end(self.stream_id.clone())
+                } else {
+                    Task::none()
+                }
+            }
+            Message::StreamScrolled(viewport) => {
+                // 사용자가 거의 끝까지 내려가 있으면 follow ON, 아니면 OFF
+                let rel = viewport.relative_offset();
+                self.follow_bottom = rel.y > 0.95;
+                Task::none()
+            }
+            Message::EditorAction(id, action) => {
+                // read-only: Edit 액션은 무시 (사용자 키보드 입력 차단), 나머지(선택/스크롤)는 처리
+                if action.is_edit() {
+                    return Task::none();
+                }
+                if let Some(b) = self.blocks.iter_mut().find(|b| b.id == id) {
+                    if let BlockBody::Assistant(content) = &mut b.body {
+                        content.perform(action);
                     }
                 }
                 Task::none()
@@ -405,17 +487,15 @@ impl App {
         } else {
             let mut col = column![].spacing(10).width(Length::Fill);
             for b in &self.blocks {
-                let role_label = match b.role {
-                    Role::User => "you",
-                    Role::Assistant => "ai",
-                };
-                let copy_btn: Element<Message> = if b.content.trim().is_empty() {
-                    Space::new().width(Length::Shrink).height(Length::Shrink).into()
-                } else {
+                let role_label = b.body.role_label();
+                let has_content = !b.body.is_empty_for_history();
+                let copy_btn: Element<Message> = if has_content {
                     button(text("복사").size(10))
                         .on_press(Message::CopyBlock(b.id))
                         .padding([2, 8])
                         .into()
+                } else {
+                    Space::new().width(Length::Shrink).height(Length::Shrink).into()
                 };
                 let header = row![
                     text(role_label).size(11),
@@ -423,18 +503,30 @@ impl App {
                     copy_btn,
                 ]
                 .align_y(Alignment::Center);
+
+                let body_view: Element<Message> = match &b.body {
+                    BlockBody::User(s) => text(s).size(13).into(),
+                    BlockBody::Assistant(content) => {
+                        let id = b.id;
+                        text_editor(content)
+                            .on_action(move |action| Message::EditorAction(id, action))
+                            .height(Length::Shrink)
+                            .padding(0)
+                            .size(13)
+                            .into()
+                    }
+                };
+
                 let block_view = container(
-                    column![
-                        header,
-                        text(&b.content).size(13),
-                    ]
-                    .spacing(6),
+                    column![header, body_view].spacing(6),
                 )
                 .padding(12)
                 .width(Length::Fill);
                 col = col.push(block_view);
             }
             scrollable(col)
+                .id(self.stream_id.clone())
+                .on_scroll(Message::StreamScrolled)
                 .direction(Direction::Vertical(
                     Scrollbar::new().width(6).scroller_width(6).margin(2),
                 ))

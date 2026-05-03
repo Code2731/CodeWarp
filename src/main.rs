@@ -1,6 +1,7 @@
 // CodeWarp — Iced 진입점
 // Phase 2-3a: 3-pane 레이아웃 + 모델 셀렉터 (TopBar) + 입력 echo
 
+mod hf;
 mod keystore;
 mod openrouter;
 mod session;
@@ -63,6 +64,22 @@ struct ModelOption {
 
 fn vscrollbar() -> Scrollbar {
     Scrollbar::new().width(8).scroller_width(8).margin(2)
+}
+
+/// 바이트 수를 KB/MB/GB 단위로 표시 (1024 진법).
+fn fmt_bytes(n: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * 1024;
+    const GB: u64 = 1024 * 1024 * 1024;
+    if n >= GB {
+        format!("{:.2} GB", n as f64 / GB as f64)
+    } else if n >= MB {
+        format!("{:.1} MB", n as f64 / MB as f64)
+    } else if n >= KB {
+        format!("{:.0} KB", n as f64 / KB as f64)
+    } else {
+        format!("{} B", n)
+    }
 }
 
 fn fmt_context_length(n: u64) -> String {
@@ -418,6 +435,50 @@ impl<'a> Viewer<'a, Message> for CodewarpViewer {
     }
 }
 
+/// 진행 중 HF 다운로드의 UI state.
+struct HfDownload {
+    repo_id: String,
+    total_files: usize,
+    file_idx: usize,
+    file_name: String,
+    file_bytes_done: u64,
+    file_bytes_total: Option<u64>,
+}
+
+/// 추천 프리셋 — 클릭 시 hf_repo_input에 채움.
+struct ModelPreset {
+    repo_id: &'static str,
+    label: &'static str,
+    note: &'static str,
+}
+const MODEL_PRESETS: &[ModelPreset] = &[
+    ModelPreset {
+        repo_id: "TabbyML/Qwen2.5-Coder-7B",
+        label: "Qwen2.5-Coder 7B",
+        note: "Tabby용 코딩 (다국어/한국어 OK)",
+    },
+    ModelPreset {
+        repo_id: "TabbyML/DeepSeekCoder-6.7B",
+        label: "DeepSeek-Coder 6.7B",
+        note: "Tabby용 코딩",
+    },
+    ModelPreset {
+        repo_id: "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct",
+        label: "EXAONE 3.5 7.8B",
+        note: "한국어 친화 (LG AI)",
+    },
+    ModelPreset {
+        repo_id: "upstage/SOLAR-10.7B-Instruct-v1.0",
+        label: "SOLAR 10.7B",
+        note: "한국어 친화 (Upstage)",
+    },
+    ModelPreset {
+        repo_id: "Qwen/Qwen2.5-7B-Instruct",
+        label: "Qwen2.5 7B Instruct",
+        note: "범용 (xLLM/vLLM용 safetensors)",
+    },
+];
+
 /// 도구 호출이 SSE delta로 부분씩 도착하는 동안 누적할 임시 구조.
 #[derive(Default, Clone)]
 struct PendingToolCall {
@@ -454,6 +515,15 @@ struct App {
     pending_delete_session: Option<u64>,
     /// 인라인 confirm에서 펼친 카드 인덱스 (한 번에 하나만 펼침).
     expanded_confirm_idx: Option<usize>,
+
+    // ── HF 모델 매니저 ────────────────────────────────────────────
+    hf_token_input: String,
+    /// 토큰 입력 토글 (false면 입력란 숨김)
+    show_hf_token: bool,
+    model_dir_input: String,
+    hf_repo_input: String,
+    /// 진행 중 다운로드 — 없으면 None
+    hf_dl: Option<HfDownload>,
 
     show_settings: bool,
 
@@ -717,6 +787,20 @@ enum Message {
     ClearTabby,
     FetchTabbyModels,
     TabbyModelsLoaded(Result<Vec<String>, String>),
+    // ── HF 모델 매니저 ───
+    HfTokenChanged(String),
+    ToggleHfTokenVisible,
+    SaveHfToken,
+    HfTokenSaved(Result<(), String>),
+    ModelDirChanged(String),
+    PickModelDir,
+    ModelDirPicked(Option<std::path::PathBuf>),
+    HfRepoChanged(String),
+    /// 프리셋 클릭 → repo input에 채움
+    UsePreset(usize),
+    StartHfDownload,
+    HfDownloadEvent(hf::DownloadEvent),
+    CancelHfDownload,
 }
 
 impl App {
@@ -766,6 +850,15 @@ impl App {
             abort_handle: None,
             pending_delete_session: None,
             expanded_confirm_idx: None,
+            hf_token_input: keystore::read_hf_token().unwrap_or_default(),
+            show_hf_token: false,
+            model_dir_input: keystore::read_model_dir().unwrap_or_else(|| {
+                dirs::data_local_dir()
+                    .map(|d| d.join("codewarp").join("models").display().to_string())
+                    .unwrap_or_default()
+            }),
+            hf_repo_input: String::new(),
+            hf_dl: None,
             show_settings: !has_key,
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
@@ -1034,6 +1127,131 @@ impl App {
                     }
                 }
                 self.refresh_model_combo();
+                Task::none()
+            }
+            // ── HF 모델 매니저 ────────────────────────────────────
+            Message::HfTokenChanged(v) => { self.hf_token_input = v; Task::none() }
+            Message::ToggleHfTokenVisible => {
+                self.show_hf_token = !self.show_hf_token;
+                Task::none()
+            }
+            Message::SaveHfToken => {
+                let t = self.hf_token_input.clone();
+                Task::perform(
+                    async move { keystore::write_hf_token(&t) },
+                    Message::HfTokenSaved,
+                )
+            }
+            Message::HfTokenSaved(r) => {
+                match r {
+                    Ok(()) => self.status = "HF 토큰 저장됨".into(),
+                    Err(e) => self.status = format!("HF 토큰 저장 실패: {}", e),
+                }
+                Task::none()
+            }
+            Message::ModelDirChanged(v) => { self.model_dir_input = v; Task::none() }
+            Message::PickModelDir => {
+                Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .pick_folder()
+                            .await
+                            .map(|h| h.path().to_path_buf())
+                    },
+                    Message::ModelDirPicked,
+                )
+            }
+            Message::ModelDirPicked(maybe) => {
+                if let Some(path) = maybe {
+                    let s = path.display().to_string();
+                    let _ = keystore::write_model_dir(&s);
+                    self.model_dir_input = s;
+                    self.status = "모델 다운로드 경로 저장됨".into();
+                }
+                Task::none()
+            }
+            Message::HfRepoChanged(v) => { self.hf_repo_input = v; Task::none() }
+            Message::UsePreset(idx) => {
+                if let Some(p) = MODEL_PRESETS.get(idx) {
+                    self.hf_repo_input = p.repo_id.into();
+                }
+                Task::none()
+            }
+            Message::StartHfDownload => {
+                let repo = self.hf_repo_input.trim().to_string();
+                if repo.is_empty() {
+                    self.status = "HF repo ID 비어있음".into();
+                    return Task::none();
+                }
+                let dir = self.model_dir_input.trim().to_string();
+                if dir.is_empty() {
+                    self.status = "다운로드 경로 미설정".into();
+                    return Task::none();
+                }
+                // 경로 keystore에도 반영
+                let _ = keystore::write_model_dir(&dir);
+                let token = keystore::read_hf_token();
+                self.hf_dl = Some(HfDownload {
+                    repo_id: repo.clone(),
+                    total_files: 0,
+                    file_idx: 0,
+                    file_name: String::new(),
+                    file_bytes_done: 0,
+                    file_bytes_total: None,
+                });
+                self.status = format!("다운로드 시작: {}", repo);
+                let (task, handle) = Task::run(
+                    hf::download_repo(repo, std::path::PathBuf::from(dir), token),
+                    Message::HfDownloadEvent,
+                )
+                .abortable();
+                // 기존 abort_handle은 chat 전용이라 별도 보관 X — Cancel 시 hf_dl=None만 set
+                // 단순함 우선: 다운로드 abort handle을 abort_handle에 저장 (chat과 공용)
+                self.abort_handle = Some(handle);
+                task
+            }
+            Message::HfDownloadEvent(ev) => {
+                if let Some(dl) = self.hf_dl.as_mut() {
+                    match &ev {
+                        hf::DownloadEvent::Started { total_files } => {
+                            dl.total_files = *total_files;
+                        }
+                        hf::DownloadEvent::FileStart { idx, name, size } => {
+                            dl.file_idx = *idx;
+                            dl.file_name = name.clone();
+                            dl.file_bytes_done = 0;
+                            dl.file_bytes_total = *size;
+                        }
+                        hf::DownloadEvent::FileProgress {
+                            idx,
+                            bytes_done,
+                            bytes_total,
+                        } => {
+                            dl.file_idx = *idx;
+                            dl.file_bytes_done = *bytes_done;
+                            dl.file_bytes_total = *bytes_total;
+                        }
+                        hf::DownloadEvent::FileDone { .. } => {}
+                        hf::DownloadEvent::AllDone => {
+                            self.status = format!("다운로드 완료: {}", dl.repo_id);
+                            self.hf_dl = None;
+                            self.abort_handle = None;
+                        }
+                        hf::DownloadEvent::Error(e) => {
+                            self.status = format!("다운로드 실패: {}", e);
+                            self.hf_dl = None;
+                            self.abort_handle = None;
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::CancelHfDownload => {
+                if let Some(h) = self.abort_handle.take() {
+                    h.abort();
+                }
+                self.hf_dl = None;
+                self.status = "다운로드 취소됨".into();
                 Task::none()
             }
             Message::FetchModels => {
@@ -3041,6 +3259,8 @@ impl App {
             None => text("미시도").size(11),
         };
 
+        let manager_section = self.view_model_manager();
+
         let body = column![
             header,
             Space::new().height(Length::Fixed(8.0)),
@@ -3065,6 +3285,8 @@ impl App {
             text("1. https://tabby.tabbyml.com 에서 설치").size(11),
             text("2. 예: tabby serve --model TabbyML/Qwen2.5-Coder-7B").size(11),
             text("3. 위에 URL 입력 (기본 http://localhost:8080)").size(11),
+            Space::new().height(Length::Fixed(20.0)),
+            manager_section,
         ]
         .spacing(8)
         .max_width(520);
@@ -3074,6 +3296,139 @@ impl App {
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
+    }
+
+    fn view_model_manager(&self) -> Element<'_, Message> {
+        let header = text("모델 매니저 (HuggingFace 다운로드)").size(14);
+
+        // 다운로드 경로
+        let dir_input = text_input(
+            "예: C:\\models 또는 ~/models",
+            &self.model_dir_input,
+        )
+        .on_input(Message::ModelDirChanged)
+        .padding(8)
+        .width(Length::Fixed(420.0));
+        let dir_row = row![
+            dir_input,
+            button(text("📁").size(13)).on_press(Message::PickModelDir),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center);
+
+        // HF 토큰 toggle
+        let token_toggle = button(
+            text(if self.show_hf_token {
+                "토큰 숨기기"
+            } else {
+                "토큰 입력"
+            })
+            .size(11),
+        )
+        .on_press(Message::ToggleHfTokenVisible)
+        .padding([4, 10]);
+        let token_section: Element<Message> = if self.show_hf_token {
+            row![
+                text_input("hf_xxx... (gated repo용, 선택)", &self.hf_token_input)
+                    .on_input(Message::HfTokenChanged)
+                    .on_submit(Message::SaveHfToken)
+                    .padding(8)
+                    .width(Length::Fixed(360.0)),
+                button(text("저장").size(11))
+                    .on_press(Message::SaveHfToken)
+                    .padding([4, 10]),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
+        // 추천 프리셋
+        let mut presets_col = column![text("추천 프리셋 (클릭 → repo 입력)").size(11)].spacing(2);
+        for (i, p) in MODEL_PRESETS.iter().enumerate() {
+            presets_col = presets_col.push(
+                button(
+                    column![
+                        text(p.label).size(12),
+                        text(p.note).size(10),
+                    ]
+                    .spacing(1),
+                )
+                .on_press(Message::UsePreset(i))
+                .padding([4, 10])
+                .width(Length::Fill),
+            );
+        }
+
+        // repo 입력 + 다운로드 시작
+        let repo_input = text_input("HF repo (예: TabbyML/Qwen2.5-Coder-7B)", &self.hf_repo_input)
+            .on_input(Message::HfRepoChanged)
+            .on_submit(Message::StartHfDownload)
+            .padding(8)
+            .width(Length::Fixed(360.0));
+        let action_btn: Element<Message> = if self.hf_dl.is_some() {
+            button(text("취소").size(11))
+                .on_press(Message::CancelHfDownload)
+                .padding([4, 10])
+                .style(button::danger)
+                .into()
+        } else {
+            button(text("다운로드").size(11))
+                .on_press(Message::StartHfDownload)
+                .padding([4, 10])
+                .style(button::primary)
+                .into()
+        };
+        let dl_row = row![repo_input, action_btn]
+            .spacing(6)
+            .align_y(Alignment::Center);
+
+        // 진행률
+        let progress: Element<Message> = if let Some(dl) = &self.hf_dl {
+            let pct_text = match dl.file_bytes_total {
+                Some(t) if t > 0 => format!(
+                    "{:.0}%",
+                    (dl.file_bytes_done as f64 / t as f64) * 100.0
+                ),
+                _ => format!("{}", fmt_bytes(dl.file_bytes_done)),
+            };
+            column![
+                text(format!(
+                    "[{}/{}] {}",
+                    dl.file_idx + 1,
+                    dl.total_files.max(1),
+                    dl.file_name
+                ))
+                .size(11)
+                .font(Font::with_name("JetBrains Mono")),
+                text(pct_text).size(11),
+            ]
+            .spacing(2)
+            .into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
+        column![
+            header,
+            text("HuggingFace에서 모델 받아 디스크에 저장. xLLM/Tabby/llama-server 등이 그 경로를 사용.")
+                .size(11),
+            Space::new().height(Length::Fixed(4.0)),
+            text("저장 경로").size(11),
+            dir_row,
+            Space::new().height(Length::Fixed(4.0)),
+            token_toggle,
+            token_section,
+            Space::new().height(Length::Fixed(8.0)),
+            presets_col,
+            Space::new().height(Length::Fixed(8.0)),
+            dl_row,
+            progress,
+        ]
+        .spacing(6)
+        .into()
     }
 
     fn view_statusbar(&self) -> Element<'_, Message> {

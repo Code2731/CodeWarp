@@ -7,6 +7,8 @@ const MODEL_USER: &str = "selected_model";
 const CWD_USER: &str = "working_directory";
 const TABBY_URL_USER: &str = "tabby_base_url";
 const TABBY_TOKEN_USER: &str = "tabby_token";
+const HF_TOKEN_USER: &str = "hf_token";
+const MODEL_DIR_USER: &str = "model_download_dir";
 
 fn entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(SERVICE, USER).map_err(|e| e.to_string())
@@ -133,4 +135,46 @@ pub fn clear_tabby_token() -> Result<(), String> {
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
+}
+
+// ── HuggingFace ──────────────────────────────────────────────────────
+
+fn hf_token_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(SERVICE, HF_TOKEN_USER).map_err(|e| e.to_string())
+}
+
+fn model_dir_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(SERVICE, MODEL_DIR_USER).map_err(|e| e.to_string())
+}
+
+pub fn read_hf_token() -> Option<String> {
+    hf_token_entry().ok()?.get_password().ok()
+}
+
+pub fn write_hf_token(token: &str) -> Result<(), String> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return clear_hf_token();
+    }
+    hf_token_entry()?.set_password(trimmed).map_err(|e| e.to_string())
+}
+
+pub fn clear_hf_token() -> Result<(), String> {
+    match hf_token_entry()?.delete_credential() {
+        Ok(_) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub fn read_model_dir() -> Option<String> {
+    model_dir_entry().ok()?.get_password().ok()
+}
+
+pub fn write_model_dir(path: &str) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    model_dir_entry()?.set_password(trimmed).map_err(|e| e.to_string())
 }

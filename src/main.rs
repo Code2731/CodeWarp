@@ -259,6 +259,76 @@ struct Block {
     md_items: Vec<markdown::Item>,
     /// assistant 블록을 만든 모델 ID (user 블록은 None).
     model: Option<String>,
+    /// 응답 끝난 후 추출된 Apply 가능한 변경사항 + 적용 여부.
+    apply_candidates: Vec<(ApplyCandidate, bool)>,
+}
+
+/// AI 응답의 fenced code block 첫 줄에서 `// path: ...` 또는 `# path: ...`를
+/// 검사해 적용 후보를 추출. 닫는 fence가 없거나 path가 첫 줄이 아니면 skip.
+#[derive(Debug, Clone, PartialEq)]
+struct ApplyCandidate {
+    path: String,
+    language: String,
+    content: String,
+}
+
+fn extract_path_from_comment(line: &str) -> Option<String> {
+    let trimmed = line.trim_start();
+    for prefix in ["//", "#", "--"] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            let rest = rest.trim_start();
+            if let Some(p) = rest.strip_prefix("path:") {
+                let path = p.trim().to_string();
+                if !path.is_empty() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn parse_apply_candidates(markdown: &str) -> Vec<ApplyCandidate> {
+    let mut out = Vec::new();
+    let mut lines = markdown.lines().peekable();
+    while let Some(line) = lines.next() {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix("```") else {
+            continue;
+        };
+        // fence 시작 — language는 fence info의 첫 단어
+        let language = rest.trim().split_whitespace().next().unwrap_or("").to_string();
+        // 첫 본문 라인에서 path 추출
+        let Some(first) = lines.next() else { break };
+        let Some(path) = extract_path_from_comment(first) else {
+            // path 없는 코드 블록 — 닫는 fence까지 skip
+            for inner in lines.by_ref() {
+                if inner.trim_start().starts_with("```") {
+                    break;
+                }
+            }
+            continue;
+        };
+        // 본문 수집 — 닫는 fence까지
+        let mut content = String::new();
+        let mut closed = false;
+        for inner in lines.by_ref() {
+            if inner.trim_start().starts_with("```") {
+                closed = true;
+                break;
+            }
+            content.push_str(inner);
+            content.push('\n');
+        }
+        if closed && !content.is_empty() {
+            out.push(ApplyCandidate {
+                path,
+                language,
+                content,
+            });
+        }
+    }
+    out
 }
 
 /// 마지막 user 메시지 다음의 모든 메시지를 conversation에서 제거.
@@ -310,6 +380,7 @@ fn persisted_to_block(pb: session::PersistedBlock) -> Block {
         view_mode: ViewMode::Rendered,
         md_items,
         model,
+        apply_candidates: Vec::new(),
     }
 }
 
@@ -830,6 +901,8 @@ enum Message {
     RegenerateLast,
     /// 마지막 user 메시지를 입력창으로 옮기고 그 이후 블록/대화 제거.
     EditLastUser,
+    /// 코드 블록을 파일에 적용 (block_id, candidate idx).
+    ApplyChange(u64, usize),
 }
 
 impl App {
@@ -1315,6 +1388,7 @@ impl App {
                     view_mode: ViewMode::Rendered,
                     md_items: Vec::new(),
                     model: self.selected_model.clone(),
+                    apply_candidates: Vec::new(),
                 });
                 self.streaming_block_id = Some(ai_id);
                 self.status = "응답 다시 생성 중…".into();
@@ -1333,6 +1407,46 @@ impl App {
                 .abortable();
                 self.abort_handle = Some(handle);
                 Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
+            }
+            Message::ApplyChange(block_id, idx) => {
+                // 1) 먼저 candidate 정보 복사 (immutable borrow 후 종료)
+                let snapshot = self
+                    .blocks
+                    .iter()
+                    .find(|b| b.id == block_id)
+                    .and_then(|b| b.apply_candidates.get(idx))
+                    .filter(|(_, applied)| !*applied)
+                    .map(|(c, _)| (c.path.clone(), c.content.clone()));
+                let Some((path, content)) = snapshot else {
+                    return Task::none();
+                };
+                // 2) write_file dispatch (cwd 보안 검증 포함)
+                let args_json = serde_json::json!({
+                    "path": path,
+                    "content": content,
+                })
+                .to_string();
+                let result = tools::dispatch("write_file", &args_json, &self.cwd);
+                let success = !result.contains("[error]");
+                if success {
+                    if let Some(b) = self.blocks.iter_mut().find(|b| b.id == block_id) {
+                        if let Some((_, applied)) = b.apply_candidates.get_mut(idx) {
+                            *applied = true;
+                        }
+                    }
+                }
+                let summary = if success {
+                    format!("{} ({} bytes)", path, content.len())
+                } else {
+                    format!("실패: {}", path)
+                };
+                self.push_tool_result_block("apply".into(), summary, success);
+                self.status = if success {
+                    format!("적용됨: {}", path)
+                } else {
+                    result
+                };
+                Task::none()
             }
             Message::EditLastUser => {
                 if self.streaming_block_id.is_some() {
@@ -1489,6 +1603,7 @@ impl App {
                     view_mode: ViewMode::Rendered,
                     md_items: Vec::new(),
                     model: None,
+                    apply_candidates: Vec::new(),
                 });
                 let ai_id = self.next_id();
                 self.blocks.push(Block {
@@ -1497,6 +1612,7 @@ impl App {
                     view_mode: ViewMode::Rendered,
                     md_items: Vec::new(),
                     model: self.selected_model.clone(),
+                    apply_candidates: Vec::new(),
                 });
                 self.streaming_block_id = Some(ai_id);
                 self.input.clear();
@@ -1610,7 +1726,15 @@ impl App {
                         }
                         if !assistant_text.is_empty() {
                             self.conversation
-                                .push(ChatMessage::assistant(assistant_text));
+                                .push(ChatMessage::assistant(assistant_text.clone()));
+                        }
+                        // Apply 후보 추출
+                        let candidates = parse_apply_candidates(&assistant_text);
+                        if !candidates.is_empty() {
+                            if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
+                                b.apply_candidates =
+                                    candidates.into_iter().map(|c| (c, false)).collect();
+                            }
                         }
                         self.streaming_block_id = None;
                         self.abort_handle = None;
@@ -2136,7 +2260,14 @@ impl App {
             4. 도구 결과를 받은 뒤 그것을 근거로 한국어로 답하세요.\n\
             5. **마크다운 형식 제약** (한국어 폰트 한계): italic(*text* 또는 _text_)은 \
             사용하지 마세요. 강조는 오직 **굵게**만 사용. 별표 한 개로 감싸지 말고, \
-            정말 강조가 필요하면 두 개로 감싸세요.",
+            정말 강조가 필요하면 두 개로 감싸세요.\n\
+            6. **Apply 가능한 코드 블록**: 사용자가 그대로 파일에 적용할 수 있도록, \
+            새 파일/덮어쓸 파일의 코드 블록은 첫 줄에 다음 주석을 포함하세요:\n\
+            - Rust/JS/C 계열: `// path: 상대경로`\n\
+            - Python/shell/yaml: `# path: 상대경로`\n\
+            예) ```rust\\n// path: src/foo.rs\\nfn main() {{}}\\n```\n\
+            그러면 코드 블록 옆에 'Apply' 버튼이 노출되어 사용자가 한 번에 적용할 수 있습니다. \
+            단순 예시 코드(개념 설명용)에는 path 주석을 넣지 마세요.",
             self.cwd.display(),
             mode_block,
         );
@@ -2230,6 +2361,7 @@ impl App {
             view_mode: ViewMode::Rendered,
             md_items: Vec::new(),
             model: None,
+            apply_candidates: Vec::new(),
         });
     }
 
@@ -2885,9 +3017,42 @@ impl App {
                     (BlockBody::ToolResult { .. }, _) => unreachable!("ToolResult is handled above"),
                 };
 
+                // Apply 후보 카드 (assistant 블록만, 후보 있을 때)
+                let apply_section: Element<Message> = if b.apply_candidates.is_empty() {
+                    Space::new().height(Length::Shrink).into()
+                } else {
+                    let mut col = column![text("적용 가능한 변경사항").size(11)].spacing(4);
+                    for (ci, (cand, applied)) in b.apply_candidates.iter().enumerate() {
+                        let label = if *applied {
+                            format!("✓ {} ({} bytes)", cand.path, cand.content.len())
+                        } else {
+                            format!("📝 {} ({} bytes)", cand.path, cand.content.len())
+                        };
+                        let btn: Element<Message> = if *applied {
+                            text("적용됨").size(11).into()
+                        } else {
+                            button(text("Apply").size(11))
+                                .on_press(Message::ApplyChange(b.id, ci))
+                                .padding([2, 10])
+                                .style(button::primary)
+                                .into()
+                        };
+                        col = col.push(
+                            row![
+                                text(label).size(12).font(Font::with_name("JetBrains Mono")),
+                                Space::new().width(Length::Fill),
+                                btn,
+                            ]
+                            .spacing(8)
+                            .align_y(Alignment::Center),
+                        );
+                    }
+                    col.into()
+                };
+
                 let is_user = matches!(&b.body, BlockBody::User(_));
                 let block_view = container(
-                    column![header, body_view].spacing(6),
+                    column![header, body_view, apply_section].spacing(6),
                 )
                 .padding(12)
                 .width(Length::Fill)
@@ -3827,6 +3992,7 @@ mod tests {
             view_mode: ViewMode::Rendered,
             md_items: Vec::new(),
             model: None,
+            apply_candidates: Vec::new(),
         }
     }
     fn ab(id: u64) -> Block {
@@ -3836,6 +4002,7 @@ mod tests {
             view_mode: ViewMode::Rendered,
             md_items: Vec::new(),
             model: None,
+            apply_candidates: Vec::new(),
         }
     }
     fn tb(id: u64) -> Block {
@@ -3849,6 +4016,7 @@ mod tests {
             view_mode: ViewMode::Rendered,
             md_items: Vec::new(),
             model: None,
+            apply_candidates: Vec::new(),
         }
     }
 
@@ -3885,5 +4053,83 @@ mod tests {
     fn last_assistant_idx_no_assistant() {
         let blocks = vec![ub(1), ub(2)];
         assert_eq!(last_assistant_block_idx(&blocks), None);
+    }
+
+    // ── parse_apply_candidates (P4-1) ──────────────────────────────
+
+    #[test]
+    fn apply_empty_markdown() {
+        assert!(parse_apply_candidates("").is_empty());
+        assert!(parse_apply_candidates("just plain text\nno code blocks").is_empty());
+    }
+
+    #[test]
+    fn apply_no_path_comment_skipped() {
+        let md = "```rust\nfn main() {}\n```\n";
+        assert!(parse_apply_candidates(md).is_empty());
+    }
+
+    #[test]
+    fn apply_rust_path_comment() {
+        let md = "```rust\n// path: src/foo.rs\nfn main() {}\n```\n";
+        let candidates = parse_apply_candidates(md);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].path, "src/foo.rs");
+        assert_eq!(candidates[0].language, "rust");
+        assert_eq!(candidates[0].content, "fn main() {}\n");
+    }
+
+    #[test]
+    fn apply_python_hash_comment() {
+        let md = "```python\n# path: scripts/build.py\nprint('hi')\n```\n";
+        let candidates = parse_apply_candidates(md);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].path, "scripts/build.py");
+        assert_eq!(candidates[0].language, "python");
+    }
+
+    #[test]
+    fn apply_multiple_blocks_filters_no_path() {
+        let md = "intro\n\
+                  ```rust\n// path: a.rs\nA\n```\n\
+                  some text\n\
+                  ```rust\nB without path\n```\n\
+                  ```python\n# path: b.py\nB\n```\n";
+        let candidates = parse_apply_candidates(md);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].path, "a.rs");
+        assert_eq!(candidates[1].path, "b.py");
+    }
+
+    #[test]
+    fn apply_path_comment_with_extra_spaces() {
+        let md = "```rust\n//    path:    src/x.rs   \nbody\n```\n";
+        let candidates = parse_apply_candidates(md);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].path, "src/x.rs");
+    }
+
+    #[test]
+    fn apply_unclosed_fence_ignored() {
+        // 닫는 ``` 없으면 후속 처리는 그래도 path만 매칭됐으면 채택할지 결정.
+        // 정책: 닫는 fence 없으면 미완성 → skip.
+        let md = "```rust\n// path: a.rs\nbody (no closing)\n";
+        assert!(parse_apply_candidates(md).is_empty());
+    }
+
+    #[test]
+    fn apply_no_language_still_works() {
+        let md = "```\n// path: x.txt\nhello\n```\n";
+        let candidates = parse_apply_candidates(md);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].path, "x.txt");
+        assert_eq!(candidates[0].language, "");
+    }
+
+    #[test]
+    fn apply_first_line_must_be_path() {
+        // path 주석이 둘째 줄이면 채택 안 함 (정책: 첫 줄만)
+        let md = "```rust\nfn main() {}\n// path: a.rs\n```\n";
+        assert!(parse_apply_candidates(md).is_empty());
     }
 }

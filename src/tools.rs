@@ -28,6 +28,40 @@ pub fn tool_definitions() -> serde_json::Value {
         {
             "type": "function",
             "function": {
+                "name": "glob",
+                "description": "작업 디렉토리에서 glob 패턴(예: '**/*.rs', 'src/**/*.toml')에 매칭되는 파일 경로 리스트를 반환합니다. .gitignore 자동 존중. 결과는 최대 200개.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "glob 패턴 (예: '**/*.rs')"
+                        }
+                    },
+                    "required": ["pattern"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "grep",
+                "description": "작업 디렉토리의 모든 파일에서 정규식 패턴을 검색하여 매칭되는 라인을 'path:lineno: line' 형식으로 반환합니다. .gitignore 자동 존중. 결과는 최대 300줄.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "Rust regex 문법의 정규식 패턴 (예: 'fn\\s+main')"
+                        }
+                    },
+                    "required": ["pattern"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "write_file",
                 "description": "작업 디렉토리 내의 파일에 새 내용을 작성/덮어씁니다. 사용자 승인이 필요합니다. 절대 경로는 거부됩니다.",
                 "parameters": {
@@ -71,6 +105,16 @@ struct ReadFileArgs {
 }
 
 #[derive(Debug, serde::Deserialize)]
+struct GlobArgs {
+    pattern: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GrepArgs {
+    pattern: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
 pub struct WriteFileArgs {
     pub path: String,
     pub content: String,
@@ -99,8 +143,98 @@ pub fn dispatch(name: &str, arguments_json: &str, cwd: &Path) -> String {
             },
             Err(e) => format!("[error] arguments JSON 파싱 실패: {}", e),
         },
+        "glob" => match serde_json::from_str::<GlobArgs>(arguments_json) {
+            Ok(args) => match glob_files(cwd, &args.pattern, 200) {
+                Ok(paths) => {
+                    if paths.is_empty() {
+                        "0 matches".to_string()
+                    } else {
+                        format!("{} matches:\n{}", paths.len(), paths.join("\n"))
+                    }
+                }
+                Err(e) => format!("[error] {}", e),
+            },
+            Err(e) => format!("[error] arguments JSON 파싱 실패: {}", e),
+        },
+        "grep" => match serde_json::from_str::<GrepArgs>(arguments_json) {
+            Ok(args) => match grep_files(cwd, &args.pattern, 300) {
+                Ok(lines) => {
+                    if lines.is_empty() {
+                        "0 matches".to_string()
+                    } else {
+                        format!("{} matches:\n{}", lines.len(), lines.join("\n"))
+                    }
+                }
+                Err(e) => format!("[error] {}", e),
+            },
+            Err(e) => format!("[error] arguments JSON 파싱 실패: {}", e),
+        },
         other => format!("[error] 알 수 없는 도구: {}", other),
     }
+}
+
+fn glob_files(cwd: &Path, pattern: &str, max_results: usize) -> Result<Vec<String>, String> {
+    let glob = globset::Glob::new(pattern)
+        .map_err(|e| format!("glob 패턴 오류: {}", e))?
+        .compile_matcher();
+    let mut results = Vec::new();
+    for entry in ignore::WalkBuilder::new(cwd).build() {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !entry.file_type().map_or(false, |ft| ft.is_file()) {
+            continue;
+        }
+        let rel = match entry.path().strip_prefix(cwd) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if glob.is_match(rel) {
+            results.push(rel.display().to_string().replace('\\', "/"));
+            if results.len() >= max_results {
+                break;
+            }
+        }
+    }
+    Ok(results)
+}
+
+fn grep_files(cwd: &Path, pattern: &str, max_lines: usize) -> Result<Vec<String>, String> {
+    let re = regex::Regex::new(pattern).map_err(|e| format!("정규식 오류: {}", e))?;
+    let mut results = Vec::new();
+    for entry in ignore::WalkBuilder::new(cwd).build() {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !entry.file_type().map_or(false, |ft| ft.is_file()) {
+            continue;
+        }
+        let rel = match entry.path().strip_prefix(cwd) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let content = match fs::read_to_string(entry.path()) {
+            Ok(s) => s,
+            Err(_) => continue, // 바이너리/권한 문제 등 스킵
+        };
+        let rel_str = rel.display().to_string().replace('\\', "/");
+        for (lineno, line) in content.lines().enumerate() {
+            if re.is_match(line) {
+                let line_trimmed = if line.len() > 200 {
+                    format!("{}…", &line[..200])
+                } else {
+                    line.to_string()
+                };
+                results.push(format!("{}:{}: {}", rel_str, lineno + 1, line_trimmed));
+                if results.len() >= max_lines {
+                    return Ok(results);
+                }
+            }
+        }
+    }
+    Ok(results)
 }
 
 fn write_file(cwd: &Path, rel_path: &str, content: &str) -> Result<(), String> {

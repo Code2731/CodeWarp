@@ -16,7 +16,7 @@ use iced::widget::{
     button, column, combo_box, container, row, scrollable, text, text_editor, text_input,
     Id as ScrollId, Space,
 };
-use iced::{font, Alignment, Element, Font, Length, Size, Task, Theme};
+use iced::{font, Alignment, Color, Element, Font, Length, Size, Task, Theme};
 
 use openrouter::{ChatEvent, ChatMessage, OpenRouterModel};
 
@@ -94,6 +94,51 @@ struct Block {
     view_mode: ViewMode,
     /// assistant Rendered용 캐시. 토큰 도착 시마다 갱신.
     md_items: Vec<markdown::Item>,
+}
+
+/// 두 텍스트의 line-by-line diff를 색상 표시된 Element로 변환.
+/// 추가 라인은 녹색, 삭제 라인은 빨강, 동일 라인은 흐리게.
+fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
+    use similar::{ChangeTag, TextDiff};
+
+    const MAX_LINES: usize = 400;
+    let added = Color::from_rgb(0.55, 0.85, 0.55);
+    let removed = Color::from_rgb(0.95, 0.45, 0.45);
+    let equal = Color::from_rgb(0.5, 0.5, 0.55);
+
+    let diff = TextDiff::from_lines(old, new);
+    let mut col = column![].spacing(0);
+    let mut count = 0usize;
+    for change in diff.iter_all_changes() {
+        if count >= MAX_LINES {
+            col = col.push(
+                text(format!("…(diff 라인 {}+ 생략)", MAX_LINES))
+                    .size(11)
+                    .color(equal),
+            );
+            break;
+        }
+        let (sign, color) = match change.tag() {
+            ChangeTag::Delete => ("-", removed),
+            ChangeTag::Insert => ("+", added),
+            ChangeTag::Equal => (" ", equal),
+        };
+        let raw = change.value().trim_end_matches('\n');
+        // 너무 긴 줄은 잘라서 화면 폭 보호
+        let line_text = if raw.len() > 200 {
+            format!("{} {}…", sign, &raw[..200])
+        } else {
+            format!("{} {}", sign, raw)
+        };
+        col = col.push(
+            text(line_text)
+                .size(11)
+                .font(Font::with_name("JetBrains Mono"))
+                .color(color),
+        );
+        count += 1;
+    }
+    container(col).padding(10).width(Length::Fill).into()
 }
 
 /// markdown::view_with용 커스텀 Viewer. heading은 Bold weight 강제.
@@ -558,10 +603,18 @@ impl App {
     /// conversation 첫 위치에 cwd를 알려주는 system 메시지를 보장 (없으면 추가, 있으면 갱신).
     fn ensure_system_message(&mut self) {
         let prompt = format!(
-            "당신은 CodeWarp의 코딩 어시스턴트입니다. 사용자의 현재 작업 디렉토리는 \
-            '{}' 입니다. 파일 내용을 보거나 인용해야 할 때는 read_file 도구를 사용하세요. \
-            도구의 path 인자는 반드시 작업 디렉토리 기준 상대 경로여야 합니다 (절대 경로 거부됨). \
-            먼저 도구 결과를 받은 뒤, 그것을 근거로 답하세요.",
+            "당신은 CodeWarp의 코딩 어시스턴트입니다.\n\n\
+            작업 디렉토리: '{}'\n\n\
+            사용 가능한 도구 (적극적으로 호출하세요):\n\
+            - read_file(path): 파일 내용 읽기 (즉시 실행)\n\
+            - write_file(path, content): 파일 작성/덮어쓰기 (사용자 승인 후 실행)\n\
+            - glob(pattern): 패턴 매칭 파일 리스트 (예: '**/*.rs', 'examples/**/*')\n\
+            - grep(pattern): 정규식으로 모든 파일 검색\n\n\
+            규칙:\n\
+            1. 파일 시스템을 살펴봐야 할 때는 '확인하겠습니다' 같은 말 없이 즉시 도구를 호출하세요.\n\
+            2. 새 파일을 만들기 전에 glob으로 기존 구조를 먼저 확인하세요.\n\
+            3. 모든 path 인자는 작업 디렉토리 기준 상대 경로 (절대 경로 거부).\n\
+            4. 도구 결과를 받은 뒤 그것을 근거로 한국어로 답하세요.",
             self.cwd.display()
         );
         if let Some(first) = self.conversation.first_mut() {
@@ -737,10 +790,15 @@ impl App {
         };
 
         let bar = row![
-            text("CodeWarp").size(18),
             Space::new().width(Length::Fill),
             model_picker,
-            button(text("⚙").size(14)).on_press(Message::OpenSettings),
+            button(
+                text("⚙")
+                    .size(16)
+                    .align_y(Alignment::Center)
+            )
+            .on_press(Message::OpenSettings)
+            .padding([6, 12]),
         ]
         .spacing(12)
         .align_y(Alignment::Center);
@@ -938,24 +996,28 @@ impl App {
         for tc in &self.pending_write_calls {
             let card: Element<Message> = match tools::WriteFileArgs::parse(&tc.arguments) {
                 Ok(args) => {
-                    let total_chars = args.content.chars().count();
-                    let preview = if total_chars > 1500 {
-                        let head: String = args.content.chars().take(1500).collect();
-                        format!("{}\n…(총 {} chars 중 처음 1500만 표시)", head, total_chars)
-                    } else {
-                        args.content.clone()
+                    // 기존 파일 (있으면) 읽어서 diff 표시, 없으면 새 파일 표시
+                    let abs_path = self.cwd.join(&args.path);
+                    let old_content = std::fs::read_to_string(&abs_path).ok();
+                    let header = match &old_content {
+                        Some(_) => format!("📝 {} ({} bytes)", args.path, args.content.len()),
+                        None => format!("✨ 새 파일: {} ({} bytes)", args.path, args.content.len()),
                     };
-                    column![
-                        text(format!("📝 {}", args.path)).size(15),
-                        text(format!("{} bytes", args.content.len())).size(11),
-                        Space::new().height(Length::Fixed(6.0)),
-                        container(
-                            text(preview)
+                    let diff_view: Element<Message> = match old_content {
+                        Some(old) => render_diff(&old, &args.content),
+                        None => container(
+                            text(args.content.clone())
                                 .size(12)
-                                .font(Font::with_name("JetBrains Mono"))
+                                .font(Font::with_name("JetBrains Mono")),
                         )
                         .padding(10)
-                        .width(Length::Fill),
+                        .width(Length::Fill)
+                        .into(),
+                    };
+                    column![
+                        text(header).size(15),
+                        Space::new().height(Length::Fixed(6.0)),
+                        diff_view,
                     ]
                     .spacing(4)
                     .into()

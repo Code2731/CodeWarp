@@ -25,6 +25,27 @@ pub fn chat_base(url: &str) -> String {
     format!("{}/v1", normalize_base(url))
 }
 
+/// 연결 에러 원문을 사용자 친화 actionable 메시지로 변환.
+pub fn humanize_error(raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+    if lower.contains("refused") || lower.contains("os error 10061") {
+        return "서버 응답 없음 — `tabby serve` 실행 중인지 확인 (기본 8080)".into();
+    }
+    if lower.contains("dns") || lower.contains("nodename") {
+        return "호스트 주소 확인 — URL의 도메인이 맞나요?".into();
+    }
+    if lower.contains("timeout") || lower.contains("timed out") {
+        return "응답 지연 — 서버는 살아있지만 5초 내 응답 없음".into();
+    }
+    if raw.contains("Tabby 401") || raw.contains("Tabby 403") {
+        return "인증 실패 — token이 필요/잘못됨".into();
+    }
+    if raw.contains("Tabby 404") {
+        return "404 — base URL이 맞나요? `/v1/models` 경로 확인".into();
+    }
+    raw.to_string()
+}
+
 #[derive(Deserialize)]
 struct ModelInfo {
     id: String,

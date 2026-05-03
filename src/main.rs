@@ -61,7 +61,10 @@ struct ModelOption {
     completion_per_million: Option<f64>,
 }
 
-/// 1234567 → "1.2M", 128000 → "128k". 라벨 짧게 표시용.
+fn vscrollbar() -> Scrollbar {
+    Scrollbar::new().width(8).scroller_width(8).margin(2)
+}
+
 fn fmt_context_length(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
@@ -268,30 +271,6 @@ fn persisted_to_block(pb: session::PersistedBlock) -> Block {
     }
 }
 
-/// Tabby 연결 에러 원문을 사용자 친화 actionable 메시지로 변환.
-fn humanize_tabby_error(raw: &str) -> String {
-    let lower = raw.to_ascii_lowercase();
-    if lower.contains("connection refused")
-        || lower.contains("connect")
-            && (lower.contains("refused") || lower.contains("os error 10061"))
-    {
-        return "서버 응답 없음 — `tabby serve` 실행 중인지 확인 (기본 8080)".into();
-    }
-    if lower.contains("dns") || lower.contains("nodename") {
-        return "호스트 주소 확인 — URL의 도메인이 맞나요?".into();
-    }
-    if lower.contains("timeout") || lower.contains("timed out") {
-        return "응답 지연 — 서버는 살아있지만 5초 내 응답 없음".into();
-    }
-    if raw.contains("Tabby 401") || raw.contains("Tabby 403") {
-        return "인증 실패 — token이 필요/잘못됨".into();
-    }
-    if raw.contains("Tabby 404") {
-        return "404 — base URL이 맞나요? `/v1/models` 경로 확인".into();
-    }
-    raw.to_string()
-}
-
 /// 도구 호출 결과를 ToolResult 칩에 표시할 한 줄 요약 + 성공 여부로 변환.
 fn summarize_tool_result(name: &str, args_json: &str, result: &str) -> (String, bool) {
     let lower = result.to_ascii_lowercase();
@@ -439,14 +418,6 @@ impl<'a> Viewer<'a, Message> for CodewarpViewer {
     }
 }
 
-/// Right panel에 누적되는 도구 호출 기록 (현재 세션 한정, 휘발성).
-#[derive(Debug, Clone)]
-struct ToolLogEntry {
-    name: String,
-    summary: String,
-    success: bool,
-}
-
 /// 도구 호출이 SSE delta로 부분씩 도착하는 동안 누적할 임시 구조.
 #[derive(Default, Clone)]
 struct PendingToolCall {
@@ -483,8 +454,6 @@ struct App {
     pending_delete_session: Option<u64>,
     /// 인라인 confirm에서 펼친 카드 인덱스 (한 번에 하나만 펼침).
     expanded_confirm_idx: Option<usize>,
-    /// 현재 세션의 도구 호출 누적 로그 (right panel 표시용, 휘발성).
-    tool_log: Vec<ToolLogEntry>,
 
     show_settings: bool,
 
@@ -797,7 +766,6 @@ impl App {
             abort_handle: None,
             pending_delete_session: None,
             expanded_confirm_idx: None,
-            tool_log: Vec::new(),
             show_settings: !has_key,
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
@@ -1060,7 +1028,7 @@ impl App {
                         }
                     }
                     Err(e) => {
-                        let actionable = humanize_tabby_error(&e);
+                        let actionable = tabby::humanize_error(&e);
                         self.status = format!("Tabby 연결 실패: {}", actionable);
                         self.tabby_status = Some(Err(actionable));
                     }
@@ -1489,7 +1457,6 @@ impl App {
                 self.show_write_confirm = false;
                 self.streaming_block_id = None;
                 self.tool_round = 0;
-                self.tool_log.clear();
                 self.next_block_id = 0;
                 self.input.clear();
                 self.current_session_id = self.allocate_session_id();
@@ -1524,7 +1491,6 @@ impl App {
                 self.show_write_confirm = false;
                 self.streaming_block_id = None;
                 self.tool_round = 0;
-                self.tool_log.clear();
                 self.input.clear();
                 self.status = "세션 전환됨".into();
                 self.save_session();
@@ -1620,7 +1586,6 @@ impl App {
                     // 현재 활성을 삭제 → 빈 세션으로 대체
                     self.blocks.clear();
                     self.conversation.clear();
-                    self.tool_log.clear();
                     self.next_block_id = 0;
                     self.current_session_id = self.allocate_session_id();
                     self.current_session_title = "새 채팅".into();
@@ -1933,24 +1898,18 @@ impl App {
     }
 
     /// 도구 실행 결과 chip 블록을 stream에 push (휘발성 — 세션 저장 안 됨).
-    /// 동시에 right panel용 tool_log에도 기록.
     fn push_tool_result_block(&mut self, name: String, summary: String, success: bool) {
         let id = self.next_id();
         self.blocks.push(Block {
             id,
             body: BlockBody::ToolResult {
-                name: name.clone(),
-                summary: summary.clone(),
+                name,
+                summary,
                 success,
             },
             view_mode: ViewMode::Rendered,
             md_items: Vec::new(),
             model: None,
-        });
-        self.tool_log.push(ToolLogEntry {
-            name,
-            summary,
-            success,
         });
     }
 
@@ -2318,7 +2277,7 @@ impl App {
             text("채팅").size(11),
             scrollable(sessions_col)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(8).scroller_width(8).margin(2),
+                    vscrollbar(),
                 ))
                 .height(Length::Fixed(220.0)),
             Space::new().height(Length::Fixed(14.0)),
@@ -2341,7 +2300,7 @@ impl App {
 
         container(scrollable(body)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(8).scroller_width(8).margin(2),
+                    vscrollbar(),
                 ))
                 .height(Length::Fill))
             .width(Length::Fixed(220.0))
@@ -2351,14 +2310,26 @@ impl App {
     }
 
     fn view_rightpanel(&self) -> Element<'_, Message> {
-        // 세션 통계 — derive
+        // 세션 통계 — blocks/conversation에서 derive
         let user_msg_count = self
             .conversation
             .iter()
             .filter(|m| m.role == "user")
             .count();
-        let tool_count = self.tool_log.len();
-        let success_count = self.tool_log.iter().filter(|e| e.success).count();
+        let tool_results: Vec<(&str, &str, bool)> = self
+            .blocks
+            .iter()
+            .filter_map(|b| match &b.body {
+                BlockBody::ToolResult {
+                    name,
+                    summary,
+                    success,
+                } => Some((name.as_str(), summary.as_str(), *success)),
+                _ => None,
+            })
+            .collect();
+        let tool_count = tool_results.len();
+        let success_count = tool_results.iter().filter(|(_, _, s)| *s).count();
         let fail_count = tool_count - success_count;
 
         let stats = column![
@@ -2375,12 +2346,12 @@ impl App {
 
         // 도구 호출 로그 (역순 — 최근이 위)
         let mut log_col = column![text("도구 호출 로그").size(11)].spacing(2);
-        if self.tool_log.is_empty() {
+        if tool_results.is_empty() {
             log_col = log_col.push(text("// 도구 호출 시 여기 누적").size(11));
         } else {
-            for entry in self.tool_log.iter().rev() {
-                let icon = if entry.success { "✓" } else { "✗" };
-                let line = text(format!("{} {} → {}", icon, entry.name, entry.summary))
+            for (name, summary, success) in tool_results.iter().rev() {
+                let icon = if *success { "✓" } else { "✗" };
+                let line = text(format!("{} {} → {}", icon, name, summary))
                     .size(11)
                     .font(Font::with_name("JetBrains Mono"));
                 log_col = log_col.push(line);
@@ -2416,7 +2387,7 @@ impl App {
         container(
             scrollable(body)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(8).scroller_width(8).margin(2),
+                    vscrollbar(),
                 ))
                 .height(Length::Fill),
         )
@@ -2606,7 +2577,7 @@ impl App {
                 .id(self.stream_id.clone())
                 .on_scroll(Message::StreamScrolled)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(8).scroller_width(8).margin(2),
+                    vscrollbar(),
                 ))
                 .height(Length::Fill)
                 .into()
@@ -2734,7 +2705,7 @@ impl App {
             Space::new().height(Length::Fixed(8.0)),
             scrollable(list)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(8).scroller_width(8).margin(2),
+                    vscrollbar(),
                 ))
                 .height(Length::Fixed(320.0)),
             Space::new().height(Length::Fixed(8.0)),
@@ -2848,7 +2819,7 @@ impl App {
                 container(
                     scrollable(cards)
                         .direction(Direction::Vertical(
-                            Scrollbar::new().width(8).scroller_width(8).margin(2),
+                            vscrollbar(),
                         ))
                 )
                 .max_height(140.0),
@@ -2978,7 +2949,7 @@ impl App {
         container(
             scrollable(col)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(8).scroller_width(8).margin(2),
+                    vscrollbar(),
                 ))
                 .height(Length::Fill),
         )

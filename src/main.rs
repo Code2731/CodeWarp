@@ -338,6 +338,8 @@ struct App {
     favorites: HashSet<String>,
     /// 모델 리스트 정렬 모드
     sort_mode: SortMode,
+    /// 에이전트 모드: Plan(읽기 전용 도구만) ↔ Build(파일/명령 실행 포함)
+    agent_mode: AgentMode,
 
     // ── 멀티 세션 ─────────────────────────────────
     /// 비활성 세션 목록 (활성 세션은 위 conversation/blocks에)
@@ -368,6 +370,26 @@ enum ModelCategory {
     Coding,
     Reasoning,
     General,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AgentMode {
+    /// 읽기 전용 도구만 (read_file, glob, grep) — 분석/계획 단계
+    Plan,
+    /// 모든 도구 (write_file, run_command 포함) — 실제 변경 단계
+    Build,
+}
+
+impl AgentMode {
+    fn allow_mutating(self) -> bool {
+        matches!(self, AgentMode::Build)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            AgentMode::Plan => "🔍 Plan",
+            AgentMode::Build => "🔧 Build",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -458,6 +480,8 @@ enum Message {
     ToggleFavorite,
     CycleSortMode,
     NewChat,
+    SetAgentMode(AgentMode),
+    ToggleAgentMode,
     SwitchSession(u64),
     DeleteSession(u64),
     GenerationLoaded(Result<GenerationData, String>),
@@ -515,6 +539,7 @@ impl App {
             filter_favorites_only: false,
             favorites: session::read_favorites().into_iter().collect(),
             sort_mode: SortMode::Default,
+            agent_mode: AgentMode::Plan,
             inactive_sessions: Vec::new(),
             current_session_id: 1,
             current_session_title: String::new(),
@@ -726,7 +751,30 @@ impl App {
             }
             Message::Send => {
                 let text = self.input.trim().to_string();
-                if text.is_empty() || self.selected_model.is_none() || self.streaming_block_id.is_some() {
+                if text.is_empty() {
+                    return Task::none();
+                }
+                // 슬래시 커맨드 처리
+                match text.as_str() {
+                    "/plan" => {
+                        self.agent_mode = AgentMode::Plan;
+                        self.input.clear();
+                        self.status = format!("{} 모드", AgentMode::Plan.label());
+                        return Task::none();
+                    }
+                    "/build" => {
+                        self.agent_mode = AgentMode::Build;
+                        self.input.clear();
+                        self.status = format!("{} 모드", AgentMode::Build.label());
+                        return Task::none();
+                    }
+                    s if s.starts_with('/') => {
+                        self.status = format!("알 수 없는 슬래시 명령: {}", s);
+                        return Task::none();
+                    }
+                    _ => {}
+                }
+                if self.selected_model.is_none() || self.streaming_block_id.is_some() {
                     return Task::none();
                 }
                 let api_key = match keystore::read_api_key() {
@@ -771,7 +819,7 @@ impl App {
                             api_key,
                             model,
                             messages,
-                            Some(tools::tool_definitions()),
+                            Some(tools::tool_definitions(self.agent_mode.allow_mutating())),
                         ),
                         Message::ChatChunk,
                     ),
@@ -954,6 +1002,19 @@ impl App {
             Message::CycleSortMode => {
                 self.sort_mode = self.sort_mode.cycle();
                 self.refresh_model_combo();
+                Task::none()
+            }
+            Message::SetAgentMode(mode) => {
+                self.agent_mode = mode;
+                self.status = format!("{} 모드", mode.label());
+                Task::none()
+            }
+            Message::ToggleAgentMode => {
+                self.agent_mode = match self.agent_mode {
+                    AgentMode::Plan => AgentMode::Build,
+                    AgentMode::Build => AgentMode::Plan,
+                };
+                self.status = format!("{} 모드", self.agent_mode.label());
                 Task::none()
             }
             Message::NewChat => {
@@ -1225,13 +1286,27 @@ impl App {
 
     /// conversation 첫 위치에 cwd를 알려주는 system 메시지를 보장 (없으면 추가, 있으면 갱신).
     fn ensure_system_message(&mut self) {
+        let mode_block = match self.agent_mode {
+            AgentMode::Plan => {
+                "현재 모드: Plan (분석/계획 전용)\n\
+                Plan 모드에서는 read_file/glob/grep으로 코드를 조사하고 변경 계획만 \
+                제시하세요. 실제 파일 변경이나 명령 실행은 Build 모드에서만 가능하므로, \
+                계획에 '필요한 변경'을 명확히 적고 사용자가 Build로 전환하기를 기다리세요.\n\n"
+            }
+            AgentMode::Build => {
+                "현재 모드: Build (실행 가능)\n\
+                Build 모드에서는 write_file/run_command를 사용해 실제 변경을 적용할 수 \
+                있습니다. 단, 두 도구 모두 사용자 승인을 거치므로 부담 없이 호출하세요.\n\n"
+            }
+        };
         let prompt = format!(
             "당신은 CodeWarp의 코딩 어시스턴트입니다.\n\n\
             작업 디렉토리: '{}'\n\n\
+            {}\
             사용 가능한 도구 (적극적으로 호출하세요):\n\
             - read_file(path): 파일 내용 읽기 (즉시 실행)\n\
-            - write_file(path, content): 파일 작성/덮어쓰기 (사용자 승인 후 실행)\n\
-            - run_command(command): 셸 명령 실행 (사용자 승인 후 실행)\n\
+            - write_file(path, content): 파일 작성/덮어쓰기 (Build 모드 + 사용자 승인)\n\
+            - run_command(command): 셸 명령 실행 (Build 모드 + 사용자 승인)\n\
             - glob(pattern): 패턴 매칭 파일 리스트 (예: '**/*.rs', 'examples/**/*')\n\
             - grep(pattern): 정규식으로 모든 파일 검색\n\n\
             규칙:\n\
@@ -1242,7 +1317,8 @@ impl App {
             5. **마크다운 형식 제약** (한국어 폰트 한계): italic(*text* 또는 _text_)은 \
             사용하지 마세요. 강조는 오직 **굵게**만 사용. 별표 한 개로 감싸지 말고, \
             정말 강조가 필요하면 두 개로 감싸세요.",
-            self.cwd.display()
+            self.cwd.display(),
+            mode_block,
         );
         if let Some(first) = self.conversation.first_mut() {
             if first.role == "system" {
@@ -1370,7 +1446,7 @@ impl App {
                 api_key,
                 model,
                 messages,
-                Some(tools::tool_definitions()),
+                Some(tools::tool_definitions(self.agent_mode.allow_mutating())),
             ),
             Message::ChatChunk,
         )
@@ -1743,8 +1819,36 @@ impl App {
 
         let send_disabled =
             self.input.trim().is_empty() || self.selected_model.is_none();
+
+        // 입력창 좌측 모드 라벨 (클릭으로 Plan ↔ Build 토글)
+        let mode_label = button(text(self.agent_mode.label()).size(11))
+            .on_press(Message::ToggleAgentMode)
+            .padding([6, 10]);
+
+        // 슬래시 hint: 입력이 '/'로 시작하면 입력창 위에 명령 버튼 줄
+        let slash_hint: Element<Message> = if self.input.starts_with('/') {
+            container(
+                row![
+                    text("커맨드:").size(11),
+                    button(text("/plan").size(11))
+                        .on_press(Message::SetAgentMode(AgentMode::Plan))
+                        .padding([2, 8]),
+                    button(text("/build").size(11))
+                        .on_press(Message::SetAgentMode(AgentMode::Build))
+                        .padding([2, 8]),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            )
+            .padding([4, 8])
+            .into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
         let input_row = row![
-            text_input("질문을 입력하세요…", &self.input)
+            mode_label,
+            text_input("질문을 입력하세요…  (/plan, /build로 모드 전환)", &self.input)
                 .on_input(Message::InputChanged)
                 .on_submit(Message::Send)
                 .padding(10),
@@ -1769,6 +1873,7 @@ impl App {
                 .height(Length::Fill)
                 .padding([14, 18]),
             container(confirm_panel).padding([0, 14]),
+            container(slash_hint).padding([0, 14]),
             container(input_row)
                 .padding([10, 14])
                 .width(Length::Fill),

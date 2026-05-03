@@ -6,7 +6,19 @@ use std::path::{Path, PathBuf};
 
 const MAX_READ_BYTES: u64 = 1_000_000;
 
-pub fn tool_definitions() -> serde_json::Value {
+pub fn tool_definitions(allow_mutating: bool) -> serde_json::Value {
+    let mut tools = read_only_tools();
+    if allow_mutating {
+        if let serde_json::Value::Array(arr) = &mut tools {
+            if let serde_json::Value::Array(muts) = mutating_tools() {
+                arr.extend(muts);
+            }
+        }
+    }
+    tools
+}
+
+fn read_only_tools() -> serde_json::Value {
     serde_json::json!([
         {
             "type": "function",
@@ -58,7 +70,12 @@ pub fn tool_definitions() -> serde_json::Value {
                     "required": ["pattern"]
                 }
             }
-        },
+        }
+    ])
+}
+
+fn mutating_tools() -> serde_json::Value {
+    serde_json::json!([
         {
             "type": "function",
             "function": {

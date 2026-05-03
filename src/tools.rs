@@ -62,6 +62,23 @@ pub fn tool_definitions() -> serde_json::Value {
         {
             "type": "function",
             "function": {
+                "name": "run_command",
+                "description": "작업 디렉토리에서 셸 명령(Windows: cmd /C, Unix: sh -c)을 실행하고 stdout/stderr/exit code를 반환합니다. 부작용이 있을 수 있으므로 사용자 승인 후 실행됩니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "실행할 셸 명령 (예: 'cargo check', 'ls -la', 'git status')"
+                        }
+                    },
+                    "required": ["command"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "write_file",
                 "description": "작업 디렉토리 내의 파일에 새 내용을 작성/덮어씁니다. 사용자 승인이 필요합니다. 절대 경로는 거부됩니다.",
                 "parameters": {
@@ -94,7 +111,7 @@ pub enum ToolKind {
 
 pub fn tool_kind(name: &str) -> ToolKind {
     match name {
-        "write_file" => ToolKind::Mutating,
+        "write_file" | "run_command" => ToolKind::Mutating,
         _ => ToolKind::ReadOnly,
     }
 }
@@ -126,6 +143,17 @@ impl WriteFileArgs {
     }
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct RunCommandArgs {
+    pub command: String,
+}
+
+impl RunCommandArgs {
+    pub fn parse(arguments_json: &str) -> Result<Self, String> {
+        serde_json::from_str(arguments_json).map_err(|e| e.to_string())
+    }
+}
+
 /// 도구 호출 결과를 OpenRouter `role: "tool"` 메시지의 content로 그대로 사용 가능한 문자열.
 pub fn dispatch(name: &str, arguments_json: &str, cwd: &Path) -> String {
     match name {
@@ -141,6 +169,10 @@ pub fn dispatch(name: &str, arguments_json: &str, cwd: &Path) -> String {
                 Ok(()) => format!("[ok] {} 에 {} bytes 작성", args.path, args.content.len()),
                 Err(e) => format!("[error] {}", e),
             },
+            Err(e) => format!("[error] arguments JSON 파싱 실패: {}", e),
+        },
+        "run_command" => match RunCommandArgs::parse(arguments_json) {
+            Ok(args) => run_command(cwd, &args.command),
             Err(e) => format!("[error] arguments JSON 파싱 실패: {}", e),
         },
         "glob" => match serde_json::from_str::<GlobArgs>(arguments_json) {
@@ -235,6 +267,66 @@ fn grep_files(cwd: &Path, pattern: &str, max_lines: usize) -> Result<Vec<String>
         }
     }
     Ok(results)
+}
+
+const MAX_CMD_OUTPUT: usize = 100_000;
+
+fn run_command(cwd: &Path, command: &str) -> String {
+    use std::process::Command;
+
+    let mut cmd;
+    #[cfg(windows)]
+    {
+        cmd = Command::new("cmd");
+        cmd.args(["/C", command]);
+    }
+    #[cfg(not(windows))]
+    {
+        cmd = Command::new("sh");
+        cmd.args(["-c", command]);
+    }
+    cmd.current_dir(cwd);
+
+    let output = match cmd.output() {
+        Ok(o) => o,
+        Err(e) => return format!("[error] 명령 실행 실패: {}", e),
+    };
+
+    let mut result = String::new();
+    let code = output.status.code().unwrap_or(-1);
+    result.push_str(&format!("$ {}\n", command));
+    result.push_str(&format!("exit code: {}\n", code));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.trim().is_empty() {
+        result.push_str("--- stdout ---\n");
+        if stdout.len() > MAX_CMD_OUTPUT {
+            result.push_str(&stdout[..MAX_CMD_OUTPUT]);
+            result.push_str(&format!(
+                "\n…(stdout {} bytes 잘림)\n",
+                stdout.len() - MAX_CMD_OUTPUT
+            ));
+        } else {
+            result.push_str(&stdout);
+        }
+        if !result.ends_with('\n') {
+            result.push('\n');
+        }
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.trim().is_empty() {
+        result.push_str("--- stderr ---\n");
+        if stderr.len() > MAX_CMD_OUTPUT {
+            result.push_str(&stderr[..MAX_CMD_OUTPUT]);
+            result.push_str(&format!(
+                "\n…(stderr {} bytes 잘림)",
+                stderr.len() - MAX_CMD_OUTPUT
+            ));
+        } else {
+            result.push_str(&stderr);
+        }
+    }
+    result
 }
 
 fn write_file(cwd: &Path, rel_path: &str, content: &str) -> Result<(), String> {

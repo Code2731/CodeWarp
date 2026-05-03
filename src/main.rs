@@ -228,7 +228,9 @@ fn modal_overlay<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
         .into()
 }
 
-/// markdown::view_with용 커스텀 Viewer. heading은 Bold weight 강제.
+/// markdown::view_with용 커스텀 Viewer.
+/// - heading: Bold weight 강제
+/// - paragraph: italic span을 Normal+SemiBold로 변환 (한국어 글리프 깨짐 회피)
 struct CodewarpViewer;
 
 impl<'a> Viewer<'a, Message> for CodewarpViewer {
@@ -247,6 +249,32 @@ impl<'a> Viewer<'a, Message> for CodewarpViewer {
         bold.weight = font::Weight::Bold;
         settings.style.font = bold;
         markdown::heading(settings, level, text, index, Self::on_link_click)
+    }
+
+    fn paragraph(
+        &self,
+        settings: MdSettings,
+        text: &MdText,
+    ) -> Element<'a, Message> {
+        let spans_arc = text.spans(settings.style);
+        let normalized: Vec<iced::advanced::text::Span<'static, markdown::Uri>> = spans_arc
+            .iter()
+            .map(|s| {
+                let mut s = s.clone();
+                if let Some(font) = s.font.as_mut() {
+                    if !matches!(font.style, iced::font::Style::Normal) {
+                        font.style = iced::font::Style::Normal;
+                        if matches!(font.weight, iced::font::Weight::Normal) {
+                            font.weight = iced::font::Weight::Semibold;
+                        }
+                    }
+                }
+                s
+            })
+            .collect();
+        iced::widget::rich_text(normalized)
+            .on_link_click(Self::on_link_click)
+            .into()
     }
 }
 
@@ -279,6 +307,8 @@ struct App {
 
     stream_id: ScrollId,
     follow_bottom: bool,
+    /// 활성 세션의 현재 stream scroll y (StreamScrolled로 갱신)
+    current_scroll_y: f32,
 
     /// OpenRouter에 보낼 누적 대화 (도구 호출 round trip 포함)
     conversation: Vec<ChatMessage>,
@@ -330,6 +360,7 @@ struct InactiveSession {
     conversation: Vec<ChatMessage>,
     blocks: Vec<session::PersistedBlock>,
     next_block_id: u64,
+    scroll_y: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -464,6 +495,7 @@ impl App {
             show_settings: !has_key,
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
+            current_scroll_y: 0.0,
             conversation: Vec::new(),
             pending_tool_calls: Vec::new(),
             tool_round: 0,
@@ -509,6 +541,7 @@ impl App {
                 conversation: s.conversation.clone(),
                 blocks: s.blocks.clone(),
                 next_block_id: s.next_block_id,
+                scroll_y: s.scroll_y,
             })
             .collect();
 
@@ -521,6 +554,7 @@ impl App {
             .into_iter()
             .map(persisted_to_block)
             .collect();
+        app.current_scroll_y = active.scroll_y;
         app.inactive_sessions = inactive;
         app.next_session_id = persisted
             .sessions
@@ -529,13 +563,31 @@ impl App {
             .max()
             .unwrap_or(0)
             + 1;
-        let task = if has_key {
-            Task::batch(vec![
-                Task::done(Message::FetchModels),
-                Task::done(Message::FetchAccount),
-            ])
+        // 활성 세션의 마지막 scroll 위치 복원 task
+        let restore_scroll = if app.current_scroll_y > 0.0 {
+            Some(iced::widget::operation::scroll_to(
+                app.stream_id.clone(),
+                iced::widget::scrollable::AbsoluteOffset {
+                    x: 0.0,
+                    y: app.current_scroll_y,
+                },
+            ))
         } else {
+            None
+        };
+
+        let mut tasks: Vec<Task<Message>> = Vec::new();
+        if has_key {
+            tasks.push(Task::done(Message::FetchModels));
+            tasks.push(Task::done(Message::FetchAccount));
+        }
+        if let Some(t) = restore_scroll {
+            tasks.push(t);
+        }
+        let task = if tasks.is_empty() {
             Task::none()
+        } else {
+            Task::batch(tasks)
         };
         (app, task)
     }
@@ -839,6 +891,7 @@ impl App {
                 // 사용자가 거의 끝까지 내려가 있으면 follow ON, 아니면 OFF
                 let rel = viewport.relative_offset();
                 self.follow_bottom = rel.y > 0.95;
+                self.current_scroll_y = viewport.absolute_offset().y;
                 Task::none()
             }
             Message::EditorAction(id, action) => {
@@ -941,6 +994,7 @@ impl App {
                 self.conversation = target.conversation;
                 self.next_block_id = target.next_block_id;
                 self.blocks = target.blocks.into_iter().map(persisted_to_block).collect();
+                self.current_scroll_y = target.scroll_y;
                 self.pending_tool_calls.clear();
                 self.pending_write_calls.clear();
                 self.show_write_confirm = false;
@@ -949,7 +1003,14 @@ impl App {
                 self.input.clear();
                 self.status = "세션 전환됨".into();
                 self.save_session();
-                Task::none()
+                // 새 세션의 마지막 scroll 위치로 복원
+                iced::widget::operation::scroll_to(
+                    self.stream_id.clone(),
+                    iced::widget::scrollable::AbsoluteOffset {
+                        x: 0.0,
+                        y: target.scroll_y,
+                    },
+                )
             }
             Message::GenerationLoaded(r) => {
                 if let Ok(data) = r {
@@ -1079,6 +1140,7 @@ impl App {
                 conversation: s.conversation.clone(),
                 blocks: s.blocks.clone(),
                 next_block_id: s.next_block_id,
+                scroll_y: s.scroll_y,
             })
             .collect();
         sessions.push(session::PersistedSessionData {
@@ -1087,6 +1149,7 @@ impl App {
             conversation: self.conversation.clone(),
             blocks: current_blocks_persisted,
             next_block_id: self.next_block_id,
+            scroll_y: self.current_scroll_y,
         });
 
         let active_idx = sessions
@@ -1141,6 +1204,7 @@ impl App {
             conversation: self.conversation.clone(),
             blocks: blocks_persisted,
             next_block_id: self.next_block_id,
+            scroll_y: self.current_scroll_y,
         };
         if let Some(idx) = self
             .inactive_sessions
@@ -1167,6 +1231,7 @@ impl App {
             사용 가능한 도구 (적극적으로 호출하세요):\n\
             - read_file(path): 파일 내용 읽기 (즉시 실행)\n\
             - write_file(path, content): 파일 작성/덮어쓰기 (사용자 승인 후 실행)\n\
+            - run_command(command): 셸 명령 실행 (사용자 승인 후 실행)\n\
             - glob(pattern): 패턴 매칭 파일 리스트 (예: '**/*.rs', 'examples/**/*')\n\
             - grep(pattern): 정규식으로 모든 파일 검색\n\n\
             규칙:\n\
@@ -1331,9 +1396,8 @@ impl App {
         // overlay가 필요하면 stack으로 메인 위에 띄움 (backdrop + 가운데 모달 박스)
         let middle: Element<Message> = if self.show_settings {
             stack![main_view, modal_overlay(self.view_settings())].into()
-        } else if self.show_write_confirm {
-            stack![main_view, modal_overlay(self.view_write_confirm())].into()
         } else {
+            // write_confirm은 입력창 위 인라인 패널(view_stream 안에서 처리)
             main_view
         };
 
@@ -1693,11 +1757,18 @@ impl App {
         .spacing(8)
         .align_y(Alignment::Center);
 
+        let confirm_panel: Element<Message> = if self.show_write_confirm {
+            self.view_inline_confirm()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
         column![
             container(blocks_view)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .padding([14, 18]),
+            container(confirm_panel).padding([0, 14]),
             container(input_row)
                 .padding([10, 14])
                 .width(Length::Fill),
@@ -1707,6 +1778,91 @@ impl App {
         .into()
     }
 
+    fn view_inline_confirm(&self) -> Element<'_, Message> {
+        let n = self.pending_write_calls.len();
+        let header = text(format!(
+            "⚠ AI가 {}개 도구 실행을 요청했습니다",
+            n
+        ))
+        .size(12);
+
+        let mut cards = column![].spacing(4);
+        for tc in &self.pending_write_calls {
+            let card: Element<Message> = match tc.name.as_str() {
+                "write_file" => match tools::WriteFileArgs::parse(&tc.arguments) {
+                    Ok(args) => {
+                        let abs_path = self.cwd.join(&args.path);
+                        let exists = abs_path.exists();
+                        let icon = if exists { "📝" } else { "✨" };
+                        text(format!(
+                            "{}  {}  ({} bytes)",
+                            icon,
+                            args.path,
+                            args.content.len()
+                        ))
+                        .size(12)
+                        .into()
+                    }
+                    Err(e) => text(format!("[err] {}", e)).size(12).into(),
+                },
+                "run_command" => match tools::RunCommandArgs::parse(&tc.arguments) {
+                    Ok(args) => text(format!("🖥  $ {}", args.command))
+                        .size(12)
+                        .font(Font::with_name("JetBrains Mono"))
+                        .into(),
+                    Err(e) => text(format!("[err] {}", e)).size(12).into(),
+                },
+                _ => text(format!("[?] {}", tc.name)).size(12).into(),
+            };
+            cards = cards.push(card);
+        }
+
+        let actions = row![
+            button(text("거부").size(12))
+                .on_press(Message::DenyWrites)
+                .padding([4, 14]),
+            Space::new().width(Length::Fill),
+            button(text("✓ 모두 승인").size(12))
+                .on_press(Message::ApproveWrites)
+                .padding([4, 14]),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+        container(
+            column![
+                header,
+                Space::new().height(Length::Fixed(4.0)),
+                container(
+                    scrollable(cards)
+                        .direction(Direction::Vertical(
+                            Scrollbar::new().width(6).scroller_width(6).margin(2),
+                        ))
+                )
+                .max_height(140.0),
+                Space::new().height(Length::Fixed(6.0)),
+                actions,
+            ]
+            .spacing(2),
+        )
+        .padding(10)
+        .width(Length::Fill)
+        .style(|theme: &Theme| {
+            let p = theme.extended_palette();
+            container::Style {
+                background: Some(p.background.weak.color.into()),
+                border: iced::Border {
+                    color: p.danger.weak.color,
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .into()
+    }
+
+    #[allow(dead_code)]
     fn view_write_confirm(&self) -> Element<'_, Message> {
         let mut col = column![
             text("파일 쓰기 승인 대기").size(22),
@@ -1720,36 +1876,72 @@ impl App {
         .spacing(6);
 
         for tc in &self.pending_write_calls {
-            let card: Element<Message> = match tools::WriteFileArgs::parse(&tc.arguments) {
-                Ok(args) => {
-                    // 기존 파일 (있으면) 읽어서 diff 표시, 없으면 새 파일 표시
-                    let abs_path = self.cwd.join(&args.path);
-                    let old_content = std::fs::read_to_string(&abs_path).ok();
-                    let header = match &old_content {
-                        Some(_) => format!("📝 {} ({} bytes)", args.path, args.content.len()),
-                        None => format!("✨ 새 파일: {} ({} bytes)", args.path, args.content.len()),
-                    };
-                    let diff_view: Element<Message> = match old_content {
-                        Some(old) => render_diff(&old, &args.content),
-                        None => container(
-                            text(args.content.clone())
-                                .size(12)
+            let card: Element<Message> = match tc.name.as_str() {
+                "write_file" => match tools::WriteFileArgs::parse(&tc.arguments) {
+                    Ok(args) => {
+                        let abs_path = self.cwd.join(&args.path);
+                        let old_content = std::fs::read_to_string(&abs_path).ok();
+                        let header = match &old_content {
+                            Some(_) => format!(
+                                "📝 {} ({} bytes)",
+                                args.path,
+                                args.content.len()
+                            ),
+                            None => format!(
+                                "✨ 새 파일: {} ({} bytes)",
+                                args.path,
+                                args.content.len()
+                            ),
+                        };
+                        let diff_view: Element<Message> = match old_content {
+                            Some(old) => render_diff(&old, &args.content),
+                            None => container(
+                                text(args.content.clone())
+                                    .size(12)
+                                    .font(Font::with_name("JetBrains Mono")),
+                            )
+                            .padding(10)
+                            .width(Length::Fill)
+                            .into(),
+                        };
+                        column![
+                            text(header).size(15),
+                            Space::new().height(Length::Fixed(6.0)),
+                            diff_view,
+                        ]
+                        .spacing(4)
+                        .into()
+                    }
+                    Err(e) => column![
+                        text(format!("[arguments 파싱 실패] {}", e)).size(13),
+                        text(tc.arguments.clone()).size(11),
+                    ]
+                    .spacing(4)
+                    .into(),
+                },
+                "run_command" => match tools::RunCommandArgs::parse(&tc.arguments) {
+                    Ok(args) => column![
+                        text("🖥 셸 명령 실행").size(15),
+                        Space::new().height(Length::Fixed(6.0)),
+                        container(
+                            text(format!("$ {}", args.command))
+                                .size(13)
                                 .font(Font::with_name("JetBrains Mono")),
                         )
                         .padding(10)
-                        .width(Length::Fill)
-                        .into(),
-                    };
-                    column![
-                        text(header).size(15),
-                        Space::new().height(Length::Fixed(6.0)),
-                        diff_view,
+                        .width(Length::Fill),
                     ]
                     .spacing(4)
-                    .into()
-                }
-                Err(e) => column![
-                    text(format!("[arguments 파싱 실패] {}", e)).size(13),
+                    .into(),
+                    Err(e) => column![
+                        text(format!("[arguments 파싱 실패] {}", e)).size(13),
+                        text(tc.arguments.clone()).size(11),
+                    ]
+                    .spacing(4)
+                    .into(),
+                },
+                other => column![
+                    text(format!("[알 수 없는 도구] {}", other)).size(13),
                     text(tc.arguments.clone()).size(11),
                 ]
                 .spacing(4)

@@ -25,6 +25,9 @@ pub struct PersistedSessionData {
     pub conversation: Vec<ChatMessage>,
     pub blocks: Vec<PersistedBlock>,
     pub next_block_id: u64,
+    /// stream 영역 absolute scroll y (마지막 위치). 세션별로 별도 보존.
+    #[serde(default)]
+    pub scroll_y: f32,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -76,6 +79,7 @@ pub fn load_all() -> PersistedAllSessions {
                         conversation: old.conversation,
                         blocks: old.blocks,
                         next_block_id: old.next_block_id,
+                        scroll_y: 0.0,
                     }],
                     active_idx: 0,
                 };
@@ -90,6 +94,7 @@ pub fn load_all() -> PersistedAllSessions {
             conversation: Vec::new(),
             blocks: Vec::new(),
             next_block_id: 0,
+            scroll_y: 0.0,
         }],
         active_idx: 0,
     }

@@ -20,7 +20,7 @@ use iced::widget::{
 };
 use iced::{font, Alignment, Color, Element, Font, Length, Size, Task, Theme};
 
-use openrouter::{AuthKeyData, ChatEvent, ChatMessage, OpenRouterModel};
+use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
 
 /// combo_box에 표시할 모델 항목 (가격 정보 포함).
 /// Display 형식: "model-id  $in/$out" 또는 "model-id  free"
@@ -315,6 +315,11 @@ struct App {
     current_session_id: u64,
     current_session_title: String,
     next_session_id: u64,
+
+    /// 모델별 누적 사용량 (메모리 + usage.json)
+    usage: session::UsageStore,
+    /// 마지막 응답의 비용 (status bar 표시용)
+    last_response_cost: Option<f64>,
 }
 
 /// 비활성 세션 (메모리 절약 위해 blocks를 plain text로 보관)
@@ -424,6 +429,7 @@ enum Message {
     NewChat,
     SwitchSession(u64),
     DeleteSession(u64),
+    GenerationLoaded(Result<GenerationData, String>),
 }
 
 impl App {
@@ -481,6 +487,8 @@ impl App {
             current_session_id: 1,
             current_session_title: String::new(),
             next_session_id: 1,
+            usage: session::load_usage(),
+            last_response_cost: None,
         };
 
         // 멀티 세션 복원
@@ -758,7 +766,10 @@ impl App {
                             tc.arguments.push_str(&args);
                         }
                     }
-                    ChatEvent::Done { finish_reason } => {
+                    ChatEvent::Done {
+                        finish_reason,
+                        generation_id,
+                    } => {
                         // 현재 assistant block에 누적된 텍스트
                         let assistant_text = self
                             .blocks
@@ -793,6 +804,14 @@ impl App {
                         self.pending_tool_calls.clear();
                         self.maybe_update_title();
                         self.save_session();
+                        if let Some(id) = generation_id {
+                            if let Ok(api_key) = keystore::read_api_key() {
+                                return Task::perform(
+                                    openrouter::get_generation(api_key, id),
+                                    Message::GenerationLoaded,
+                                );
+                            }
+                        }
                     }
                     ChatEvent::Error(e) => {
                         if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
@@ -930,6 +949,28 @@ impl App {
                 self.input.clear();
                 self.status = "세션 전환됨".into();
                 self.save_session();
+                Task::none()
+            }
+            Message::GenerationLoaded(r) => {
+                if let Ok(data) = r {
+                    let cost = data.total_cost.unwrap_or(0.0);
+                    self.last_response_cost = Some(cost);
+                    let model_id = data.model.clone().unwrap_or_default();
+                    if !model_id.is_empty() {
+                        let entry = self
+                            .usage
+                            .by_model
+                            .entry(model_id)
+                            .or_default();
+                        entry.total_cost += cost;
+                        entry.prompt_tokens += data.native_tokens_prompt.unwrap_or(0);
+                        entry.completion_tokens += data.native_tokens_completion.unwrap_or(0);
+                        entry.call_count += 1;
+                    }
+                    let _ = session::save_usage(&self.usage);
+                    // 사용 후 잔액 갱신을 위해 account 다시 fetch
+                    return Task::done(Message::FetchAccount);
+                }
                 Task::none()
             }
             Message::DeleteSession(target_id) => {
@@ -1132,7 +1173,10 @@ impl App {
             1. 파일 시스템을 살펴봐야 할 때는 '확인하겠습니다' 같은 말 없이 즉시 도구를 호출하세요.\n\
             2. 새 파일을 만들기 전에 glob으로 기존 구조를 먼저 확인하세요.\n\
             3. 모든 path 인자는 작업 디렉토리 기준 상대 경로 (절대 경로 거부).\n\
-            4. 도구 결과를 받은 뒤 그것을 근거로 한국어로 답하세요.",
+            4. 도구 결과를 받은 뒤 그것을 근거로 한국어로 답하세요.\n\
+            5. **마크다운 형식 제약** (한국어 폰트 한계): italic(*text* 또는 _text_)은 \
+            사용하지 마세요. 강조는 오직 **굵게**만 사용. 별표 한 개로 감싸지 말고, \
+            정말 강조가 필요하면 두 개로 감싸세요.",
             self.cwd.display()
         );
         if let Some(first) = self.conversation.first_mut() {
@@ -1384,6 +1428,56 @@ impl App {
             .into()
     }
 
+    fn view_usage_summary(&self) -> Element<'_, Message> {
+        if self.usage.by_model.is_empty() {
+            return text("(사용 기록 없음)").size(11).into();
+        }
+        // 비용 큰 순 5개
+        let mut entries: Vec<(&String, &session::ModelUsage)> =
+            self.usage.by_model.iter().collect();
+        entries.sort_by(|a, b| {
+            b.1.total_cost
+                .partial_cmp(&a.1.total_cost)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut col = column![].spacing(2);
+        for (id, u) in entries.iter().take(5) {
+            // model id가 너무 길면 끝부분만
+            let short_id: String = if id.chars().count() > 24 {
+                let tail: String = id
+                    .chars()
+                    .rev()
+                    .take(22)
+                    .collect::<Vec<char>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                format!("…{}", tail)
+            } else {
+                (*id).clone()
+            };
+            col = col.push(
+                row![
+                    text(short_id).size(11),
+                    Space::new().width(Length::Fill),
+                    text(format!("${:.4}", u.total_cost)).size(11),
+                ]
+                .spacing(6),
+            );
+        }
+        let total: f64 = self.usage.by_model.values().map(|u| u.total_cost).sum();
+        col = col.push(Space::new().height(Length::Fixed(4.0)));
+        col = col.push(
+            row![
+                text("총합").size(11),
+                Space::new().width(Length::Fill),
+                text(format!("${:.4}", total)).size(11),
+            ]
+            .spacing(6),
+        );
+        col.into()
+    }
+
     fn view_sidebar(&self) -> Element<'_, Message> {
         let cwd_display = self.cwd.display().to_string();
         // 너무 긴 경로는 끝부분만 표시
@@ -1455,6 +1549,9 @@ impl App {
                     Scrollbar::new().width(6).scroller_width(6).margin(2),
                 ))
                 .height(Length::Fixed(220.0)),
+            Space::new().height(Length::Fixed(14.0)),
+            text("모델 사용량 (누적)").size(11),
+            self.view_usage_summary(),
             Space::new().height(Length::Fixed(14.0)),
             text("작업 폴더").size(11),
             text(cwd_short).size(12),
@@ -1762,20 +1859,30 @@ impl App {
             },
             None => "잔액: -".into(),
         };
-        let bar = row![
+        let last_cost_label = match self.last_response_cost {
+            Some(c) if c > 0.0 => format!("최근: ${:.4}", c),
+            _ => String::new(),
+        };
+        let mut bar = row![
             text(&self.status).size(11),
             Space::new().width(Length::Fill),
-            text(credit_label).size(11),
-            text(format!("모델: {}", model_label)).size(11),
-            text(if self.has_key {
-                "키: 등록됨"
-            } else {
-                "키: 미등록"
-            })
-            .size(11),
         ]
         .spacing(14)
         .align_y(Alignment::Center);
+        if !last_cost_label.is_empty() {
+            bar = bar.push(text(last_cost_label).size(11));
+        }
+        bar = bar
+            .push(text(credit_label).size(11))
+            .push(text(format!("모델: {}", model_label)).size(11))
+            .push(
+                text(if self.has_key {
+                    "키: 등록됨"
+                } else {
+                    "키: 미등록"
+                })
+                .size(11),
+            );
 
         container(bar)
             .padding([4, 14])

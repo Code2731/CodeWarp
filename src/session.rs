@@ -128,3 +128,42 @@ pub fn write_favorites(favs: &[String]) -> Result<(), String> {
     let json = serde_json::to_string_pretty(favs).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
+
+// ── 모델별 누적 사용량 (usage.json) ─────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModelUsage {
+    pub total_cost: f64,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub call_count: u64,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct UsageStore {
+    /// model id → 누적 사용량
+    pub by_model: std::collections::BTreeMap<String, ModelUsage>,
+}
+
+fn usage_path() -> Option<PathBuf> {
+    dirs::data_local_dir().map(|d| d.join("codewarp").join("usage.json"))
+}
+
+pub fn load_usage() -> UsageStore {
+    let Some(path) = usage_path() else {
+        return UsageStore::default();
+    };
+    let Ok(json) = std::fs::read_to_string(&path) else {
+        return UsageStore::default();
+    };
+    serde_json::from_str(&json).unwrap_or_default()
+}
+
+pub fn save_usage(usage: &UsageStore) -> Result<(), String> {
+    let path = usage_path().ok_or_else(|| "data_local_dir 없음".to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(usage).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}

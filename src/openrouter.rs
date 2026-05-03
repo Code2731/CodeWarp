@@ -88,9 +88,10 @@ pub enum ChatEvent {
         name: Option<String>,
         arguments: Option<String>,
     },
-    /// 정상 종료 (finish_reason 포함)
+    /// 정상 종료 (finish_reason + generation_id 포함)
     Done {
         finish_reason: Option<String>,
+        generation_id: Option<String>,
     },
     Error(String),
 }
@@ -108,6 +109,8 @@ struct ChatRequest<'a> {
 
 #[derive(Deserialize)]
 struct StreamChunk {
+    #[serde(default)]
+    id: Option<String>,
     choices: Vec<ChunkChoice>,
 }
 
@@ -155,6 +158,45 @@ pub struct AuthKeyData {
 #[derive(Deserialize)]
 struct AuthKeyResponse {
     data: AuthKeyData,
+}
+
+/// /api/v1/generation 응답 — 한 라운드의 실제 비용/토큰.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct GenerationData {
+    pub id: String,
+    pub model: Option<String>,
+    pub total_cost: Option<f64>,
+    pub native_tokens_prompt: Option<u64>,
+    pub native_tokens_completion: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct GenerationResponse {
+    data: GenerationData,
+}
+
+pub async fn get_generation(api_key: String, id: String) -> Result<GenerationData, String> {
+    // OpenRouter는 generation 직후 약간의 지연이 있어 200~500ms 대기 후 조회.
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let client = http_client();
+    let resp = client
+        .get(format!(
+            "https://openrouter.ai/api/v1/generation?id={}",
+            id
+        ))
+        .bearer_auth(&api_key)
+        .header("HTTP-Referer", "https://codewarp.app")
+        .header("X-Title", "CodeWarp")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("generation {}: {}", status, body));
+    }
+    let parsed: GenerationResponse = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(parsed.data)
 }
 
 pub async fn get_account_info(api_key: String) -> Result<AuthKeyData, String> {
@@ -239,6 +281,7 @@ pub fn chat_stream(
         let mut stream = resp.bytes_stream();
         let mut buffer = String::new();
         let mut last_finish_reason: Option<String> = None;
+        let mut generation_id: Option<String> = None;
 
         while let Some(item) = stream.next().await {
             let chunk = match item {
@@ -263,10 +306,18 @@ pub fn chat_stream(
                 let payload = payload.trim();
                 if payload.is_empty() { continue; }
                 if payload == "[DONE]" {
-                    yield ChatEvent::Done { finish_reason: last_finish_reason.clone() };
+                    yield ChatEvent::Done {
+                        finish_reason: last_finish_reason.clone(),
+                        generation_id: generation_id.clone(),
+                    };
                     return;
                 }
                 if let Ok(parsed) = serde_json::from_str::<StreamChunk>(payload) {
+                    if generation_id.is_none() {
+                        if let Some(id) = parsed.id {
+                            generation_id = Some(id);
+                        }
+                    }
                     for choice in parsed.choices {
                         if let Some(reason) = choice.finish_reason {
                             last_finish_reason = Some(reason);
@@ -297,6 +348,9 @@ pub fn chat_stream(
             }
         }
 
-        yield ChatEvent::Done { finish_reason: last_finish_reason };
+        yield ChatEvent::Done {
+            finish_reason: last_finish_reason,
+            generation_id,
+        };
     }
 }

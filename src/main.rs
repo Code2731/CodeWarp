@@ -18,7 +18,9 @@ use iced::widget::{
     button, checkbox, column, combo_box, container, row, scrollable, stack, text, text_editor,
     text_input, Id as ScrollId, Space,
 };
-use iced::{font, Alignment, Color, Element, Font, Length, Size, Task, Theme};
+use iced::keyboard::key::Named;
+use iced::keyboard::{Key, Modifiers};
+use iced::{font, Alignment, Color, Element, Font, Length, Size, Subscription, Task, Theme};
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
 
@@ -65,10 +67,21 @@ const JETBRAINS_MONO_REGULAR: &[u8] =
 const JETBRAINS_MONO_BOLD: &[u8] =
     include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf");
 
+fn handle_key(key: Key, modifiers: Modifiers) -> Option<Message> {
+    if modifiers.command() && matches!(key.as_ref(), Key::Character("k")) {
+        return Some(Message::OpenCommandPalette);
+    }
+    if matches!(key.as_ref(), Key::Named(Named::Escape)) {
+        return Some(Message::CloseCommandPalette);
+    }
+    None
+}
+
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
         .title(App::title)
         .theme(App::theme)
+        .subscription(App::subscription)
         .font(PRETENDARD_REGULAR)
         .font(PRETENDARD_SEMIBOLD)
         .font(PRETENDARD_BOLD)
@@ -352,7 +365,66 @@ struct App {
     usage: session::UsageStore,
     /// 마지막 응답의 비용 (status bar 표시용)
     last_response_cost: Option<f64>,
+
+    /// 명령 팔레트 (Ctrl+K)
+    show_command_palette: bool,
+    command_palette_input: String,
 }
+
+#[derive(Debug, Clone, Copy)]
+enum PaletteAction {
+    NewChat,
+    PlanMode,
+    BuildMode,
+    OpenSettings,
+    PickCwd,
+    CycleSort,
+    ToggleFavorite,
+}
+
+struct PaletteCommand {
+    action: PaletteAction,
+    label: &'static str,
+    hint: &'static str,
+}
+
+const PALETTE_COMMANDS: &[PaletteCommand] = &[
+    PaletteCommand {
+        action: PaletteAction::NewChat,
+        label: "새 채팅",
+        hint: "현재 세션 보존 후 빈 세션 시작",
+    },
+    PaletteCommand {
+        action: PaletteAction::PlanMode,
+        label: "🔍 Plan 모드",
+        hint: "읽기 전용 도구만 사용",
+    },
+    PaletteCommand {
+        action: PaletteAction::BuildMode,
+        label: "🔧 Build 모드",
+        hint: "전체 도구 사용 (사용자 승인 필요)",
+    },
+    PaletteCommand {
+        action: PaletteAction::OpenSettings,
+        label: "⚙ 설정",
+        hint: "OpenRouter 키 등록/삭제",
+    },
+    PaletteCommand {
+        action: PaletteAction::PickCwd,
+        label: "📁 작업 폴더 변경",
+        hint: "native folder picker",
+    },
+    PaletteCommand {
+        action: PaletteAction::CycleSort,
+        label: "💰 가격 정렬 토글",
+        hint: "기본 → 오름차순 → 내림차순",
+    },
+    PaletteCommand {
+        action: PaletteAction::ToggleFavorite,
+        label: "★ 현재 모델 즐겨찾기 토글",
+        hint: "favorites.json 영구 저장",
+    },
+];
 
 /// 비활성 세션 (메모리 절약 위해 blocks를 plain text로 보관)
 #[derive(Debug, Clone)]
@@ -485,6 +557,10 @@ enum Message {
     SwitchSession(u64),
     DeleteSession(u64),
     GenerationLoaded(Result<GenerationData, String>),
+    OpenCommandPalette,
+    CloseCommandPalette,
+    CommandPaletteChanged(String),
+    ExecuteCommand(usize),
 }
 
 impl App {
@@ -546,6 +622,8 @@ impl App {
             next_session_id: 1,
             usage: session::load_usage(),
             last_response_cost: None,
+            show_command_palette: false,
+            command_palette_input: String::new(),
         };
 
         // 멀티 세션 복원
@@ -1073,6 +1151,43 @@ impl App {
                     },
                 )
             }
+            Message::OpenCommandPalette => {
+                self.show_command_palette = true;
+                self.command_palette_input.clear();
+                Task::none()
+            }
+            Message::CloseCommandPalette => {
+                self.show_command_palette = false;
+                Task::none()
+            }
+            Message::CommandPaletteChanged(v) => {
+                self.command_palette_input = v;
+                Task::none()
+            }
+            Message::ExecuteCommand(idx) => {
+                let filtered = self.filtered_palette_commands();
+                let Some(cmd) = filtered.get(idx) else {
+                    return Task::none();
+                };
+                let action = cmd.action;
+                self.show_command_palette = false;
+                self.command_palette_input.clear();
+                match action {
+                    PaletteAction::NewChat => return Task::done(Message::NewChat),
+                    PaletteAction::PlanMode => {
+                        return Task::done(Message::SetAgentMode(AgentMode::Plan))
+                    }
+                    PaletteAction::BuildMode => {
+                        return Task::done(Message::SetAgentMode(AgentMode::Build))
+                    }
+                    PaletteAction::OpenSettings => return Task::done(Message::OpenSettings),
+                    PaletteAction::PickCwd => return Task::done(Message::PickCwd),
+                    PaletteAction::CycleSort => return Task::done(Message::CycleSortMode),
+                    PaletteAction::ToggleFavorite => {
+                        return Task::done(Message::ToggleFavorite)
+                    }
+                }
+            }
             Message::GenerationLoaded(r) => {
                 if let Ok(data) = r {
                     let cost = data.total_cost.unwrap_or(0.0);
@@ -1452,6 +1567,30 @@ impl App {
         )
     }
 
+    fn subscription(&self) -> Subscription<Message> {
+        iced::keyboard::listen().filter_map(|event| match event {
+            iced::keyboard::Event::KeyPressed {
+                key, modifiers, ..
+            } => handle_key(key, modifiers),
+            _ => None,
+        })
+    }
+
+    fn filtered_palette_commands(&self) -> Vec<&'static PaletteCommand> {
+        let q = self.command_palette_input.to_lowercase();
+        if q.is_empty() {
+            PALETTE_COMMANDS.iter().collect()
+        } else {
+            PALETTE_COMMANDS
+                .iter()
+                .filter(|c| {
+                    c.label.to_lowercase().contains(&q)
+                        || c.hint.to_lowercase().contains(&q)
+                })
+                .collect()
+        }
+    }
+
     fn next_id(&mut self) -> u64 {
         let id = self.next_block_id;
         self.next_block_id += 1;
@@ -1470,7 +1609,9 @@ impl App {
         .into();
 
         // overlay가 필요하면 stack으로 메인 위에 띄움 (backdrop + 가운데 모달 박스)
-        let middle: Element<Message> = if self.show_settings {
+        let middle: Element<Message> = if self.show_command_palette {
+            stack![main_view, modal_overlay(self.view_command_palette())].into()
+        } else if self.show_settings {
             stack![main_view, modal_overlay(self.view_settings())].into()
         } else {
             // write_confirm은 입력창 위 인라인 패널(view_stream 안에서 처리)
@@ -1881,6 +2022,62 @@ impl App {
         .height(Length::Fill)
         .width(Length::Fill)
         .into()
+    }
+
+    fn view_command_palette(&self) -> Element<'_, Message> {
+        let header = text("명령 팔레트").size(18);
+        let hint = text("Esc로 닫기 · Ctrl+K로 열기").size(11);
+        let input = text_input("명령 검색…", &self.command_palette_input)
+            .on_input(Message::CommandPaletteChanged)
+            .on_submit(Message::ExecuteCommand(0))
+            .padding(10);
+
+        let filtered = self.filtered_palette_commands();
+        let mut list = column![].spacing(4);
+        if filtered.is_empty() {
+            list = list.push(text("(매칭 없음)").size(12));
+        } else {
+            for (i, cmd) in filtered.iter().enumerate() {
+                list = list.push(
+                    button(
+                        column![
+                            text(cmd.label).size(13),
+                            text(cmd.hint).size(11),
+                        ]
+                        .spacing(2),
+                    )
+                    .on_press(Message::ExecuteCommand(i))
+                    .padding([6, 10])
+                    .width(Length::Fill),
+                );
+            }
+        }
+
+        let body = column![
+            header,
+            hint,
+            Space::new().height(Length::Fixed(8.0)),
+            input,
+            Space::new().height(Length::Fixed(8.0)),
+            scrollable(list)
+                .direction(Direction::Vertical(
+                    Scrollbar::new().width(6).scroller_width(6).margin(2),
+                ))
+                .height(Length::Fixed(320.0)),
+            Space::new().height(Length::Fixed(8.0)),
+            row![
+                Space::new().width(Length::Fill),
+                button(text("닫기").size(12))
+                    .on_press(Message::CloseCommandPalette)
+                    .padding([4, 12]),
+            ],
+        ]
+        .spacing(4);
+
+        container(body)
+            .padding(20)
+            .width(Length::Fixed(560.0))
+            .into()
     }
 
     fn view_inline_confirm(&self) -> Element<'_, Message> {

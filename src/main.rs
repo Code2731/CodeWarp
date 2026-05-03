@@ -3,8 +3,10 @@
 
 mod keystore;
 mod openrouter;
+mod session;
 mod tools;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -13,12 +15,42 @@ use iced::widget::operation::snap_to_end;
 use iced::widget::scrollable::{Direction, Scrollbar, Viewport};
 use iced::widget::text_editor::{Action, Edit};
 use iced::widget::{
-    button, column, combo_box, container, row, scrollable, text, text_editor, text_input,
+    button, checkbox, column, combo_box, container, row, scrollable, text, text_editor, text_input,
     Id as ScrollId, Space,
 };
 use iced::{font, Alignment, Color, Element, Font, Length, Size, Task, Theme};
 
-use openrouter::{ChatEvent, ChatMessage, OpenRouterModel};
+use openrouter::{AuthKeyData, ChatEvent, ChatMessage, OpenRouterModel};
+
+/// combo_box에 표시할 모델 항목 (가격 정보 포함).
+/// Display 형식: "model-id  $in/$out" 또는 "model-id  free"
+#[derive(Debug, Clone, PartialEq)]
+struct ModelOption {
+    id: String,
+    /// 입력 100만 토큰당 USD
+    prompt_per_million: Option<f64>,
+    /// 출력 100만 토큰당 USD
+    completion_per_million: Option<f64>,
+}
+
+impl std::fmt::Display for ModelOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.prompt_per_million, self.completion_per_million) {
+            (Some(p), Some(c)) if p == 0.0 && c == 0.0 => {
+                write!(f, "{}  free", self.id)
+            }
+            (Some(p), Some(c)) => {
+                write!(f, "{}  ${:.2}/${:.2}", self.id, p, c)
+            }
+            _ => write!(f, "{}", self.id),
+        }
+    }
+}
+
+fn parse_price_per_million(s: Option<&str>) -> Option<f64> {
+    let v = s?.parse::<f64>().ok()?;
+    Some(v * 1_000_000.0)
+}
 
 // 본문용 — 한국어/영문 동시 지원 (Pretendard, OFL)
 const PRETENDARD_REGULAR: &[u8] =
@@ -202,12 +234,87 @@ struct App {
     /// 도구 실행 시 기준이 되는 작업 디렉토리
     cwd: PathBuf,
 
-    /// 검색 가능한 모델 셀렉터(combo_box) 상태
-    model_combo_state: combo_box::State<String>,
+    /// 검색 가능한 모델 셀렉터(combo_box) 상태 (가격 포함 표시)
+    model_combo_state: combo_box::State<ModelOption>,
+    /// 가격 포함 전체 모델 옵션 (필터링 전)
+    model_options: Vec<ModelOption>,
+    /// OpenRouter 계정 사용량/한도
+    account: Option<AuthKeyData>,
 
     /// 사용자 승인 대기 중인 mutating tool 호출 목록 (write_file 등)
     pending_write_calls: Vec<PendingToolCall>,
     show_write_confirm: bool,
+
+    /// 모델 카테고리/즐겨찾기 필터
+    filter_coding: bool,
+    filter_reasoning: bool,
+    filter_general: bool,
+    filter_favorites_only: bool,
+    favorites: HashSet<String>,
+    /// 모델 리스트 정렬 모드
+    sort_mode: SortMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModelCategory {
+    Coding,
+    Reasoning,
+    General,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SortMode {
+    /// 기본 (OpenRouter 응답 순)
+    Default,
+    /// 입력+출력 합산 가격 오름차순 (저렴 → 비싼)
+    PriceAsc,
+    /// 입력+출력 합산 가격 내림차순 (비싼 → 저렴)
+    PriceDesc,
+}
+
+impl SortMode {
+    fn cycle(self) -> Self {
+        match self {
+            SortMode::Default => SortMode::PriceAsc,
+            SortMode::PriceAsc => SortMode::PriceDesc,
+            SortMode::PriceDesc => SortMode::Default,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            SortMode::Default => "정렬: -",
+            SortMode::PriceAsc => "💰 ↑",
+            SortMode::PriceDesc => "💰 ↓",
+        }
+    }
+}
+
+/// 모델 ID에서 카테고리를 추정. 키워드 매칭 기반.
+/// 코딩/추론 전용 모델만 좁게 매칭하고, 나머지(Claude/GPT-4/Gemini 등)는 범용으로.
+fn categorize_model(model_id: &str) -> Vec<ModelCategory> {
+    let id = model_id.to_lowercase();
+    // 코딩 전용 모델만 (이름에 'code', 'coder' 등이 명시된 것)
+    let coding_keywords = [
+        "coder", "codex", "codestral", "codellama", "starcoder", "codegen", "code-",
+    ];
+    // 추론 전용 모델 (chain-of-thought / thinking 모드)
+    let reasoning_keywords = [
+        "o1-", "o3-", "o4-", "/o1", "/o3", "/o4", "thinking", "-reasoning", "-r1", "-qwq", "/qwq",
+    ];
+    let is_coding = coding_keywords.iter().any(|k| id.contains(k));
+    let is_reasoning = reasoning_keywords.iter().any(|k| id.contains(k));
+    let mut cats = Vec::new();
+    if is_coding {
+        cats.push(ModelCategory::Coding);
+    }
+    if is_reasoning {
+        cats.push(ModelCategory::Reasoning);
+    }
+    if !is_coding && !is_reasoning {
+        cats.push(ModelCategory::General);
+    }
+    cats
 }
 
 #[derive(Debug, Clone)]
@@ -221,7 +328,9 @@ enum Message {
     KeyCleared(Result<(), String>),
     FetchModels,
     ModelsLoaded(Result<Vec<OpenRouterModel>, String>),
-    SelectModel(String),
+    SelectModel(ModelOption),
+    AccountLoaded(Result<AuthKeyData, String>),
+    FetchAccount,
     InputChanged(String),
     Send,
     ChatChunk(ChatEvent),
@@ -234,6 +343,12 @@ enum Message {
     CwdPicked(Option<PathBuf>),
     ApproveWrites,
     DenyWrites,
+    ToggleFilterCoding(bool),
+    ToggleFilterReasoning(bool),
+    ToggleFilterGeneral(bool),
+    ToggleFilterFavorites(bool),
+    ToggleFavorite,
+    CycleSortMode,
 }
 
 impl App {
@@ -253,7 +368,7 @@ impl App {
         } else {
             "OpenRouter API 키 미등록".into()
         };
-        let app = Self {
+        let mut app = Self {
             has_key,
             key_input: String::new(),
             status,
@@ -277,11 +392,52 @@ impl App {
                 .or_else(|| std::env::current_dir().ok())
                 .unwrap_or_else(|| PathBuf::from(".")),
             model_combo_state: combo_box::State::new(Vec::new()),
+            model_options: Vec::new(),
+            account: None,
             pending_write_calls: Vec::new(),
             show_write_confirm: false,
+            filter_coding: true,
+            filter_reasoning: true,
+            filter_general: true,
+            filter_favorites_only: false,
+            favorites: session::read_favorites().into_iter().collect(),
+            sort_mode: SortMode::Default,
         };
+
+        // 이전 세션 복원 시도
+        if let Some(persisted) = session::load() {
+            app.conversation = persisted.conversation;
+            app.next_block_id = persisted.next_block_id;
+            app.blocks = persisted
+                .blocks
+                .into_iter()
+                .map(|pb| {
+                    let role = pb.role;
+                    let content = pb.content;
+                    let md_items = if role == "assistant" {
+                        markdown::parse(&content).collect()
+                    } else {
+                        Vec::new()
+                    };
+                    let body = if role == "user" {
+                        BlockBody::User(content)
+                    } else {
+                        BlockBody::Assistant(text_editor::Content::with_text(&content))
+                    };
+                    Block {
+                        id: pb.id,
+                        body,
+                        view_mode: ViewMode::Rendered,
+                        md_items,
+                    }
+                })
+                .collect();
+        }
         let task = if has_key {
-            Task::done(Message::FetchModels)
+            Task::batch(vec![
+                Task::done(Message::FetchModels),
+                Task::done(Message::FetchAccount),
+            ])
         } else {
             Task::none()
         };
@@ -364,9 +520,19 @@ impl App {
                     Ok(models) => {
                         let n = models.len();
                         self.model_ids = models.iter().map(|m| m.id.clone()).collect();
-                        self.model_combo_state =
-                            combo_box::State::new(self.model_ids.clone());
-                        // 저장된 모델이 리스트에 있으면 유지, 없으면 첫 번째로 fallback
+                        self.model_options = models
+                            .iter()
+                            .map(|m| ModelOption {
+                                id: m.id.clone(),
+                                prompt_per_million: parse_price_per_million(
+                                    m.pricing.as_ref().and_then(|p| p.prompt.as_deref()),
+                                ),
+                                completion_per_million: parse_price_per_million(
+                                    m.pricing.as_ref().and_then(|p| p.completion.as_deref()),
+                                ),
+                            })
+                            .collect();
+                        self.refresh_model_combo();
                         let saved_in_list = self
                             .selected_model
                             .as_ref()
@@ -385,9 +551,25 @@ impl App {
                 }
                 Task::none()
             }
-            Message::SelectModel(id) => {
-                let _ = keystore::write_selected_model(&id);
-                self.selected_model = Some(id);
+            Message::SelectModel(opt) => {
+                let _ = keystore::write_selected_model(&opt.id);
+                self.selected_model = Some(opt.id);
+                Task::none()
+            }
+            Message::FetchAccount => {
+                let key = match keystore::read_api_key() {
+                    Ok(k) => k,
+                    Err(_) => return Task::none(),
+                };
+                Task::perform(
+                    openrouter::get_account_info(key),
+                    Message::AccountLoaded,
+                )
+            }
+            Message::AccountLoaded(r) => {
+                if let Ok(data) = r {
+                    self.account = Some(data);
+                }
                 Task::none()
             }
             Message::InputChanged(v) => {
@@ -521,6 +703,7 @@ impl App {
                         }
                         self.streaming_block_id = None;
                         self.pending_tool_calls.clear();
+                        self.save_session();
                     }
                     ChatEvent::Error(e) => {
                         if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
@@ -587,6 +770,44 @@ impl App {
             ),
             Message::ApproveWrites => self.continue_after_writes(true),
             Message::DenyWrites => self.continue_after_writes(false),
+            Message::ToggleFilterCoding(v) => {
+                self.filter_coding = v;
+                self.refresh_model_combo();
+                Task::none()
+            }
+            Message::ToggleFilterReasoning(v) => {
+                self.filter_reasoning = v;
+                self.refresh_model_combo();
+                Task::none()
+            }
+            Message::ToggleFilterGeneral(v) => {
+                self.filter_general = v;
+                self.refresh_model_combo();
+                Task::none()
+            }
+            Message::ToggleFilterFavorites(v) => {
+                self.filter_favorites_only = v;
+                self.refresh_model_combo();
+                Task::none()
+            }
+            Message::CycleSortMode => {
+                self.sort_mode = self.sort_mode.cycle();
+                self.refresh_model_combo();
+                Task::none()
+            }
+            Message::ToggleFavorite => {
+                if let Some(id) = &self.selected_model {
+                    if self.favorites.contains(id) {
+                        self.favorites.remove(id);
+                    } else {
+                        self.favorites.insert(id.clone());
+                    }
+                    let favs: Vec<String> = self.favorites.iter().cloned().collect();
+                    let _ = session::write_favorites(&favs);
+                    self.refresh_model_combo();
+                }
+                Task::none()
+            }
             Message::CwdPicked(maybe_path) => {
                 if let Some(path) = maybe_path {
                     self.cwd = path.clone();
@@ -598,6 +819,70 @@ impl App {
                 Task::none()
             }
         }
+    }
+
+    /// 현재 활성 필터/정렬을 적용해 model_options을 좁힌 결과.
+    fn filtered_model_options(&self) -> Vec<ModelOption> {
+        let mut opts: Vec<ModelOption> = self
+            .model_options
+            .iter()
+            .filter(|opt| {
+                if self.filter_favorites_only && !self.favorites.contains(&opt.id) {
+                    return false;
+                }
+                let cats = categorize_model(&opt.id);
+                (self.filter_coding && cats.contains(&ModelCategory::Coding))
+                    || (self.filter_reasoning && cats.contains(&ModelCategory::Reasoning))
+                    || (self.filter_general && cats.contains(&ModelCategory::General))
+            })
+            .cloned()
+            .collect();
+
+        // 정렬: prompt+completion 합 기준
+        let total_price = |o: &ModelOption| -> f64 {
+            o.prompt_per_million.unwrap_or(0.0) + o.completion_per_million.unwrap_or(0.0)
+        };
+        match self.sort_mode {
+            SortMode::Default => {}
+            SortMode::PriceAsc => opts.sort_by(|a, b| {
+                total_price(a)
+                    .partial_cmp(&total_price(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }),
+            SortMode::PriceDesc => opts.sort_by(|a, b| {
+                total_price(b)
+                    .partial_cmp(&total_price(a))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }),
+        }
+        opts
+    }
+
+    /// 필터/즐겨찾기 변경 시 combo_box::State 재구성.
+    fn refresh_model_combo(&mut self) {
+        self.model_combo_state = combo_box::State::new(self.filtered_model_options());
+    }
+
+    /// 현재 conversation + blocks를 디스크에 저장. 실패해도 silent.
+    fn save_session(&self) {
+        let blocks = self
+            .blocks
+            .iter()
+            .map(|b| session::PersistedBlock {
+                id: b.id,
+                role: match &b.body {
+                    BlockBody::User(_) => "user".into(),
+                    BlockBody::Assistant(_) => "assistant".into(),
+                },
+                content: b.body.to_text(),
+            })
+            .collect();
+        let s = session::PersistedSession {
+            conversation: self.conversation.clone(),
+            blocks,
+            next_block_id: self.next_block_id,
+        };
+        let _ = session::save(&s);
     }
 
     /// conversation 첫 위치에 cwd를 알려주는 system 메시지를 보장 (없으면 추가, 있으면 갱신).
@@ -687,6 +972,10 @@ impl App {
         }
 
         self.tool_round += 1;
+        self.status = format!(
+            "응답 생성 중… (도구 라운드 {}/{})",
+            self.tool_round, MAX_TOOL_ROUNDS
+        );
         self.kick_chat_stream()
     }
 
@@ -715,6 +1004,10 @@ impl App {
         }
 
         self.tool_round += 1;
+        self.status = format!(
+            "응답 생성 중… (도구 라운드 {}/{})",
+            self.tool_round, MAX_TOOL_ROUNDS
+        );
         self.kick_chat_stream()
     }
 
@@ -776,22 +1069,68 @@ impl App {
         let model_picker: Element<Message> = if self.model_ids.is_empty() {
             text("모델 없음").size(12).into()
         } else {
-            iced::widget::container(
-                combo_box(
-                    &self.model_combo_state,
-                    "모델 검색…",
-                    self.selected_model.as_ref(),
-                    Message::SelectModel,
+            {
+                let selected_opt = self.selected_model.as_ref().and_then(|id| {
+                    self.model_options.iter().find(|o| &o.id == id)
+                });
+                iced::widget::container(
+                    combo_box(
+                        &self.model_combo_state,
+                        "모델 검색…",
+                        selected_opt,
+                        Message::SelectModel,
+                    )
+                    .size(12),
                 )
-                .size(12),
-            )
-            .width(Length::Fixed(420.0))
-            .into()
+                .width(Length::Fixed(420.0))
+                .into()
+            }
         };
 
+        let is_fav = self
+            .selected_model
+            .as_ref()
+            .map(|id| self.favorites.contains(id))
+            .unwrap_or(false);
+        let fav_btn = button(text(if is_fav { "★" } else { "☆" }).size(16))
+            .on_press(Message::ToggleFavorite)
+            .padding([6, 10]);
+
+        let filters = row![
+            checkbox(self.filter_coding)
+                .label("코딩")
+                .on_toggle(Message::ToggleFilterCoding)
+                .size(14)
+                .text_size(12),
+            checkbox(self.filter_reasoning)
+                .label("추론")
+                .on_toggle(Message::ToggleFilterReasoning)
+                .size(14)
+                .text_size(12),
+            checkbox(self.filter_general)
+                .label("범용")
+                .on_toggle(Message::ToggleFilterGeneral)
+                .size(14)
+                .text_size(12),
+            checkbox(self.filter_favorites_only)
+                .label("⭐만")
+                .on_toggle(Message::ToggleFilterFavorites)
+                .size(14)
+                .text_size(12),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let sort_btn = button(text(self.sort_mode.label()).size(12))
+            .on_press(Message::CycleSortMode)
+            .padding([6, 10]);
+
         let bar = row![
+            filters,
             Space::new().width(Length::Fill),
+            sort_btn,
             model_picker,
+            fav_btn,
             button(
                 text("⚙")
                     .size(16)
@@ -1125,9 +1464,18 @@ impl App {
             .selected_model
             .clone()
             .unwrap_or_else(|| "(없음)".into());
+        let credit_label = match &self.account {
+            Some(a) => match (a.usage, a.limit) {
+                (Some(u), Some(l)) => format!("잔액: ${:.2} / ${:.2}", (l - u).max(0.0), l),
+                (Some(u), None) => format!("사용: ${:.4}", u),
+                _ => "잔액: -".into(),
+            },
+            None => "잔액: -".into(),
+        };
         let bar = row![
             text(&self.status).size(11),
             Space::new().width(Length::Fill),
+            text(credit_label).size(11),
             text(format!("모델: {}", model_label)).size(11),
             text(if self.has_key {
                 "키: 등록됨"

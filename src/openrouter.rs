@@ -143,6 +143,39 @@ fn http_client() -> reqwest::Client {
         .expect("reqwest client 빌드 실패")
 }
 
+/// OpenRouter 키의 사용량/한도 정보 (`/api/v1/auth/key`).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AuthKeyData {
+    pub label: Option<String>,
+    pub usage: Option<f64>,
+    pub limit: Option<f64>,
+    pub is_free_tier: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct AuthKeyResponse {
+    data: AuthKeyData,
+}
+
+pub async fn get_account_info(api_key: String) -> Result<AuthKeyData, String> {
+    let client = http_client();
+    let resp = client
+        .get("https://openrouter.ai/api/v1/auth/key")
+        .bearer_auth(&api_key)
+        .header("HTTP-Referer", "https://codewarp.app")
+        .header("X-Title", "CodeWarp")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("OpenRouter {}: {}", status, body));
+    }
+    let parsed: AuthKeyResponse = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(parsed.data)
+}
+
 pub async fn list_models(api_key: String) -> Result<Vec<OpenRouterModel>, String> {
     let client = http_client();
     let resp = client

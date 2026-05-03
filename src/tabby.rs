@@ -26,6 +26,9 @@ pub fn chat_base(url: &str) -> String {
 }
 
 /// 연결 에러 원문을 사용자 친화 actionable 메시지로 변환.
+/// `lower.contains`: OS/네트워크 에러 — 대소문자 OS별 차이 → 소문자 비교.
+/// `raw.contains`: 이 모듈의 `format!("Tabby {}: {}", status, body)` 출력 매칭 →
+///                 포맷 변경 시 둘이 같이 움직여야 함 (KEEP IN SYNC with `list_models`).
 pub fn humanize_error(raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
     if lower.contains("refused") || lower.contains("os error 10061") {
@@ -70,6 +73,7 @@ pub async fn list_models(base_url: String, token: Option<String>) -> Result<Vec<
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        // KEEP IN SYNC: humanize_error가 "Tabby {status}" prefix를 매칭함
         return Err(format!("Tabby {}: {}", status, body));
     }
     let parsed: ModelsResp = resp

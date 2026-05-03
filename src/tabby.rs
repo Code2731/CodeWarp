@@ -20,6 +20,11 @@ fn normalize_base(url: &str) -> String {
     }
 }
 
+/// `chat_stream`에 넘길 base URL ("/v1" 접두 포함).
+pub fn chat_base(url: &str) -> String {
+    format!("{}/v1", normalize_base(url))
+}
+
 #[derive(Deserialize)]
 struct ModelInfo {
     id: String,

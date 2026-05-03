@@ -21,6 +21,7 @@ use iced::widget::{
 };
 use iced::keyboard::key::Named;
 use iced::keyboard::{Key, Modifiers};
+use iced::task;
 use iced::{font, Alignment, Color, Element, Font, Length, Size, Subscription, Task, Theme};
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
@@ -207,6 +208,8 @@ struct Block {
     view_mode: ViewMode,
     /// assistant Rendered용 캐시. 토큰 도착 시마다 갱신.
     md_items: Vec<markdown::Item>,
+    /// assistant 블록을 만든 모델 ID (user 블록은 None).
+    model: Option<String>,
 }
 
 fn persisted_to_block(pb: session::PersistedBlock) -> Block {
@@ -222,11 +225,17 @@ fn persisted_to_block(pb: session::PersistedBlock) -> Block {
     } else {
         BlockBody::Assistant(text_editor::Content::with_text(&content))
     };
+    let model = if pb.model.is_empty() {
+        None
+    } else {
+        Some(pb.model)
+    };
     Block {
         id: pb.id,
         body,
         view_mode: ViewMode::Rendered,
         md_items,
+        model,
     }
 }
 
@@ -389,6 +398,10 @@ struct App {
     next_block_id: u64,
     input: String,
     streaming_block_id: Option<u64>,
+    /// 진행 중인 chat_stream task의 abort handle (Stop 버튼이 사용).
+    abort_handle: Option<task::Handle>,
+    /// 사이드바에서 삭제 확인 대기 중인 세션 ID (✕ → ✓/✗ 토글).
+    pending_delete_session: Option<u64>,
 
     show_settings: bool,
 
@@ -609,6 +622,8 @@ enum Message {
     FetchAccount,
     InputChanged(String),
     Send,
+    /// 진행 중인 chat_stream을 중지 (Stop 버튼).
+    StopStream,
     ChatChunk(ChatEvent),
     CopyBlock(u64),
     StreamScrolled(Viewport),
@@ -629,7 +644,10 @@ enum Message {
     SetAgentMode(AgentMode),
     ToggleAgentMode,
     SwitchSession(u64),
+    /// ✕ 클릭 → 삭제 확인 토글 (같은 id면 취소, 다른 id면 그쪽으로 이동).
+    AskDeleteSession(u64),
     DeleteSession(u64),
+    CancelDeleteSession,
     GenerationLoaded(Result<GenerationData, String>),
     OpenCommandPalette,
     CloseCommandPalette,
@@ -689,6 +707,8 @@ impl App {
             next_block_id: 0,
             input: String::new(),
             streaming_block_id: None,
+            abort_handle: None,
+            pending_delete_session: None,
             show_settings: !has_key,
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
@@ -1062,8 +1082,8 @@ impl App {
                 if self.selected_model.is_none() || self.streaming_block_id.is_some() {
                     return Task::none();
                 }
-                let api_key = match keystore::read_api_key() {
-                    Ok(k) => k,
+                let (base_url, api_key) = match self.resolve_provider() {
+                    Ok(v) => v,
                     Err(e) => {
                         self.status = e;
                         return Task::none();
@@ -1084,6 +1104,7 @@ impl App {
                     body: BlockBody::User(text),
                     view_mode: ViewMode::Rendered,
                     md_items: Vec::new(),
+                    model: None,
                 });
                 let ai_id = self.next_id();
                 self.blocks.push(Block {
@@ -1091,24 +1112,46 @@ impl App {
                     body: BlockBody::Assistant(text_editor::Content::new()),
                     view_mode: ViewMode::Rendered,
                     md_items: Vec::new(),
+                    model: self.selected_model.clone(),
                 });
                 self.streaming_block_id = Some(ai_id);
                 self.input.clear();
                 self.status = "응답 생성 중…".into();
                 self.follow_bottom = true; // 새 메시지 전송 시 follow ON
 
-                Task::batch(vec![
-                    snap_to_end(self.stream_id.clone()),
-                    Task::run(
-                        openrouter::chat_stream(
-                            api_key,
-                            model,
-                            messages,
-                            Some(tools::tool_definitions(self.agent_mode.allow_mutating())),
-                        ),
-                        Message::ChatChunk,
+                let (chat_task, handle) = Task::run(
+                    openrouter::chat_stream(
+                        base_url,
+                        api_key,
+                        model,
+                        messages,
+                        Some(tools::tool_definitions(self.agent_mode.allow_mutating())),
                     ),
-                ])
+                    Message::ChatChunk,
+                )
+                .abortable();
+                self.abort_handle = Some(handle);
+                Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
+            }
+            Message::StopStream => {
+                if let Some(h) = self.abort_handle.take() {
+                    h.abort();
+                }
+                if let Some(ai_id) = self.streaming_block_id {
+                    if let Some(b) = self.blocks.iter().find(|b| b.id == ai_id) {
+                        let txt = b.body.to_text();
+                        if !txt.is_empty() {
+                            self.conversation.push(ChatMessage::assistant(txt));
+                        }
+                    }
+                }
+                self.streaming_block_id = None;
+                self.pending_tool_calls.clear();
+                self.tool_round = 0;
+                self.status = "중지됨".into();
+                self.maybe_update_title();
+                self.save_session();
+                Task::none()
             }
             Message::CopyBlock(id) => {
                 if let Some(b) = self.blocks.iter().find(|b| b.id == id) {
@@ -1186,6 +1229,7 @@ impl App {
                                 .push(ChatMessage::assistant(assistant_text));
                         }
                         self.streaming_block_id = None;
+                        self.abort_handle = None;
                         self.pending_tool_calls.clear();
                         self.maybe_update_title();
                         self.save_session();
@@ -1210,6 +1254,7 @@ impl App {
                             }
                         }
                         self.streaming_block_id = None;
+                        self.abort_handle = None;
                         self.pending_tool_calls.clear();
                         self.status = format!("에러: {}", e);
                     }
@@ -1423,7 +1468,20 @@ impl App {
                 }
                 Task::none()
             }
+            Message::AskDeleteSession(id) => {
+                self.pending_delete_session = if self.pending_delete_session == Some(id) {
+                    None // 같은 ✕ 다시 클릭 → 취소
+                } else {
+                    Some(id)
+                };
+                Task::none()
+            }
+            Message::CancelDeleteSession => {
+                self.pending_delete_session = None;
+                Task::none()
+            }
             Message::DeleteSession(target_id) => {
+                self.pending_delete_session = None;
                 if target_id == self.current_session_id {
                     // 현재 활성을 삭제 → 빈 세션으로 대체
                     self.blocks.clear();
@@ -1517,6 +1575,7 @@ impl App {
                     BlockBody::Assistant(_) => "assistant".into(),
                 },
                 content: b.body.to_text(),
+                model: b.model.clone().unwrap_or_default(),
             })
             .collect();
 
@@ -1585,6 +1644,7 @@ impl App {
                     BlockBody::Assistant(_) => "assistant".into(),
                 },
                 content: b.body.to_text(),
+                model: b.model.clone().unwrap_or_default(),
             })
             .collect();
         let snap = InactiveSession {
@@ -1757,10 +1817,36 @@ impl App {
         self.kick_chat_stream()
     }
 
+    fn resolve_provider(&self) -> Result<(String, Option<String>), String> {
+        let id = self
+            .selected_model
+            .as_deref()
+            .ok_or_else(|| "모델 미선택".to_string())?;
+        let provider = self
+            .model_options
+            .iter()
+            .find(|o| o.id == id)
+            .map(|o| o.provider)
+            .ok_or_else(|| format!("선택된 모델을 찾을 수 없습니다: {}", id))?;
+        match provider {
+            LlmProvider::OpenRouter => {
+                let key = keystore::read_api_key()?;
+                Ok((openrouter::BASE_URL.to_string(), Some(key)))
+            }
+            LlmProvider::Tabby => {
+                let base = keystore::read_tabby_base_url()
+                    .filter(|s| !s.trim().is_empty())
+                    .ok_or_else(|| "Tabby URL 미설정".to_string())?;
+                let token = keystore::read_tabby_token().filter(|s| !s.trim().is_empty());
+                Ok((tabby::chat_base(&base), token))
+            }
+        }
+    }
+
     /// 누적된 conversation을 가지고 다음 chat_stream을 시작.
     fn kick_chat_stream(&mut self) -> Task<Message> {
-        let api_key = match keystore::read_api_key() {
-            Ok(k) => k,
+        let (base_url, api_key) = match self.resolve_provider() {
+            Ok(v) => v,
             Err(e) => {
                 self.status = e;
                 self.streaming_block_id = None;
@@ -1769,8 +1855,9 @@ impl App {
         };
         let model = self.selected_model.clone().unwrap_or_default();
         let messages = self.conversation.clone();
-        Task::run(
+        let (task, handle) = Task::run(
             openrouter::chat_stream(
+                base_url,
                 api_key,
                 model,
                 messages,
@@ -1778,6 +1865,9 @@ impl App {
             ),
             Message::ChatChunk,
         )
+        .abortable();
+        self.abort_handle = Some(handle);
+        task
     }
 
     fn subscription(&self) -> Subscription<Message> {
@@ -2018,14 +2108,30 @@ impl App {
             } else {
                 s.title.clone()
             };
+            let is_pending = self.pending_delete_session == Some(s.id);
+            let trailing: Element<Message> = if is_pending {
+                row![
+                    button(text("✓").size(11))
+                        .on_press(Message::DeleteSession(s.id))
+                        .padding([2, 6]),
+                    button(text("✗").size(11))
+                        .on_press(Message::CancelDeleteSession)
+                        .padding([2, 6]),
+                ]
+                .spacing(2)
+                .into()
+            } else {
+                button(text("✕").size(11))
+                    .on_press(Message::AskDeleteSession(s.id))
+                    .padding([2, 6])
+                    .into()
+            };
             let row_widget = row![
                 button(text(format!("📂 {}", title)).size(12))
                     .on_press(Message::SwitchSession(s.id))
                     .padding([4, 8])
                     .width(Length::Fill),
-                button(text("✕").size(11))
-                    .on_press(Message::DeleteSession(s.id))
-                    .padding([2, 6]),
+                trailing,
             ]
             .spacing(2);
             sessions_col = sessions_col.push(row_widget);
@@ -2126,8 +2232,13 @@ impl App {
                     } else {
                         Space::new().width(Length::Shrink).height(Length::Shrink).into()
                     };
+                let model_label: Element<Message> = match &b.model {
+                    Some(m) => text(format!("· {}", m)).size(10).into(),
+                    None => Space::new().width(Length::Shrink).height(Length::Shrink).into(),
+                };
                 let header = row![
                     text(role_label).size(11),
+                    model_label,
                     Space::new().width(Length::Fill),
                     toggle_btn,
                     copy_btn,
@@ -2218,17 +2329,27 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
+        let action_btn: Element<Message> = if self.streaming_block_id.is_some() {
+            button(text("■ 중지").size(13))
+                .on_press(Message::StopStream)
+                .into()
+        } else {
+            button(text("Send").size(13))
+                .on_press_maybe(if send_disabled {
+                    None
+                } else {
+                    Some(Message::Send)
+                })
+                .into()
+        };
+
         let input_row = row![
             mode_label,
             text_input("질문을 입력하세요…  (/plan, /build로 모드 전환)", &self.input)
                 .on_input(Message::InputChanged)
                 .on_submit(Message::Send)
                 .padding(10),
-            button(text("Send").size(13)).on_press_maybe(if send_disabled {
-                None
-            } else {
-                Some(Message::Send)
-            }),
+            action_btn,
         ]
         .spacing(8)
         .align_y(Alignment::Center);

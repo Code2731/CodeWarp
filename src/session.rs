@@ -16,6 +16,9 @@ pub struct PersistedBlock {
     pub id: u64,
     pub role: String, // "user" | "assistant"
     pub content: String,
+    /// assistant 블록을 생성한 모델 ID (옛 데이터는 빈 문자열).
+    #[serde(default)]
+    pub model: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

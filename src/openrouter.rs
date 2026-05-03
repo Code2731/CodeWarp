@@ -5,6 +5,9 @@
 use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
+/// OpenRouter chat 호출 base URL (endpoint 직전).
+pub const BASE_URL: &str = "https://openrouter.ai/api/v1";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterPricing {
     pub prompt: Option<String>,
@@ -239,8 +242,12 @@ pub async fn list_models(api_key: String) -> Result<Vec<OpenRouterModel>, String
     Ok(parsed.data)
 }
 
+/// OpenAI 호환 `/chat/completions` 스트림.
+/// `base_url`은 endpoint 직전까지 (예: `https://openrouter.ai/api/v1`,
+/// `http://localhost:8080/v1`). `api_key`가 None이면 bearer auth 생략 (Tabby 등).
 pub fn chat_stream(
-    api_key: String,
+    base_url: String,
+    api_key: Option<String>,
     model: String,
     messages: Vec<ChatMessage>,
     tools: Option<serde_json::Value>,
@@ -255,14 +262,19 @@ pub fn chat_stream(
             tool_choice: tools.as_ref().map(|_| "auto"),
         };
 
-        let resp = match client
-            .post("https://openrouter.ai/api/v1/chat/completions")
-            .bearer_auth(&api_key)
-            .header("HTTP-Referer", "https://codewarp.app")
-            .header("X-Title", "CodeWarp")
-            .json(&body)
-            .send()
-            .await
+        let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+        let mut req = client.post(&endpoint).json(&body);
+        // OpenRouter ranking/식별 헤더 — 다른 OpenAI 호환 endpoint(Tabby 등)에는 보내지 않음
+        if base_url.contains("openrouter.ai") {
+            req = req
+                .header("HTTP-Referer", "https://codewarp.app")
+                .header("X-Title", "CodeWarp");
+        }
+        if let Some(k) = api_key.as_ref().filter(|s| !s.trim().is_empty()) {
+            req = req.bearer_auth(k);
+        }
+
+        let resp = match req.send().await
         {
             Ok(r) => r,
             Err(e) => {

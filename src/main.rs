@@ -4,6 +4,7 @@
 mod keystore;
 mod openrouter;
 mod session;
+mod tabby;
 mod tools;
 
 use std::collections::HashSet;
@@ -24,11 +25,31 @@ use iced::{font, Alignment, Color, Element, Font, Length, Size, Subscription, Ta
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
 
+/// 모델을 어느 백엔드로 라우팅할지.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum LlmProvider {
+    OpenRouter,
+    Tabby,
+}
+
+impl LlmProvider {
+    /// combo_box Display에 prefix로 붙는 짧은 태그.
+    fn tag(self) -> &'static str {
+        match self {
+            LlmProvider::OpenRouter => "[OR]",
+            LlmProvider::Tabby => "[Tb]",
+        }
+    }
+}
+
 /// combo_box에 표시할 모델 항목 (가격 정보 포함).
-/// Display 형식: "model-id  $in/$out" 또는 "model-id  free"
+/// Display 형식: "[OR][KO] model-id  $in/$out" 또는 "[Tb] model-id  free"
 #[derive(Debug, Clone, PartialEq)]
 struct ModelOption {
     id: String,
+    provider: LlmProvider,
+    /// 한국어 토크나이저 친화 모델 휴리스틱 결과
+    ko_friendly: bool,
     /// 입력 100만 토큰당 USD
     prompt_per_million: Option<f64>,
     /// 출력 100만 토큰당 USD
@@ -37,16 +58,50 @@ struct ModelOption {
 
 impl std::fmt::Display for ModelOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let tag = self.provider.tag();
+        let ko = if self.ko_friendly { "[KO]" } else { "" };
         match (self.prompt_per_million, self.completion_per_million) {
             (Some(p), Some(c)) if p == 0.0 && c == 0.0 => {
-                write!(f, "{}  free", self.id)
+                write!(f, "{}{} {}  free", tag, ko, self.id)
             }
             (Some(p), Some(c)) => {
-                write!(f, "{}  ${:.2}/${:.2}", self.id, p, c)
+                write!(f, "{}{} {}  ${:.2}/${:.2}", tag, ko, self.id, p, c)
             }
-            _ => write!(f, "{}", self.id),
+            _ => write!(f, "{}{} {}", tag, ko, self.id),
         }
     }
+}
+
+/// 모델 ID에 한국어 친화로 알려진 패턴이 들어있는지.
+/// 휴리스틱 — 누락/오탐 가능. 화이트리스트 갱신은 여기 한 줄.
+fn is_korean_friendly(id: &str) -> bool {
+    let s = id.to_lowercase();
+    const PATTERNS: &[&str] = &[
+        "claude",
+        "gpt-4o",
+        "gpt-4-turbo",
+        "gpt-4.1",
+        "gemini-1.5",
+        "gemini-2",
+        "qwen2.5",
+        "qwen-2.5",
+        "qwen3",
+        "llama-3.1",
+        "llama-3.2",
+        "llama-3.3",
+        "exaone",
+        "solar",
+        "deepseek-v3",
+        "deepseek-r1",
+        "deepseek-chat",
+        "hyperclova",
+        "ax-3",
+        "a.x",
+        "kullm",
+        "ko-llama",
+        "42dot",
+    ];
+    PATTERNS.iter().any(|p| s.contains(p))
 }
 
 fn parse_price_per_million(s: Option<&str>) -> Option<f64> {
@@ -317,6 +372,12 @@ const MAX_TOOL_ROUNDS: u32 = 5;
 struct App {
     has_key: bool,
     key_input: String,
+    /// Tabby base URL 입력값 (Settings 화면). 저장된 값 + 사용자 편집 반영.
+    tabby_url_input: String,
+    /// Tabby token 입력값 (선택). 비어있으면 인증 없이 호출.
+    tabby_token_input: String,
+    /// 마지막 ping 결과 — None=미시도, Some(Ok)=정상, Some(Err)=실패 사유.
+    tabby_status: Option<Result<String, String>>,
     status: String,
     busy: bool,
 
@@ -575,6 +636,13 @@ enum Message {
     CloseAllOverlays,
     CommandPaletteChanged(String),
     ExecuteCommand(usize),
+    TabbyUrlChanged(String),
+    TabbyTokenChanged(String),
+    SaveTabby,
+    TabbySaved(Result<(), String>),
+    ClearTabby,
+    FetchTabbyModels,
+    TabbyModelsLoaded(Result<Vec<String>, String>),
 }
 
 impl App {
@@ -604,9 +672,14 @@ impl App {
         } else {
             "OpenRouter API 키 미등록".into()
         };
+        let saved_tabby_url = keystore::read_tabby_base_url().unwrap_or_default();
+        let saved_tabby_token = keystore::read_tabby_token().unwrap_or_default();
         let mut app = Self {
             has_key,
             key_input: String::new(),
+            tabby_url_input: saved_tabby_url,
+            tabby_token_input: saved_tabby_token,
+            tabby_status: None,
             status,
             busy: false,
             models: Vec::new(),
@@ -708,6 +781,9 @@ impl App {
             tasks.push(Task::done(Message::FetchModels));
             tasks.push(Task::done(Message::FetchAccount));
         }
+        if !app.tabby_url_input.trim().is_empty() {
+            tasks.push(Task::done(Message::FetchTabbyModels));
+        }
         if let Some(t) = restore_scroll {
             tasks.push(t);
         }
@@ -777,6 +853,108 @@ impl App {
                 }
                 Task::none()
             }
+            Message::TabbyUrlChanged(v) => {
+                self.tabby_url_input = v;
+                Task::none()
+            }
+            Message::TabbyTokenChanged(v) => {
+                self.tabby_token_input = v;
+                Task::none()
+            }
+            Message::SaveTabby => {
+                let url = self.tabby_url_input.clone();
+                let token = self.tabby_token_input.clone();
+                self.busy = true;
+                self.status = "Tabby 설정 저장 중…".into();
+                Task::perform(
+                    async move {
+                        keystore::write_tabby_base_url(&url)?;
+                        keystore::write_tabby_token(&token)?;
+                        Ok(())
+                    },
+                    Message::TabbySaved,
+                )
+            }
+            Message::TabbySaved(r) => {
+                self.busy = false;
+                match r {
+                    Ok(()) => {
+                        self.status = "Tabby 설정 저장됨".into();
+                        // 저장 직후 자동 모델 fetch (= 연결 테스트 겸용)
+                        if !self.tabby_url_input.trim().is_empty() {
+                            return Task::done(Message::FetchTabbyModels);
+                        }
+                    }
+                    Err(e) => self.status = format!("Tabby 저장 실패: {}", e),
+                }
+                Task::none()
+            }
+            Message::ClearTabby => {
+                let _ = keystore::clear_tabby_base_url();
+                let _ = keystore::clear_tabby_token();
+                self.tabby_url_input.clear();
+                self.tabby_token_input.clear();
+                self.tabby_status = None;
+                self.status = "Tabby 설정 삭제됨".into();
+                // 모델 리스트에서 Tabby 항목 제거
+                self.model_options.retain(|o| o.provider != LlmProvider::Tabby);
+                self.refresh_model_combo();
+                // 선택된 모델이 Tabby였다면 해제
+                if let Some(sel) = self.selected_model.clone() {
+                    if !self.model_options.iter().any(|o| o.id == sel) {
+                        self.selected_model = self.model_options.first().map(|o| o.id.clone());
+                        if let Some(id) = &self.selected_model {
+                            let _ = keystore::write_selected_model(id);
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::FetchTabbyModels => {
+                let url = self.tabby_url_input.clone();
+                if url.trim().is_empty() {
+                    self.tabby_status = Some(Err("URL 비어있음".into()));
+                    return Task::none();
+                }
+                let token = if self.tabby_token_input.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.tabby_token_input.clone())
+                };
+                self.status = "Tabby 모델 가져오는 중…".into();
+                Task::perform(tabby::list_models(url, token), Message::TabbyModelsLoaded)
+            }
+            Message::TabbyModelsLoaded(r) => {
+                // 기존 Tabby 항목 제거 후 새로 채움 (성공/실패 모두 동일하게 비움)
+                self.model_options.retain(|o| o.provider != LlmProvider::Tabby);
+                match r {
+                    Ok(ids) => {
+                        let label = if ids.is_empty() {
+                            "ok (모델 없음)".to_string()
+                        } else {
+                            format!("{}개", ids.len())
+                        };
+                        self.status = format!("Tabby 연결됨 — {}", label);
+                        self.tabby_status = Some(Ok(label));
+                        for id in ids {
+                            let ko_friendly = is_korean_friendly(&id);
+                            self.model_options.push(ModelOption {
+                                id,
+                                provider: LlmProvider::Tabby,
+                                ko_friendly,
+                                prompt_per_million: Some(0.0),
+                                completion_per_million: Some(0.0),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        self.status = format!("Tabby 연결 실패: {}", e);
+                        self.tabby_status = Some(Err(e));
+                    }
+                }
+                self.refresh_model_combo();
+                Task::none()
+            }
             Message::FetchModels => {
                 let key = match keystore::read_api_key() {
                     Ok(k) => k,
@@ -795,18 +973,23 @@ impl App {
                     Ok(models) => {
                         let n = models.len();
                         self.model_ids = models.iter().map(|m| m.id.clone()).collect();
-                        self.model_options = models
-                            .iter()
-                            .map(|m| ModelOption {
-                                id: m.id.clone(),
+                        // OpenRouter 항목만 교체, Tabby 항목 보존
+                        self.model_options.retain(|o| o.provider != LlmProvider::OpenRouter);
+                        self.model_options.extend(models.iter().map(|m| {
+                            let id = m.id.clone();
+                            let ko_friendly = is_korean_friendly(&id);
+                            ModelOption {
+                                id,
+                                provider: LlmProvider::OpenRouter,
+                                ko_friendly,
                                 prompt_per_million: parse_price_per_million(
                                     m.pricing.as_ref().and_then(|p| p.prompt.as_deref()),
                                 ),
                                 completion_per_million: parse_price_per_million(
                                     m.pricing.as_ref().and_then(|p| p.completion.as_deref()),
                                 ),
-                            })
-                            .collect();
+                            }
+                        }));
                         self.refresh_model_combo();
                         let saved_in_list = self
                             .selected_model
@@ -2372,6 +2555,46 @@ impl App {
         ]
         .spacing(8);
 
+        // ── Tabby 섹션 ────────────────────────────────────────────
+        let tabby_header = text("Tabby (로컬 / 자체 호스팅)").size(14);
+        let tabby_url = text_input("http://localhost:8080", &self.tabby_url_input)
+            .on_input(Message::TabbyUrlChanged)
+            .padding(10)
+            .width(Length::Fixed(420.0));
+        let tabby_token = text_input("token (선택)", &self.tabby_token_input)
+            .on_input(Message::TabbyTokenChanged)
+            .padding(10)
+            .width(Length::Fixed(420.0));
+        let tabby_actions = row![
+            button(text("저장").size(13)).on_press_maybe(if self.busy {
+                None
+            } else {
+                Some(Message::SaveTabby)
+            }),
+            button(text("연결 테스트").size(13)).on_press_maybe(
+                if self.busy || self.tabby_url_input.trim().is_empty() {
+                    None
+                } else {
+                    Some(Message::FetchTabbyModels)
+                }
+            ),
+            button(text("삭제").size(13)).on_press_maybe(
+                if self.busy
+                    || (self.tabby_url_input.is_empty() && self.tabby_token_input.is_empty())
+                {
+                    None
+                } else {
+                    Some(Message::ClearTabby)
+                }
+            ),
+        ]
+        .spacing(8);
+        let tabby_status_label = match &self.tabby_status {
+            Some(Ok(label)) => text(format!("연결됨: {}", label)).size(11),
+            Some(Err(e)) => text(format!("연결 실패: {}", e)).size(11),
+            None => text("미시도").size(11),
+        };
+
         let body = column![
             header,
             Space::new().height(Length::Fixed(12.0)),
@@ -2381,6 +2604,13 @@ impl App {
             Space::new().height(Length::Fixed(8.0)),
             text("키는 OS Credential Manager에 저장됩니다.").size(11),
             text("https://openrouter.ai/keys 에서 발급").size(11),
+            Space::new().height(Length::Fixed(20.0)),
+            tabby_header,
+            tabby_url,
+            tabby_token,
+            tabby_actions,
+            tabby_status_label,
+            text("Tabby가 켜져있어야 동작 (기본 8080).").size(11),
         ]
         .spacing(8)
         .max_width(520);

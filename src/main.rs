@@ -44,31 +44,51 @@ impl LlmProvider {
 }
 
 /// combo_box에 표시할 모델 항목 (가격 정보 포함).
-/// Display 형식: "[OR][KO] model-id  $in/$out" 또는 "[Tb] model-id  free"
+/// Display 형식: "[OR][KO]★ model-id  128k  $in/$out" 또는 "[Tb] model-id  free"
 #[derive(Debug, Clone, PartialEq)]
 struct ModelOption {
     id: String,
     provider: LlmProvider,
     /// 한국어 토크나이저 친화 모델 휴리스틱 결과
     ko_friendly: bool,
+    /// 즐겨찾기 여부 (refresh_model_combo에서 self.favorites 기준으로 set)
+    favorite: bool,
+    /// context window 토큰 수 (있을 때만 표시)
+    context_length: Option<u64>,
     /// 입력 100만 토큰당 USD
     prompt_per_million: Option<f64>,
     /// 출력 100만 토큰당 USD
     completion_per_million: Option<f64>,
 }
 
+/// 1234567 → "1.2M", 128000 → "128k". 라벨 짧게 표시용.
+fn fmt_context_length(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{}k", n / 1_000)
+    } else {
+        n.to_string()
+    }
+}
+
 impl std::fmt::Display for ModelOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let tag = self.provider.tag();
         let ko = if self.ko_friendly { "[KO]" } else { "" };
+        let star = if self.favorite { "★" } else { "" };
+        let ctx = self
+            .context_length
+            .map(|n| format!("  {}", fmt_context_length(n)))
+            .unwrap_or_default();
         match (self.prompt_per_million, self.completion_per_million) {
             (Some(p), Some(c)) if p == 0.0 && c == 0.0 => {
-                write!(f, "{}{} {}  free", tag, ko, self.id)
+                write!(f, "{}{}{} {}{}  free", tag, ko, star, self.id, ctx)
             }
             (Some(p), Some(c)) => {
-                write!(f, "{}{} {}  ${:.2}/${:.2}", tag, ko, self.id, p, c)
+                write!(f, "{}{}{} {}{}  ${:.2}/${:.2}", tag, ko, star, self.id, ctx, p, c)
             }
-            _ => write!(f, "{}{} {}", tag, ko, self.id),
+            _ => write!(f, "{}{}{} {}{}", tag, ko, star, self.id, ctx),
         }
     }
 }
@@ -246,6 +266,30 @@ fn persisted_to_block(pb: session::PersistedBlock) -> Block {
         md_items,
         model,
     }
+}
+
+/// Tabby 연결 에러 원문을 사용자 친화 actionable 메시지로 변환.
+fn humanize_tabby_error(raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+    if lower.contains("connection refused")
+        || lower.contains("connect")
+            && (lower.contains("refused") || lower.contains("os error 10061"))
+    {
+        return "서버 응답 없음 — `tabby serve` 실행 중인지 확인 (기본 8080)".into();
+    }
+    if lower.contains("dns") || lower.contains("nodename") {
+        return "호스트 주소 확인 — URL의 도메인이 맞나요?".into();
+    }
+    if lower.contains("timeout") || lower.contains("timed out") {
+        return "응답 지연 — 서버는 살아있지만 5초 내 응답 없음".into();
+    }
+    if raw.contains("Tabby 401") || raw.contains("Tabby 403") {
+        return "인증 실패 — token이 필요/잘못됨".into();
+    }
+    if raw.contains("Tabby 404") {
+        return "404 — base URL이 맞나요? `/v1/models` 경로 확인".into();
+    }
+    raw.to_string()
 }
 
 /// 도구 호출 결과를 ToolResult 칩에 표시할 한 줄 요약 + 성공 여부로 변환.
@@ -601,9 +645,9 @@ impl SortMode {
 
     fn label(self) -> &'static str {
         match self {
-            SortMode::Default => "정렬: -",
-            SortMode::PriceAsc => "💰 ↑",
-            SortMode::PriceDesc => "💰 ↓",
+            SortMode::Default => "정렬: 기본",
+            SortMode::PriceAsc => "정렬: 가격↑",
+            SortMode::PriceDesc => "정렬: 가격↓",
         }
     }
 }
@@ -992,18 +1036,22 @@ impl App {
                         self.tabby_status = Some(Ok(label));
                         for id in ids {
                             let ko_friendly = is_korean_friendly(&id);
+                            let favorite = self.favorites.contains(&id);
                             self.model_options.push(ModelOption {
                                 id,
                                 provider: LlmProvider::Tabby,
                                 ko_friendly,
+                                favorite,
+                                context_length: None,
                                 prompt_per_million: Some(0.0),
                                 completion_per_million: Some(0.0),
                             });
                         }
                     }
                     Err(e) => {
-                        self.status = format!("Tabby 연결 실패: {}", e);
-                        self.tabby_status = Some(Err(e));
+                        let actionable = humanize_tabby_error(&e);
+                        self.status = format!("Tabby 연결 실패: {}", actionable);
+                        self.tabby_status = Some(Err(actionable));
                     }
                 }
                 self.refresh_model_combo();
@@ -1032,10 +1080,13 @@ impl App {
                         self.model_options.extend(models.iter().map(|m| {
                             let id = m.id.clone();
                             let ko_friendly = is_korean_friendly(&id);
+                            let favorite = self.favorites.contains(&id);
                             ModelOption {
                                 id,
                                 provider: LlmProvider::OpenRouter,
                                 ko_friendly,
+                                favorite,
+                                context_length: m.context_length,
                                 prompt_per_million: parse_price_per_million(
                                     m.pricing.as_ref().and_then(|p| p.prompt.as_deref()),
                                 ),
@@ -1630,6 +1681,10 @@ impl App {
 
     /// 필터/즐겨찾기 변경 시 combo_box::State 재구성.
     fn refresh_model_combo(&mut self) {
+        // favorite 필드를 현재 favorites HashSet과 동기화 (Display에 ★ 반영)
+        for opt in &mut self.model_options {
+            opt.favorite = self.favorites.contains(&opt.id);
+        }
         self.model_combo_state = combo_box::State::new(self.filtered_model_options());
     }
 
@@ -2243,7 +2298,7 @@ impl App {
             text("채팅").size(11),
             scrollable(sessions_col)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(6).scroller_width(6).margin(2),
+                    Scrollbar::new().width(8).scroller_width(8).margin(2),
                 ))
                 .height(Length::Fixed(220.0)),
             Space::new().height(Length::Fixed(14.0)),
@@ -2266,7 +2321,7 @@ impl App {
 
         container(scrollable(body)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(6).scroller_width(6).margin(2),
+                    Scrollbar::new().width(8).scroller_width(8).margin(2),
                 ))
                 .height(Length::Fill))
             .width(Length::Fixed(220.0))
@@ -2285,7 +2340,7 @@ impl App {
 
         container(scrollable(body)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(6).scroller_width(6).margin(2),
+                    Scrollbar::new().width(8).scroller_width(8).margin(2),
                 ))
                 .height(Length::Fill))
             .width(Length::Fixed(280.0))
@@ -2444,15 +2499,24 @@ impl App {
                 .width(Length::Fill)
                 .style(move |theme: &Theme| {
                     let p = theme.extended_palette();
-                    let bg = if is_user {
-                        p.primary.weak.color
+                    let (bg, fg, border) = if is_user {
+                        (
+                            p.primary.base.color,
+                            p.primary.base.text,
+                            p.primary.strong.color,
+                        )
                     } else {
-                        p.background.weak.color
+                        (
+                            p.background.weak.color,
+                            p.background.base.text,
+                            p.background.strong.color,
+                        )
                     };
                     container::Style {
                         background: Some(bg.into()),
+                        text_color: Some(fg),
                         border: iced::Border {
-                            color: p.background.strong.color,
+                            color: border,
                             width: 1.0,
                             radius: 10.0.into(),
                         },
@@ -2465,7 +2529,7 @@ impl App {
                 .id(self.stream_id.clone())
                 .on_scroll(Message::StreamScrolled)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(6).scroller_width(6).margin(2),
+                    Scrollbar::new().width(8).scroller_width(8).margin(2),
                 ))
                 .height(Length::Fill)
                 .into()
@@ -2503,14 +2567,18 @@ impl App {
         let action_btn: Element<Message> = if self.streaming_block_id.is_some() {
             button(text("■ 중지").size(13))
                 .on_press(Message::StopStream)
+                .padding([8, 18])
+                .style(button::danger)
                 .into()
         } else {
-            button(text("Send").size(13))
+            button(text("Send  ⏎").size(13))
                 .on_press_maybe(if send_disabled {
                     None
                 } else {
                     Some(Message::Send)
                 })
+                .padding([8, 18])
+                .style(button::primary)
                 .into()
         };
 
@@ -2549,11 +2617,12 @@ impl App {
 
     fn view_command_palette(&self) -> Element<'_, Message> {
         let header = text("명령 팔레트").size(18);
-        let hint = text(
-            "Esc 닫기 · Ctrl+K 팔레트 · Ctrl+N 새 채팅 · Ctrl+, 설정 · \
-            Ctrl+Shift+P/B 모드",
-        )
-        .size(11);
+        let hint = column![
+            text("탐색  Esc 닫기 · Ctrl+K 토글").size(11),
+            text("작업  Ctrl+N 새 채팅 · Ctrl+, 설정").size(11),
+            text("모드  Ctrl+Shift+P 계획 · Ctrl+Shift+B 빌드").size(11),
+        ]
+        .spacing(2);
         let input = text_input("명령 검색…", &self.command_palette_input)
             .on_input(Message::CommandPaletteChanged)
             .on_submit(Message::ExecuteCommand(0))
@@ -2588,7 +2657,7 @@ impl App {
             Space::new().height(Length::Fixed(8.0)),
             scrollable(list)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(6).scroller_width(6).margin(2),
+                    Scrollbar::new().width(8).scroller_width(8).margin(2),
                 ))
                 .height(Length::Fixed(320.0)),
             Space::new().height(Length::Fixed(8.0)),
@@ -2702,7 +2771,7 @@ impl App {
                 container(
                     scrollable(cards)
                         .direction(Direction::Vertical(
-                            Scrollbar::new().width(6).scroller_width(6).margin(2),
+                            Scrollbar::new().width(8).scroller_width(8).margin(2),
                         ))
                 )
                 .max_height(140.0),
@@ -2832,7 +2901,7 @@ impl App {
         container(
             scrollable(col)
                 .direction(Direction::Vertical(
-                    Scrollbar::new().width(6).scroller_width(6).margin(2),
+                    Scrollbar::new().width(8).scroller_width(8).margin(2),
                 ))
                 .height(Length::Fill),
         )
@@ -2976,11 +3045,19 @@ impl App {
             Some(c) if c > 0.0 => format!("최근: ${:.4}", c),
             _ => String::new(),
         };
+        let busy_prefix: Element<Message> = if self.streaming_block_id.is_some() {
+            text("▶ ").size(11).style(|theme: &Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().primary.base.color),
+            }).into()
+        } else {
+            Space::new().width(Length::Shrink).height(Length::Shrink).into()
+        };
         let mut bar = row![
+            busy_prefix,
             text(&self.status).size(11),
             Space::new().width(Length::Fill),
         ]
-        .spacing(14)
+        .spacing(4)
         .align_y(Alignment::Center);
         if !last_cost_label.is_empty() {
             bar = bar.push(text(last_cost_label).size(11));

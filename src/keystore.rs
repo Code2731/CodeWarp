@@ -4,6 +4,7 @@
 const SERVICE: &str = "codewarp";
 const USER: &str = "openrouter_api_key";
 const MODEL_USER: &str = "selected_model";
+const CWD_USER: &str = "working_directory";
 
 fn entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(SERVICE, USER).map_err(|e| e.to_string())
@@ -11,6 +12,10 @@ fn entry() -> Result<keyring::Entry, String> {
 
 fn model_entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(SERVICE, MODEL_USER).map_err(|e| e.to_string())
+}
+
+fn cwd_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(SERVICE, CWD_USER).map_err(|e| e.to_string())
 }
 
 pub fn read_api_key() -> Result<String, String> {
@@ -61,4 +66,15 @@ pub fn clear_selected_model() -> Result<(), String> {
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
+}
+
+pub fn read_cwd() -> Option<String> {
+    cwd_entry().ok()?.get_password().ok()
+}
+
+pub fn write_cwd(path: &str) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Ok(());
+    }
+    cwd_entry()?.set_password(path).map_err(|e| e.to_string())
 }

@@ -3,18 +3,20 @@
 
 mod keystore;
 mod openrouter;
+mod tools;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use iced::widget::markdown;
+use iced::widget::markdown::{self, HeadingLevel, Settings as MdSettings, Text as MdText, Viewer};
 use iced::widget::operation::snap_to_end;
 use iced::widget::scrollable::{Direction, Scrollbar, Viewport};
 use iced::widget::text_editor::{Action, Edit};
 use iced::widget::{
-    button, column, container, pick_list, row, scrollable, text, text_editor, text_input,
+    button, column, combo_box, container, row, scrollable, text, text_editor, text_input,
     Id as ScrollId, Space,
 };
-use iced::{Alignment, Element, Font, Length, Size, Task, Theme};
+use iced::{font, Alignment, Element, Font, Length, Size, Task, Theme};
 
 use openrouter::{ChatEvent, ChatMessage, OpenRouterModel};
 
@@ -94,6 +96,38 @@ struct Block {
     md_items: Vec<markdown::Item>,
 }
 
+/// markdown::view_with용 커스텀 Viewer. heading은 Bold weight 강제.
+struct CodewarpViewer;
+
+impl<'a> Viewer<'a, Message> for CodewarpViewer {
+    fn on_link_click(url: markdown::Uri) -> Message {
+        Message::LinkClicked(url)
+    }
+
+    fn heading(
+        &self,
+        mut settings: MdSettings,
+        level: &'a HeadingLevel,
+        text: &'a MdText,
+        index: usize,
+    ) -> Element<'a, Message> {
+        let mut bold = Font::with_name("Pretendard");
+        bold.weight = font::Weight::Bold;
+        settings.style.font = bold;
+        markdown::heading(settings, level, text, index, Self::on_link_click)
+    }
+}
+
+/// 도구 호출이 SSE delta로 부분씩 도착하는 동안 누적할 임시 구조.
+#[derive(Default, Clone)]
+struct PendingToolCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+const MAX_TOOL_ROUNDS: u32 = 5;
+
 struct App {
     has_key: bool,
     key_input: String,
@@ -113,6 +147,22 @@ struct App {
 
     stream_id: ScrollId,
     follow_bottom: bool,
+
+    /// OpenRouter에 보낼 누적 대화 (도구 호출 round trip 포함)
+    conversation: Vec<ChatMessage>,
+    /// 현재 stream 중 누적되는 tool_calls
+    pending_tool_calls: Vec<PendingToolCall>,
+    /// 도구 호출 라운드 카운터 (무한 루프 방지)
+    tool_round: u32,
+    /// 도구 실행 시 기준이 되는 작업 디렉토리
+    cwd: PathBuf,
+
+    /// 검색 가능한 모델 셀렉터(combo_box) 상태
+    model_combo_state: combo_box::State<String>,
+
+    /// 사용자 승인 대기 중인 mutating tool 호출 목록 (write_file 등)
+    pending_write_calls: Vec<PendingToolCall>,
+    show_write_confirm: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -135,6 +185,10 @@ enum Message {
     EditorAction(u64, Action),
     ToggleBlockView(u64),
     LinkClicked(markdown::Uri),
+    PickCwd,
+    CwdPicked(Option<PathBuf>),
+    ApproveWrites,
+    DenyWrites,
 }
 
 impl App {
@@ -169,6 +223,17 @@ impl App {
             show_settings: !has_key,
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
+            conversation: Vec::new(),
+            pending_tool_calls: Vec::new(),
+            tool_round: 0,
+            cwd: keystore::read_cwd()
+                .map(PathBuf::from)
+                .filter(|p| p.is_dir())
+                .or_else(|| std::env::current_dir().ok())
+                .unwrap_or_else(|| PathBuf::from(".")),
+            model_combo_state: combo_box::State::new(Vec::new()),
+            pending_write_calls: Vec::new(),
+            show_write_confirm: false,
         };
         let task = if has_key {
             Task::done(Message::FetchModels)
@@ -254,6 +319,8 @@ impl App {
                     Ok(models) => {
                         let n = models.len();
                         self.model_ids = models.iter().map(|m| m.id.clone()).collect();
+                        self.model_combo_state =
+                            combo_box::State::new(self.model_ids.clone());
                         // 저장된 모델이 리스트에 있으면 유지, 없으면 첫 번째로 fallback
                         let saved_in_list = self
                             .selected_model
@@ -296,23 +363,12 @@ impl App {
                 };
                 let model = self.selected_model.clone().unwrap();
 
-                // history: 기존 blocks (비어있지 않은) + 새 user
-                let mut messages: Vec<ChatMessage> = self
-                    .blocks
-                    .iter()
-                    .filter(|b| !b.body.is_empty_for_history())
-                    .map(|b| ChatMessage {
-                        role: match &b.body {
-                            BlockBody::User(_) => "user".into(),
-                            BlockBody::Assistant(_) => "assistant".into(),
-                        },
-                        content: b.body.to_text(),
-                    })
-                    .collect();
-                messages.push(ChatMessage {
-                    role: "user".into(),
-                    content: text.clone(),
-                });
+                // 새 turn 시작: system 메시지(cwd 안내) 보장 → user 메시지 push.
+                self.ensure_system_message();
+                self.conversation.push(ChatMessage::user(text.clone()));
+                self.pending_tool_calls.clear();
+                self.tool_round = 0;
+                let messages = self.conversation.clone();
 
                 let user_id = self.next_id();
                 self.blocks.push(Block {
@@ -336,7 +392,12 @@ impl App {
                 Task::batch(vec![
                     snap_to_end(self.stream_id.clone()),
                     Task::run(
-                        openrouter::chat_stream(api_key, model, messages),
+                        openrouter::chat_stream(
+                            api_key,
+                            model,
+                            messages,
+                            Some(tools::tool_definitions()),
+                        ),
                         Message::ChatChunk,
                     ),
                 ])
@@ -351,10 +412,9 @@ impl App {
                 let Some(ai_id) = self.streaming_block_id else {
                     return Task::none();
                 };
-                let block = self.blocks.iter_mut().find(|b| b.id == ai_id);
                 match event {
                     ChatEvent::Token(t) => {
-                        if let Some(b) = block {
+                        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
                             if let BlockBody::Assistant(content) = &mut b.body {
                                 content.perform(Action::Edit(Edit::Paste(Arc::new(t))));
                                 let raw = content.text();
@@ -362,12 +422,63 @@ impl App {
                             }
                         }
                     }
-                    ChatEvent::Done => {
+                    ChatEvent::ToolCallDelta {
+                        index,
+                        id,
+                        name,
+                        arguments,
+                    } => {
+                        let i = index as usize;
+                        while self.pending_tool_calls.len() <= i {
+                            self.pending_tool_calls.push(PendingToolCall::default());
+                        }
+                        let tc = &mut self.pending_tool_calls[i];
+                        if let Some(id) = id {
+                            tc.id = id;
+                        }
+                        if let Some(name) = name {
+                            tc.name = name;
+                        }
+                        if let Some(args) = arguments {
+                            tc.arguments.push_str(&args);
+                        }
+                    }
+                    ChatEvent::Done { finish_reason } => {
+                        // 현재 assistant block에 누적된 텍스트
+                        let assistant_text = self
+                            .blocks
+                            .iter()
+                            .find(|b| b.id == ai_id)
+                            .and_then(|b| match &b.body {
+                                BlockBody::Assistant(c) => Some(c.text()),
+                                _ => None,
+                            })
+                            .unwrap_or_default();
+
+                        let has_tools = !self.pending_tool_calls.is_empty()
+                            && (finish_reason.as_deref() == Some("tool_calls")
+                                || finish_reason.is_none());
+
+                        if has_tools && self.tool_round < MAX_TOOL_ROUNDS {
+                            return self.run_tool_round(assistant_text);
+                        }
+
+                        // 정상 종료 (또는 라운드 한도 초과)
+                        if self.tool_round >= MAX_TOOL_ROUNDS && !self.pending_tool_calls.is_empty() {
+                            self.status =
+                                format!("최대 도구 라운드 {} 초과", MAX_TOOL_ROUNDS);
+                        } else {
+                            self.status = "준비됨".into();
+                        }
+                        if !assistant_text.is_empty() {
+                            self.conversation
+                                .push(ChatMessage::assistant(assistant_text));
+                        }
                         self.streaming_block_id = None;
-                        self.status = "준비됨".into();
+                        self.pending_tool_calls.clear();
                     }
                     ChatEvent::Error(e) => {
-                        if let Some(b) = block {
+                        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
                             if let BlockBody::Assistant(content) = &mut b.body {
                                 let prefix =
                                     if content.text().is_empty() { "" } else { "\n\n" };
@@ -378,6 +489,7 @@ impl App {
                             }
                         }
                         self.streaming_block_id = None;
+                        self.pending_tool_calls.clear();
                         self.status = format!("에러: {}", e);
                     }
                 }
@@ -418,7 +530,162 @@ impl App {
                 // TODO: 시스템 브라우저 열기 (webbrowser crate 등)
                 Task::none()
             }
+            Message::PickCwd => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("작업 폴더 선택")
+                        .pick_folder()
+                        .await
+                        .map(|h| h.path().to_path_buf())
+                },
+                Message::CwdPicked,
+            ),
+            Message::ApproveWrites => self.continue_after_writes(true),
+            Message::DenyWrites => self.continue_after_writes(false),
+            Message::CwdPicked(maybe_path) => {
+                if let Some(path) = maybe_path {
+                    self.cwd = path.clone();
+                    let _ = keystore::write_cwd(&path.display().to_string());
+                    self.status = format!("작업 폴더: {}", path.display());
+                    // system 메시지(cwd 안내) 갱신
+                    self.ensure_system_message();
+                }
+                Task::none()
+            }
         }
+    }
+
+    /// conversation 첫 위치에 cwd를 알려주는 system 메시지를 보장 (없으면 추가, 있으면 갱신).
+    fn ensure_system_message(&mut self) {
+        let prompt = format!(
+            "당신은 CodeWarp의 코딩 어시스턴트입니다. 사용자의 현재 작업 디렉토리는 \
+            '{}' 입니다. 파일 내용을 보거나 인용해야 할 때는 read_file 도구를 사용하세요. \
+            도구의 path 인자는 반드시 작업 디렉토리 기준 상대 경로여야 합니다 (절대 경로 거부됨). \
+            먼저 도구 결과를 받은 뒤, 그것을 근거로 답하세요.",
+            self.cwd.display()
+        );
+        if let Some(first) = self.conversation.first_mut() {
+            if first.role == "system" {
+                first.content = Some(prompt);
+                return;
+            }
+        }
+        self.conversation.insert(
+            0,
+            ChatMessage {
+                role: "system".into(),
+                content: Some(prompt),
+                ..Default::default()
+            },
+        );
+    }
+
+    /// pending_tool_calls를 conversation에 반영, 안전한 도구는 즉시 실행하고
+    /// mutating 도구가 있으면 사용자 승인 모달을 띄움. 모두 처리되면 새 chat_stream 트리거.
+    fn run_tool_round(&mut self, assistant_partial: String) -> Task<Message> {
+        let calls = std::mem::take(&mut self.pending_tool_calls);
+
+        // 1) assistant tool_calls 메시지 누적
+        let tool_calls_json = serde_json::Value::Array(
+            calls
+                .iter()
+                .enumerate()
+                .map(|(i, tc)| {
+                    serde_json::json!({
+                        "id": tc.id,
+                        "type": "function",
+                        "index": i,
+                        "function": {
+                            "name": tc.name,
+                            "arguments": tc.arguments,
+                        }
+                    })
+                })
+                .collect(),
+        );
+        let mut assistant_msg = ChatMessage::assistant_tool_calls(tool_calls_json);
+        if !assistant_partial.is_empty() {
+            assistant_msg.content = Some(assistant_partial);
+        }
+        self.conversation.push(assistant_msg);
+
+        // 2) 즉시 실행 가능한 것(read_only)과 승인 필요한 것(mutating) 분리
+        let (read_calls, write_calls): (Vec<_>, Vec<_>) = calls
+            .into_iter()
+            .partition(|tc| tools::tool_kind(&tc.name) == tools::ToolKind::ReadOnly);
+
+        let mut names: Vec<String> = Vec::new();
+        for tc in &read_calls {
+            names.push(tc.name.clone());
+            let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
+            self.conversation
+                .push(ChatMessage::tool_result(&tc.id, result));
+        }
+        if !names.is_empty() {
+            self.status = format!("도구 호출: {}", names.join(", "));
+        }
+
+        if !write_calls.is_empty() {
+            // mutating 도구는 사용자 승인 모달로 일시정지
+            self.pending_write_calls = write_calls;
+            self.show_write_confirm = true;
+            self.status = "파일 쓰기 승인 대기".into();
+            return Task::none();
+        }
+
+        self.tool_round += 1;
+        self.kick_chat_stream()
+    }
+
+    /// 사용자 승인/거부 후 호출. true면 mutating 실행, false면 거부 결과를 conversation에 기록.
+    fn continue_after_writes(&mut self, approved: bool) -> Task<Message> {
+        let calls = std::mem::take(&mut self.pending_write_calls);
+        self.show_write_confirm = false;
+
+        if approved {
+            let mut names: Vec<String> = Vec::new();
+            for tc in &calls {
+                names.push(tc.name.clone());
+                let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
+                self.conversation
+                    .push(ChatMessage::tool_result(&tc.id, result));
+            }
+            self.status = format!("실행 완료: {}", names.join(", "));
+        } else {
+            for tc in &calls {
+                self.conversation.push(ChatMessage::tool_result(
+                    &tc.id,
+                    "[denied] 사용자가 파일 쓰기를 거부했습니다.",
+                ));
+            }
+            self.status = "사용자가 파일 쓰기를 거부했습니다".into();
+        }
+
+        self.tool_round += 1;
+        self.kick_chat_stream()
+    }
+
+    /// 누적된 conversation을 가지고 다음 chat_stream을 시작.
+    fn kick_chat_stream(&mut self) -> Task<Message> {
+        let api_key = match keystore::read_api_key() {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = e;
+                self.streaming_block_id = None;
+                return Task::none();
+            }
+        };
+        let model = self.selected_model.clone().unwrap_or_default();
+        let messages = self.conversation.clone();
+        Task::run(
+            openrouter::chat_stream(
+                api_key,
+                model,
+                messages,
+                Some(tools::tool_definitions()),
+            ),
+            Message::ChatChunk,
+        )
     }
 
     fn next_id(&mut self) -> u64 {
@@ -432,6 +699,8 @@ impl App {
 
         let middle: Element<Message> = if self.show_settings {
             self.view_settings()
+        } else if self.show_write_confirm {
+            self.view_write_confirm()
         } else {
             row![
                 self.view_sidebar(),
@@ -454,13 +723,16 @@ impl App {
         let model_picker: Element<Message> = if self.model_ids.is_empty() {
             text("모델 없음").size(12).into()
         } else {
-            pick_list(
-                self.model_ids.clone(),
-                self.selected_model.clone(),
-                Message::SelectModel,
+            iced::widget::container(
+                combo_box(
+                    &self.model_combo_state,
+                    "모델 검색…",
+                    self.selected_model.as_ref(),
+                    Message::SelectModel,
+                )
+                .size(12),
             )
-            .placeholder("모델 선택")
-            .text_size(12)
+            .width(Length::Fixed(420.0))
             .into()
         };
 
@@ -480,14 +752,31 @@ impl App {
     }
 
     fn view_sidebar(&self) -> Element<'_, Message> {
+        let cwd_display = self.cwd.display().to_string();
+        // 너무 긴 경로는 끝부분만 표시
+        let cwd_short = if cwd_display.chars().count() > 36 {
+            let tail: String = cwd_display
+                .chars()
+                .rev()
+                .take(34)
+                .collect::<Vec<char>>()
+                .into_iter()
+                .rev()
+                .collect();
+            format!("…{}", tail)
+        } else {
+            cwd_display.clone()
+        };
+
         let body = column![
+            text("작업 폴더").size(11),
+            text(cwd_short).size(12),
+            button(text("📁 폴더 변경").size(11))
+                .on_press(Message::PickCwd)
+                .padding([4, 8]),
+            Space::new().height(Length::Fixed(14.0)),
             text("프로젝트").size(11),
             text("CodeWarp").size(13),
-            Space::new().height(Length::Fixed(14.0)),
-            text("파일").size(11),
-            text("src/").size(13),
-            text("Cargo.toml").size(13),
-            text("README.md").size(13),
             Space::new().height(Length::Fixed(14.0)),
             text("컨텍스트").size(11),
             text("선택 안 됨").size(13),
@@ -583,8 +872,7 @@ impl App {
                         let mut settings: markdown::Settings = (&Theme::Dark).into();
                         settings.style.inline_code_font = Font::with_name("JetBrains Mono");
                         settings.style.code_block_font = Font::with_name("JetBrains Mono");
-                        markdown::view(b.md_items.iter(), settings)
-                            .map(Message::LinkClicked)
+                        markdown::view_with(b.md_items.iter(), settings, &CodewarpViewer)
                     }
                 };
 
@@ -632,6 +920,79 @@ impl App {
         ]
         .height(Length::Fill)
         .width(Length::Fill)
+        .into()
+    }
+
+    fn view_write_confirm(&self) -> Element<'_, Message> {
+        let mut col = column![
+            text("파일 쓰기 승인 대기").size(22),
+            text(format!(
+                "AI가 {}개의 파일을 변경하려고 합니다. 내용을 검토한 뒤 승인 또는 거부하세요.",
+                self.pending_write_calls.len()
+            ))
+            .size(13),
+            Space::new().height(Length::Fixed(14.0)),
+        ]
+        .spacing(6);
+
+        for tc in &self.pending_write_calls {
+            let card: Element<Message> = match tools::WriteFileArgs::parse(&tc.arguments) {
+                Ok(args) => {
+                    let total_chars = args.content.chars().count();
+                    let preview = if total_chars > 1500 {
+                        let head: String = args.content.chars().take(1500).collect();
+                        format!("{}\n…(총 {} chars 중 처음 1500만 표시)", head, total_chars)
+                    } else {
+                        args.content.clone()
+                    };
+                    column![
+                        text(format!("📝 {}", args.path)).size(15),
+                        text(format!("{} bytes", args.content.len())).size(11),
+                        Space::new().height(Length::Fixed(6.0)),
+                        container(
+                            text(preview)
+                                .size(12)
+                                .font(Font::with_name("JetBrains Mono"))
+                        )
+                        .padding(10)
+                        .width(Length::Fill),
+                    ]
+                    .spacing(4)
+                    .into()
+                }
+                Err(e) => column![
+                    text(format!("[arguments 파싱 실패] {}", e)).size(13),
+                    text(tc.arguments.clone()).size(11),
+                ]
+                .spacing(4)
+                .into(),
+            };
+            col = col.push(container(card).padding(12).width(Length::Fill));
+        }
+
+        let actions = row![
+            button(text("거부").size(13))
+                .on_press(Message::DenyWrites)
+                .padding([6, 16]),
+            button(text("✓ 모두 승인").size(13))
+                .on_press(Message::ApproveWrites)
+                .padding([6, 16]),
+        ]
+        .spacing(8);
+
+        col = col.push(Space::new().height(Length::Fixed(14.0)));
+        col = col.push(actions);
+
+        container(
+            scrollable(col)
+                .direction(Direction::Vertical(
+                    Scrollbar::new().width(6).scroller_width(6).margin(2),
+                ))
+                .height(Length::Fill),
+        )
+        .padding(20)
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
     }
 

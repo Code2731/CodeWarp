@@ -439,6 +439,14 @@ impl<'a> Viewer<'a, Message> for CodewarpViewer {
     }
 }
 
+/// Right panel에 누적되는 도구 호출 기록 (현재 세션 한정, 휘발성).
+#[derive(Debug, Clone)]
+struct ToolLogEntry {
+    name: String,
+    summary: String,
+    success: bool,
+}
+
 /// 도구 호출이 SSE delta로 부분씩 도착하는 동안 누적할 임시 구조.
 #[derive(Default, Clone)]
 struct PendingToolCall {
@@ -475,6 +483,8 @@ struct App {
     pending_delete_session: Option<u64>,
     /// 인라인 confirm에서 펼친 카드 인덱스 (한 번에 하나만 펼침).
     expanded_confirm_idx: Option<usize>,
+    /// 현재 세션의 도구 호출 누적 로그 (right panel 표시용, 휘발성).
+    tool_log: Vec<ToolLogEntry>,
 
     show_settings: bool,
 
@@ -787,6 +797,7 @@ impl App {
             abort_handle: None,
             pending_delete_session: None,
             expanded_confirm_idx: None,
+            tool_log: Vec::new(),
             show_settings: !has_key,
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
@@ -1478,6 +1489,7 @@ impl App {
                 self.show_write_confirm = false;
                 self.streaming_block_id = None;
                 self.tool_round = 0;
+                self.tool_log.clear();
                 self.next_block_id = 0;
                 self.input.clear();
                 self.current_session_id = self.allocate_session_id();
@@ -1512,6 +1524,7 @@ impl App {
                 self.show_write_confirm = false;
                 self.streaming_block_id = None;
                 self.tool_round = 0;
+                self.tool_log.clear();
                 self.input.clear();
                 self.status = "세션 전환됨".into();
                 self.save_session();
@@ -1607,6 +1620,7 @@ impl App {
                     // 현재 활성을 삭제 → 빈 세션으로 대체
                     self.blocks.clear();
                     self.conversation.clear();
+                    self.tool_log.clear();
                     self.next_block_id = 0;
                     self.current_session_id = self.allocate_session_id();
                     self.current_session_title = "새 채팅".into();
@@ -1919,18 +1933,24 @@ impl App {
     }
 
     /// 도구 실행 결과 chip 블록을 stream에 push (휘발성 — 세션 저장 안 됨).
+    /// 동시에 right panel용 tool_log에도 기록.
     fn push_tool_result_block(&mut self, name: String, summary: String, success: bool) {
         let id = self.next_id();
         self.blocks.push(Block {
             id,
             body: BlockBody::ToolResult {
-                name,
-                summary,
+                name: name.clone(),
+                summary: summary.clone(),
                 success,
             },
             view_mode: ViewMode::Rendered,
             md_items: Vec::new(),
             model: None,
+        });
+        self.tool_log.push(ToolLogEntry {
+            name,
+            summary,
+            success,
         });
     }
 
@@ -2331,22 +2351,79 @@ impl App {
     }
 
     fn view_rightpanel(&self) -> Element<'_, Message> {
+        // 세션 통계 — derive
+        let user_msg_count = self
+            .conversation
+            .iter()
+            .filter(|m| m.role == "user")
+            .count();
+        let tool_count = self.tool_log.len();
+        let success_count = self.tool_log.iter().filter(|e| e.success).count();
+        let fail_count = tool_count - success_count;
+
+        let stats = column![
+            text("세션 통계").size(11),
+            text(format!("· 메시지: {}", user_msg_count)).size(12),
+            text(format!(
+                "· 도구 호출: {} (✓{} ✗{})",
+                tool_count, success_count, fail_count
+            ))
+            .size(12),
+            text(format!("· 모드: {}", self.agent_mode.label())).size(12),
+        ]
+        .spacing(2);
+
+        // 도구 호출 로그 (역순 — 최근이 위)
+        let mut log_col = column![text("도구 호출 로그").size(11)].spacing(2);
+        if self.tool_log.is_empty() {
+            log_col = log_col.push(text("// 도구 호출 시 여기 누적").size(11));
+        } else {
+            for entry in self.tool_log.iter().rev() {
+                let icon = if entry.success { "✓" } else { "✗" };
+                let line = text(format!("{} {} → {}", icon, entry.name, entry.summary))
+                    .size(11)
+                    .font(Font::with_name("JetBrains Mono"));
+                log_col = log_col.push(line);
+            }
+        }
+
+        // 도구 라운드 진행 표시 (streaming 중일 때만)
+        let round_indicator: Element<Message> = if self.streaming_block_id.is_some()
+            && self.tool_round > 0
+        {
+            text(format!(
+                "▶ 도구 라운드 {}/{}",
+                self.tool_round, MAX_TOOL_ROUNDS
+            ))
+            .size(11)
+            .style(|theme: &Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().primary.base.color),
+            })
+            .into()
+        } else {
+            Space::new().width(Length::Shrink).height(Length::Shrink).into()
+        };
+
         let body = column![
-            text("Plan / Diff / History").size(11),
-            Space::new().height(Length::Fixed(8.0)),
-            text("// 에이전트 단계가 여기 표시됩니다.").size(12),
+            stats,
+            Space::new().height(Length::Fixed(14.0)),
+            round_indicator,
+            Space::new().height(Length::Fixed(6.0)),
+            log_col,
         ]
         .spacing(6);
 
-        container(scrollable(body)
+        container(
+            scrollable(body)
                 .direction(Direction::Vertical(
                     Scrollbar::new().width(8).scroller_width(8).margin(2),
                 ))
-                .height(Length::Fill))
-            .width(Length::Fixed(280.0))
-            .height(Length::Fill)
-            .padding(14)
-            .into()
+                .height(Length::Fill),
+        )
+        .width(Length::Fixed(280.0))
+        .height(Length::Fill)
+        .padding(14)
+        .into()
     }
 
     /// 빈 채팅(blocks가 없을 때) 화면 — 예시 프롬프트 + 슬래시 명령 + 단축키.

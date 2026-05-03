@@ -169,6 +169,12 @@ fn main() -> iced::Result {
 enum BlockBody {
     User(String),
     Assistant(text_editor::Content),
+    /// 도구 호출 실행 결과 (휘발성 — 세션 저장 안 됨, 시각 알림용).
+    ToolResult {
+        name: String,
+        summary: String,
+        success: bool,
+    },
 }
 
 impl BlockBody {
@@ -176,6 +182,7 @@ impl BlockBody {
         match self {
             BlockBody::User(_) => "you",
             BlockBody::Assistant(_) => "ai",
+            BlockBody::ToolResult { .. } => "tool",
         }
     }
 
@@ -183,6 +190,7 @@ impl BlockBody {
         match self {
             BlockBody::User(s) => s.clone(),
             BlockBody::Assistant(c) => c.text(),
+            BlockBody::ToolResult { summary, .. } => summary.clone(),
         }
     }
 
@@ -190,6 +198,7 @@ impl BlockBody {
         match self {
             BlockBody::User(s) => s.trim().is_empty(),
             BlockBody::Assistant(c) => c.text().trim().is_empty(),
+            BlockBody::ToolResult { .. } => false,
         }
     }
 }
@@ -237,6 +246,24 @@ fn persisted_to_block(pb: session::PersistedBlock) -> Block {
         md_items,
         model,
     }
+}
+
+/// 도구 호출 결과를 ToolResult 칩에 표시할 한 줄 요약 + 성공 여부로 변환.
+fn summarize_tool_result(name: &str, args_json: &str, result: &str) -> (String, bool) {
+    let lower = result.to_ascii_lowercase();
+    let success = !(result.starts_with("Error")
+        || lower.contains("[err]")
+        || lower.starts_with("error"));
+    let summary = match name {
+        "write_file" => tools::WriteFileArgs::parse(args_json)
+            .map(|a| format!("{} ({} bytes)", a.path, a.content.len()))
+            .unwrap_or_else(|_| "?".into()),
+        "run_command" => tools::RunCommandArgs::parse(args_json)
+            .map(|a| format!("$ {}", a.command.chars().take(60).collect::<String>()))
+            .unwrap_or_else(|_| "?".into()),
+        _ => result.lines().next().unwrap_or("").chars().take(80).collect(),
+    };
+    (summary, success)
 }
 
 /// 두 텍스트의 line-by-line diff를 색상 표시된 Element로 변환.
@@ -402,6 +429,8 @@ struct App {
     abort_handle: Option<task::Handle>,
     /// 사이드바에서 삭제 확인 대기 중인 세션 ID (✕ → ✓/✗ 토글).
     pending_delete_session: Option<u64>,
+    /// 인라인 confirm에서 펼친 카드 인덱스 (한 번에 하나만 펼침).
+    expanded_confirm_idx: Option<usize>,
 
     show_settings: bool,
 
@@ -634,6 +663,10 @@ enum Message {
     CwdPicked(Option<PathBuf>),
     ApproveWrites,
     DenyWrites,
+    /// 인라인 confirm 카드 펼침/접음 토글.
+    ToggleConfirmExpand(usize),
+    /// 단일 도구 호출만 거부 — pending에서 제거 + denied tool_result 기록.
+    DiscardWriteCall(usize),
     ToggleFilterCoding(bool),
     ToggleFilterReasoning(bool),
     ToggleFilterGeneral(bool),
@@ -709,6 +742,7 @@ impl App {
             streaming_block_id: None,
             abort_handle: None,
             pending_delete_session: None,
+            expanded_confirm_idx: None,
             show_settings: !has_key,
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
@@ -1307,8 +1341,44 @@ impl App {
                 },
                 Message::CwdPicked,
             ),
-            Message::ApproveWrites => self.continue_after_writes(true),
-            Message::DenyWrites => self.continue_after_writes(false),
+            Message::ApproveWrites => {
+                self.expanded_confirm_idx = None;
+                self.continue_after_writes(true)
+            }
+            Message::DenyWrites => {
+                self.expanded_confirm_idx = None;
+                self.continue_after_writes(false)
+            }
+            Message::ToggleConfirmExpand(idx) => {
+                self.expanded_confirm_idx = if self.expanded_confirm_idx == Some(idx) {
+                    None
+                } else {
+                    Some(idx)
+                };
+                Task::none()
+            }
+            Message::DiscardWriteCall(idx) => {
+                if idx >= self.pending_write_calls.len() {
+                    return Task::none();
+                }
+                let tc = self.pending_write_calls.remove(idx);
+                self.push_tool_result_block(tc.name.clone(), "discarded".into(), false);
+                self.conversation.push(ChatMessage::tool_result(
+                    &tc.id,
+                    "[denied] 사용자가 이 도구 호출을 제외했습니다.",
+                ));
+                // 펼친 인덱스 보정 (제거된 항목 이후는 한 칸 당김)
+                self.expanded_confirm_idx = match self.expanded_confirm_idx {
+                    Some(e) if e == idx => None,
+                    Some(e) if e > idx => Some(e - 1),
+                    other => other,
+                };
+                // 모든 항목이 제거됐다면 자동 진행 (= 모두 거부와 동일)
+                if self.pending_write_calls.is_empty() {
+                    return self.continue_after_writes(true);
+                }
+                Task::none()
+            }
             Message::ToggleFilterCoding(v) => {
                 self.filter_coding = v;
                 self.refresh_model_combo();
@@ -1568,14 +1638,18 @@ impl App {
         let current_blocks_persisted: Vec<session::PersistedBlock> = self
             .blocks
             .iter()
-            .map(|b| session::PersistedBlock {
-                id: b.id,
-                role: match &b.body {
-                    BlockBody::User(_) => "user".into(),
-                    BlockBody::Assistant(_) => "assistant".into(),
-                },
-                content: b.body.to_text(),
-                model: b.model.clone().unwrap_or_default(),
+            .filter_map(|b| match &b.body {
+                BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
+                    id: b.id,
+                    role: match &b.body {
+                        BlockBody::User(_) => "user".into(),
+                        BlockBody::Assistant(_) => "assistant".into(),
+                        _ => unreachable!(),
+                    },
+                    content: b.body.to_text(),
+                    model: b.model.clone().unwrap_or_default(),
+                }),
+                BlockBody::ToolResult { .. } => None, // 휘발성 — 저장 안 함
             })
             .collect();
 
@@ -1637,14 +1711,18 @@ impl App {
         let blocks_persisted: Vec<session::PersistedBlock> = self
             .blocks
             .iter()
-            .map(|b| session::PersistedBlock {
-                id: b.id,
-                role: match &b.body {
-                    BlockBody::User(_) => "user".into(),
-                    BlockBody::Assistant(_) => "assistant".into(),
-                },
-                content: b.body.to_text(),
-                model: b.model.clone().unwrap_or_default(),
+            .filter_map(|b| match &b.body {
+                BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
+                    id: b.id,
+                    role: match &b.body {
+                        BlockBody::User(_) => "user".into(),
+                        BlockBody::Assistant(_) => "assistant".into(),
+                        _ => unreachable!(),
+                    },
+                    content: b.body.to_text(),
+                    model: b.model.clone().unwrap_or_default(),
+                }),
+                BlockBody::ToolResult { .. } => None,
             })
             .collect();
         let snap = InactiveSession {
@@ -1785,6 +1863,22 @@ impl App {
         self.kick_chat_stream()
     }
 
+    /// 도구 실행 결과 chip 블록을 stream에 push (휘발성 — 세션 저장 안 됨).
+    fn push_tool_result_block(&mut self, name: String, summary: String, success: bool) {
+        let id = self.next_id();
+        self.blocks.push(Block {
+            id,
+            body: BlockBody::ToolResult {
+                name,
+                summary,
+                success,
+            },
+            view_mode: ViewMode::Rendered,
+            md_items: Vec::new(),
+            model: None,
+        });
+    }
+
     /// 사용자 승인/거부 후 호출. true면 mutating 실행, false면 거부 결과를 conversation에 기록.
     fn continue_after_writes(&mut self, approved: bool) -> Task<Message> {
         let calls = std::mem::take(&mut self.pending_write_calls);
@@ -1795,12 +1889,15 @@ impl App {
             for tc in &calls {
                 names.push(tc.name.clone());
                 let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
+                let (summary, success) = summarize_tool_result(&tc.name, &tc.arguments, &result);
+                self.push_tool_result_block(tc.name.clone(), summary, success);
                 self.conversation
                     .push(ChatMessage::tool_result(&tc.id, result));
             }
             self.status = format!("실행 완료: {}", names.join(", "));
         } else {
             for tc in &calls {
+                self.push_tool_result_block(tc.name.clone(), "denied".into(), false);
                 self.conversation.push(ChatMessage::tool_result(
                     &tc.id,
                     "[denied] 사용자가 파일 쓰기를 거부했습니다.",
@@ -2197,18 +2294,91 @@ impl App {
             .into()
     }
 
+    /// 빈 채팅(blocks가 없을 때) 화면 — 예시 프롬프트 + 슬래시 명령 + 단축키.
+    fn view_empty_chat(&self) -> Element<'_, Message> {
+        const EXAMPLES: &[&str] = &[
+            "이 프로젝트의 의존성을 알려줘",
+            "src/main.rs의 첫 30줄을 요약해줘",
+            "examples/hello.rs 만들어줘",
+        ];
+        let title = text("CodeWarp").size(28);
+        let subtitle = text("AI 코딩 데스크톱 — Plan으로 안전하게 둘러보고, Build로 변경 적용").size(12);
+
+        let mut examples_col = column![text("다음을 시도해보세요").size(11)].spacing(4);
+        for ex in EXAMPLES {
+            examples_col = examples_col.push(
+                button(text(format!("▸ {}", ex)).size(13))
+                    .on_press(Message::InputChanged((*ex).to_string()))
+                    .padding([4, 10]),
+            );
+        }
+
+        let modes = column![
+            text("모드 (입력창 좌측 라벨 클릭 또는 슬래시)").size(11),
+            text("/plan   계획 먼저, 도구는 read-only").size(12),
+            text("/build  변경 적용 (write_file, run_command)").size(12),
+        ]
+        .spacing(2);
+
+        let shortcuts = text("Ctrl+K 명령 팔레트 · Ctrl+N 새 채팅 · Ctrl+, 설정").size(11);
+
+        container(
+            column![
+                title,
+                subtitle,
+                Space::new().height(Length::Fixed(20.0)),
+                examples_col,
+                Space::new().height(Length::Fixed(20.0)),
+                modes,
+                Space::new().height(Length::Fixed(14.0)),
+                shortcuts,
+            ]
+            .spacing(6)
+            .max_width(560),
+        )
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .padding(20)
+        .into()
+    }
+
     fn view_stream(&self) -> Element<'_, Message> {
         let blocks_view: Element<Message> = if self.blocks.is_empty() {
-            container(
-                text("$ CodeWarp ready — 입력 후 Enter")
-                    .size(13),
-            )
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
+            self.view_empty_chat()
         } else {
             let mut col = column![].spacing(10).width(Length::Fill);
             for b in &self.blocks {
+                // ToolResult 블록은 별도 작은 chip으로 표시
+                if let BlockBody::ToolResult { name, summary, success } = &b.body {
+                    let icon = if *success { "✓" } else { "✗" };
+                    let chip = container(
+                        text(format!("{} {} → {}", icon, name, summary))
+                            .size(11)
+                            .font(Font::with_name("JetBrains Mono")),
+                    )
+                    .padding([4, 10])
+                    .style({
+                        let success = *success;
+                        move |theme: &Theme| {
+                            let p = theme.extended_palette();
+                            container::Style {
+                                background: Some(p.background.strong.color.into()),
+                                border: iced::Border {
+                                    color: if success {
+                                        p.success.weak.color
+                                    } else {
+                                        p.danger.weak.color
+                                    },
+                                    width: 1.0,
+                                    radius: 6.0.into(),
+                                },
+                                ..Default::default()
+                            }
+                        }
+                    });
+                    col = col.push(chip);
+                    continue;
+                }
                 let role_label = b.body.role_label();
                 let has_content = !b.body.is_empty_for_history();
                 let copy_btn: Element<Message> = if has_content {
@@ -2263,6 +2433,7 @@ impl App {
                         settings.style.code_block_font = Font::with_name("JetBrains Mono");
                         markdown::view_with(b.md_items.iter(), settings, &CodewarpViewer)
                     }
+                    (BlockBody::ToolResult { .. }, _) => unreachable!("ToolResult is handled above"),
                 };
 
                 let is_user = matches!(&b.body, BlockBody::User(_));
@@ -2439,40 +2610,77 @@ impl App {
     fn view_inline_confirm(&self) -> Element<'_, Message> {
         let n = self.pending_write_calls.len();
         let header = text(format!(
-            "⚠ AI가 {}개 도구 실행을 요청했습니다",
+            "⚠ AI가 {}개 도구 실행을 요청했습니다 (카드 클릭으로 미리보기)",
             n
         ))
         .size(12);
 
         let mut cards = column![].spacing(4);
-        for tc in &self.pending_write_calls {
-            let card: Element<Message> = match tc.name.as_str() {
+        for (idx, tc) in self.pending_write_calls.iter().enumerate() {
+            let is_expanded = self.expanded_confirm_idx == Some(idx);
+            let arrow = if is_expanded { "▾" } else { "▸" };
+
+            let (summary_text, expanded_view): (String, Option<Element<Message>>) = match tc
+                .name
+                .as_str()
+            {
                 "write_file" => match tools::WriteFileArgs::parse(&tc.arguments) {
                     Ok(args) => {
                         let abs_path = self.cwd.join(&args.path);
                         let exists = abs_path.exists();
                         let icon = if exists { "📝" } else { "✨" };
-                        text(format!(
-                            "{}  {}  ({} bytes)",
+                        let summary = format!(
+                            "{} {}  {}  ({} bytes)",
+                            arrow,
                             icon,
                             args.path,
                             args.content.len()
-                        ))
-                        .size(12)
-                        .into()
+                        );
+                        let expanded = if is_expanded {
+                            let old = std::fs::read_to_string(&abs_path).unwrap_or_default();
+                            Some(render_diff(&old, &args.content))
+                        } else {
+                            None
+                        };
+                        (summary, expanded)
                     }
-                    Err(e) => text(format!("[err] {}", e)).size(12).into(),
+                    Err(e) => (format!("{} [err] {}", arrow, e), None),
                 },
                 "run_command" => match tools::RunCommandArgs::parse(&tc.arguments) {
-                    Ok(args) => text(format!("🖥  $ {}", args.command))
-                        .size(12)
-                        .font(Font::with_name("JetBrains Mono"))
-                        .into(),
-                    Err(e) => text(format!("[err] {}", e)).size(12).into(),
+                    Ok(args) => {
+                        let summary = format!("{} 🖥  $ {}", arrow, args.command);
+                        (summary, None) // run_command는 펼칠 내용 없음 (명령어만)
+                    }
+                    Err(e) => (format!("{} [err] {}", arrow, e), None),
                 },
-                _ => text(format!("[?] {}", tc.name)).size(12).into(),
+                _ => (format!("{} [?] {}", arrow, tc.name), None),
             };
-            cards = cards.push(card);
+
+            let summary_btn: Element<Message> = button(
+                text(summary_text)
+                    .size(12)
+                    .font(if tc.name == "run_command" {
+                        Font::with_name("JetBrains Mono")
+                    } else {
+                        Font::with_name("Pretendard")
+                    }),
+            )
+            .on_press(Message::ToggleConfirmExpand(idx))
+            .padding([2, 6])
+            .width(Length::Fill)
+            .into();
+
+            let discard_btn: Element<Message> = button(text("✗").size(11))
+                .on_press(Message::DiscardWriteCall(idx))
+                .padding([2, 6])
+                .into();
+
+            let row_widget = row![summary_btn, discard_btn].spacing(4);
+            let mut card_col = column![row_widget].spacing(2);
+            if let Some(expanded) = expanded_view {
+                card_col = card_col.push(container(expanded).padding([0, 18]));
+            }
+            cards = cards.push(card_col);
         }
 
         let actions = row![
@@ -2718,20 +2926,28 @@ impl App {
 
         let body = column![
             header,
-            Space::new().height(Length::Fixed(12.0)),
+            Space::new().height(Length::Fixed(8.0)),
+            text("AI provider — 둘 중 하나 이상 필수, 동시 사용 가능").size(11),
+            Space::new().height(Length::Fixed(8.0)),
+            text("OpenRouter (클라우드)").size(14),
             key_status,
             key_input,
             actions,
-            Space::new().height(Length::Fixed(8.0)),
+            Space::new().height(Length::Fixed(4.0)),
+            text("1. https://openrouter.ai 가입").size(11),
+            text("2. /credits 에서 충전 (무료 모델도 일부 있음)").size(11),
+            text("3. /keys 에서 키 발급 → 위에 붙여넣기").size(11),
             text("키는 OS Credential Manager에 저장됩니다.").size(11),
-            text("https://openrouter.ai/keys 에서 발급").size(11),
             Space::new().height(Length::Fixed(20.0)),
             tabby_header,
             tabby_url,
             tabby_token,
             tabby_actions,
             tabby_status_label,
-            text("Tabby가 켜져있어야 동작 (기본 8080).").size(11),
+            Space::new().height(Length::Fixed(4.0)),
+            text("1. https://tabby.tabbyml.com 에서 설치").size(11),
+            text("2. 예: tabby serve --model TabbyML/Qwen2.5-Coder-7B").size(11),
+            text("3. 위에 URL 입력 (기본 http://localhost:8080)").size(11),
         ]
         .spacing(8)
         .max_width(520);

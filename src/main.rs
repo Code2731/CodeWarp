@@ -1307,7 +1307,7 @@ impl App {
                         self.models = models;
                         self.status = format!("모델 {} 로드됨", n);
                     }
-                    Err(e) => self.status = format!("페치 실패: {}", e),
+                    Err(e) => self.status = format!("페치 실패: {}", openrouter::humanize_error(&e)),
                 }
                 Task::none()
             }
@@ -1538,7 +1538,7 @@ impl App {
                         self.streaming_block_id = None;
                         self.abort_handle = None;
                         self.pending_tool_calls.clear();
-                        self.status = format!("에러: {}", e);
+                        self.status = format!("에러: {}", openrouter::humanize_error(&e));
                     }
                 }
                 if self.follow_bottom {

@@ -235,11 +235,110 @@ pub async fn list_models(api_key: String) -> Result<Vec<OpenRouterModel>, String
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        // KEEP IN SYNC: humanize_error가 "OpenRouter {status}" prefix를 매칭함
         return Err(format!("OpenRouter {}: {}", status, body));
     }
 
     let parsed: ModelsResponse = resp.json().await.map_err(|e| e.to_string())?;
     Ok(parsed.data)
+}
+
+/// 연결/HTTP 에러 원문을 사용자 친화 actionable 메시지로 변환.
+/// `lower.contains`: OS/네트워크 에러 — 대소문자 OS별 차이.
+/// `raw.contains`: 이 모듈의 `format!("OpenRouter {}: ...")` 출력 매칭 →
+///                 포맷 변경 시 둘이 같이 움직여야 함 (KEEP IN SYNC with list_models /
+///                 get_account_info / get_generation / chat_stream).
+pub fn humanize_error(raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+    if raw.contains("OpenRouter 401") || raw.contains("OpenRouter 403") {
+        return "키 무효 — Settings에서 재발급/재입력".into();
+    }
+    if raw.contains("OpenRouter 402") {
+        return "잔액 부족 — openrouter.ai/credits 에서 충전".into();
+    }
+    if raw.contains("OpenRouter 429") {
+        return "rate limit — 잠시 후 재시도 (또는 다른 모델)".into();
+    }
+    if raw.contains("OpenRouter 404") {
+        return "모델 ID 무효 — 모델 셀렉터에서 다시 선택".into();
+    }
+    if raw.contains("OpenRouter 5") {
+        // 5xx
+        return "OpenRouter 서버 일시 오류 — 잠시 후 재시도".into();
+    }
+    if lower.contains("dns") || lower.contains("nodename") {
+        return "DNS 해석 실패 — 인터넷 연결 확인".into();
+    }
+    if lower.contains("timeout") || lower.contains("timed out") {
+        return "응답 지연 — 인터넷 연결 또는 OpenRouter 상태 확인".into();
+    }
+    raw.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn humanize_401() {
+        let msg = humanize_error("OpenRouter 401 Unauthorized: ...");
+        assert!(msg.contains("키 무효"));
+    }
+
+    #[test]
+    fn humanize_402_credits() {
+        let msg = humanize_error("OpenRouter 402 Payment Required: ...");
+        assert!(msg.contains("잔액 부족"));
+        assert!(msg.contains("/credits"));
+    }
+
+    #[test]
+    fn humanize_429_rate_limit() {
+        let msg = humanize_error("OpenRouter 429 Too Many Requests: ...");
+        assert!(msg.contains("rate limit"));
+    }
+
+    #[test]
+    fn humanize_404_model_invalid() {
+        let msg = humanize_error("OpenRouter 404 Not Found: model xyz");
+        assert!(msg.contains("모델 ID"));
+    }
+
+    #[test]
+    fn humanize_5xx_server_error() {
+        let msg = humanize_error("OpenRouter 503 Service Unavailable");
+        assert!(msg.contains("서버 일시 오류"));
+        let msg2 = humanize_error("OpenRouter 502 Bad Gateway: ...");
+        assert!(msg2.contains("서버 일시 오류"));
+    }
+
+    #[test]
+    fn humanize_dns() {
+        let msg = humanize_error("dns error: failed to resolve host");
+        assert!(msg.contains("DNS"));
+    }
+
+    #[test]
+    fn humanize_timeout() {
+        let msg = humanize_error("operation timed out");
+        assert!(msg.contains("응답 지연"));
+    }
+
+    #[test]
+    fn humanize_unknown_passes_through() {
+        let raw = "weird thing happened";
+        assert_eq!(humanize_error(raw), raw);
+    }
+
+    /// KEEP IN SYNC 검증 — list_models의 format!이 humanize_error 패턴과 동기화됨.
+    #[test]
+    fn humanize_matches_list_models_format() {
+        for status in [401, 402, 403, 404, 429, 500, 502, 503] {
+            let synthetic = format!("OpenRouter {}: anything", status);
+            let msg = humanize_error(&synthetic);
+            assert_ne!(msg, synthetic, "status {} should be humanized", status);
+        }
+    }
 }
 
 /// OpenAI 호환 `/chat/completions` 스트림.

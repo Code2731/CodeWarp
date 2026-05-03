@@ -261,6 +261,31 @@ struct Block {
     model: Option<String>,
 }
 
+/// 마지막 user 메시지 다음의 모든 메시지를 conversation에서 제거.
+/// regenerate 또는 edit 직전 호출. user가 전혀 없으면 conversation을 비움.
+fn truncate_after_last_user(conv: &mut Vec<crate::openrouter::ChatMessage>) {
+    while let Some(last) = conv.last() {
+        if last.role == "user" {
+            return;
+        }
+        conv.pop();
+    }
+}
+
+/// 가장 마지막 BlockBody::User 인덱스 (없으면 None).
+fn last_user_block_idx(blocks: &[Block]) -> Option<usize> {
+    blocks
+        .iter()
+        .rposition(|b| matches!(b.body, BlockBody::User(_)))
+}
+
+/// 가장 마지막 BlockBody::Assistant 인덱스 (없으면 None).
+fn last_assistant_block_idx(blocks: &[Block]) -> Option<usize> {
+    blocks
+        .iter()
+        .rposition(|b| matches!(b.body, BlockBody::Assistant(_)))
+}
+
 fn persisted_to_block(pb: session::PersistedBlock) -> Block {
     let role = pb.role;
     let content = pb.content;
@@ -801,6 +826,10 @@ enum Message {
     StartHfDownload,
     HfDownloadEvent(hf::DownloadEvent),
     CancelHfDownload,
+    /// 마지막 assistant 응답을 다시 받기.
+    RegenerateLast,
+    /// 마지막 user 메시지를 입력창으로 옮기고 그 이후 블록/대화 제거.
+    EditLastUser,
 }
 
 impl App {
@@ -1252,6 +1281,79 @@ impl App {
                 }
                 self.hf_dl = None;
                 self.status = "다운로드 취소됨".into();
+                Task::none()
+            }
+            Message::RegenerateLast => {
+                if self.streaming_block_id.is_some() {
+                    return Task::none();
+                }
+                if !self.conversation.iter().any(|m| m.role == "user") {
+                    return Task::none();
+                }
+                truncate_after_last_user(&mut self.conversation);
+                let Some(idx) = last_user_block_idx(&self.blocks) else {
+                    return Task::none();
+                };
+                self.blocks.truncate(idx + 1);
+                self.tool_round = 0;
+                self.pending_tool_calls.clear();
+
+                let (base_url, api_key) = match self.resolve_provider() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        self.status = e;
+                        return Task::none();
+                    }
+                };
+                let model = self.selected_model.clone().unwrap_or_default();
+                let messages = self.conversation.clone();
+
+                let ai_id = self.next_id();
+                self.blocks.push(Block {
+                    id: ai_id,
+                    body: BlockBody::Assistant(text_editor::Content::new()),
+                    view_mode: ViewMode::Rendered,
+                    md_items: Vec::new(),
+                    model: self.selected_model.clone(),
+                });
+                self.streaming_block_id = Some(ai_id);
+                self.status = "응답 다시 생성 중…".into();
+                self.follow_bottom = true;
+
+                let (chat_task, handle) = Task::run(
+                    openrouter::chat_stream(
+                        base_url,
+                        api_key,
+                        model,
+                        messages,
+                        Some(tools::tool_definitions(self.agent_mode.allow_mutating())),
+                    ),
+                    Message::ChatChunk,
+                )
+                .abortable();
+                self.abort_handle = Some(handle);
+                Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
+            }
+            Message::EditLastUser => {
+                if self.streaming_block_id.is_some() {
+                    return Task::none();
+                }
+                let Some(idx) = last_user_block_idx(&self.blocks) else {
+                    return Task::none();
+                };
+                let user_text = match &self.blocks[idx].body {
+                    BlockBody::User(s) => s.clone(),
+                    _ => return Task::none(),
+                };
+                // blocks: 마지막 user 위치부터 끝까지 제거
+                self.blocks.truncate(idx);
+                // conversation: 마지막 user 다음 다 제거 → 그 user도 pop
+                truncate_after_last_user(&mut self.conversation);
+                self.conversation.pop();
+                self.tool_round = 0;
+                self.pending_tool_calls.clear();
+                self.input = user_text;
+                self.status = "편집 모드 — 수정 후 Enter".into();
                 Task::none()
             }
             Message::FetchModels => {
@@ -2667,8 +2769,12 @@ impl App {
         let blocks_view: Element<Message> = if self.blocks.is_empty() {
             self.view_empty_chat()
         } else {
+            // 마지막 user/assistant 블록 인덱스 — regenerate/edit 버튼 노출 결정
+            let last_user_idx = last_user_block_idx(&self.blocks);
+            let last_asst_idx = last_assistant_block_idx(&self.blocks);
+            let streaming = self.streaming_block_id.is_some();
             let mut col = column![].spacing(10).width(Length::Fill);
-            for b in &self.blocks {
+            for (i, b) in self.blocks.iter().enumerate() {
                 // ToolResult 블록은 별도 작은 chip으로 표시
                 if let BlockBody::ToolResult { name, summary, success } = &b.body {
                     let icon = if *success { "✓" } else { "✗" };
@@ -2723,6 +2829,27 @@ impl App {
                     } else {
                         Space::new().width(Length::Shrink).height(Length::Shrink).into()
                     };
+                // 마지막 user/assistant 블록에만 ✎ / ↻ 버튼 (streaming 중엔 숨김)
+                let action_btn: Element<Message> = if streaming {
+                    Space::new().width(Length::Shrink).height(Length::Shrink).into()
+                } else if Some(i) == last_user_idx
+                    && matches!(&b.body, BlockBody::User(_))
+                {
+                    button(text("✎").size(10))
+                        .on_press(Message::EditLastUser)
+                        .padding([2, 8])
+                        .into()
+                } else if Some(i) == last_asst_idx
+                    && matches!(&b.body, BlockBody::Assistant(_))
+                    && has_content
+                {
+                    button(text("↻").size(10))
+                        .on_press(Message::RegenerateLast)
+                        .padding([2, 8])
+                        .into()
+                } else {
+                    Space::new().width(Length::Shrink).height(Length::Shrink).into()
+                };
                 let model_label: Element<Message> = match &b.model {
                     Some(m) => text(format!("· {}", m)).size(10).into(),
                     None => Space::new().width(Length::Shrink).height(Length::Shrink).into(),
@@ -2731,6 +2858,7 @@ impl App {
                     text(role_label).size(11),
                     model_label,
                     Space::new().width(Length::Fill),
+                    action_btn,
                     toggle_btn,
                     copy_btn,
                 ]
@@ -3620,5 +3748,142 @@ mod tests {
     fn summarize_err_marker() {
         let (_, success) = summarize_tool_result("foo", "{}", "[err] something broke");
         assert!(!success);
+    }
+
+    // ── truncate_after_last_user (P4-3 regenerate/edit) ────────────
+
+    fn cm(role: &str, content: &str) -> ChatMessage {
+        ChatMessage {
+            role: role.into(),
+            content: Some(content.into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn truncate_empty_conv() {
+        let mut conv: Vec<ChatMessage> = Vec::new();
+        truncate_after_last_user(&mut conv);
+        assert!(conv.is_empty());
+    }
+
+    #[test]
+    fn truncate_user_only() {
+        let mut conv = vec![cm("user", "hi")];
+        truncate_after_last_user(&mut conv);
+        assert_eq!(conv.len(), 1);
+        assert_eq!(conv[0].role, "user");
+    }
+
+    #[test]
+    fn truncate_user_assistant() {
+        let mut conv = vec![cm("user", "hi"), cm("assistant", "hello")];
+        truncate_after_last_user(&mut conv);
+        assert_eq!(conv.len(), 1);
+        assert_eq!(conv[0].content.as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn truncate_keeps_last_user_intact() {
+        let mut conv = vec![
+            cm("user", "first"),
+            cm("assistant", "answer1"),
+            cm("user", "second"),
+        ];
+        truncate_after_last_user(&mut conv);
+        assert_eq!(conv.len(), 3); // 마지막이 user면 그대로
+        assert_eq!(conv[2].content.as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn truncate_user_tool_assistant_chain() {
+        // user / assistant(tool_calls) / tool / assistant 시퀀스
+        let mut conv = vec![
+            cm("system", "sys"),
+            cm("user", "hi"),
+            cm("assistant", "let me check"),
+            cm("tool", "result"),
+            cm("assistant", "done"),
+        ];
+        truncate_after_last_user(&mut conv);
+        assert_eq!(conv.len(), 2);
+        assert_eq!(conv[0].role, "system");
+        assert_eq!(conv[1].role, "user");
+    }
+
+    #[test]
+    fn truncate_no_user_drops_all() {
+        let mut conv = vec![cm("system", "sys"), cm("assistant", "lone")];
+        truncate_after_last_user(&mut conv);
+        assert!(conv.is_empty());
+    }
+
+    // ── last_user_block_idx / last_assistant_block_idx ─────────────
+
+    fn ub(id: u64) -> Block {
+        Block {
+            id,
+            body: BlockBody::User(format!("u{}", id)),
+            view_mode: ViewMode::Rendered,
+            md_items: Vec::new(),
+            model: None,
+        }
+    }
+    fn ab(id: u64) -> Block {
+        Block {
+            id,
+            body: BlockBody::Assistant(text_editor::Content::with_text(&format!("a{}", id))),
+            view_mode: ViewMode::Rendered,
+            md_items: Vec::new(),
+            model: None,
+        }
+    }
+    fn tb(id: u64) -> Block {
+        Block {
+            id,
+            body: BlockBody::ToolResult {
+                name: "x".into(),
+                summary: "y".into(),
+                success: true,
+            },
+            view_mode: ViewMode::Rendered,
+            md_items: Vec::new(),
+            model: None,
+        }
+    }
+
+    #[test]
+    fn last_user_idx_empty() {
+        assert_eq!(last_user_block_idx(&[]), None);
+    }
+
+    #[test]
+    fn last_user_idx_only_user() {
+        let blocks = vec![ub(1)];
+        assert_eq!(last_user_block_idx(&blocks), Some(0));
+    }
+
+    #[test]
+    fn last_user_idx_picks_last() {
+        let blocks = vec![ub(1), ab(2), ub(3), ab(4), tb(5)];
+        assert_eq!(last_user_block_idx(&blocks), Some(2));
+    }
+
+    #[test]
+    fn last_user_idx_no_user() {
+        let blocks = vec![ab(1), tb(2)];
+        assert_eq!(last_user_block_idx(&blocks), None);
+    }
+
+    #[test]
+    fn last_assistant_idx_picks_last_assistant() {
+        let blocks = vec![ub(1), ab(2), ub(3), ab(4), tb(5)];
+        assert_eq!(last_assistant_block_idx(&blocks), Some(3));
+    }
+
+    #[test]
+    fn last_assistant_idx_no_assistant() {
+        let blocks = vec![ub(1), ub(2)];
+        assert_eq!(last_assistant_block_idx(&blocks), None);
     }
 }

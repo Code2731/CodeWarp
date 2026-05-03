@@ -68,11 +68,24 @@ const JETBRAINS_MONO_BOLD: &[u8] =
     include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf");
 
 fn handle_key(key: Key, modifiers: Modifiers) -> Option<Message> {
-    if modifiers.command() && matches!(key.as_ref(), Key::Character("k")) {
-        return Some(Message::OpenCommandPalette);
-    }
+    // Esc — 열려있는 오버레이(팔레트/설정) 모두 닫기
     if matches!(key.as_ref(), Key::Named(Named::Escape)) {
-        return Some(Message::CloseCommandPalette);
+        return Some(Message::CloseAllOverlays);
+    }
+    // Ctrl/Cmd + 단축키
+    if modifiers.command() {
+        return match key.as_ref() {
+            Key::Character("k") => Some(Message::OpenCommandPalette),
+            Key::Character("n") => Some(Message::NewChat),
+            Key::Character(",") => Some(Message::OpenSettings),
+            Key::Character("p") if modifiers.shift() => {
+                Some(Message::SetAgentMode(AgentMode::Plan))
+            }
+            Key::Character("b") if modifiers.shift() => {
+                Some(Message::SetAgentMode(AgentMode::Build))
+            }
+            _ => None,
+        };
     }
     None
 }
@@ -559,6 +572,7 @@ enum Message {
     GenerationLoaded(Result<GenerationData, String>),
     OpenCommandPalette,
     CloseCommandPalette,
+    CloseAllOverlays,
     CommandPaletteChanged(String),
     ExecuteCommand(usize),
 }
@@ -1168,6 +1182,12 @@ impl App {
             }
             Message::CloseCommandPalette => {
                 self.show_command_palette = false;
+                Task::none()
+            }
+            Message::CloseAllOverlays => {
+                self.show_command_palette = false;
+                self.show_settings = false;
+                self.show_write_confirm = false;
                 Task::none()
             }
             Message::CommandPaletteChanged(v) => {
@@ -2054,7 +2074,11 @@ impl App {
 
     fn view_command_palette(&self) -> Element<'_, Message> {
         let header = text("명령 팔레트").size(18);
-        let hint = text("Esc로 닫기 · Ctrl+K로 열기").size(11);
+        let hint = text(
+            "Esc 닫기 · Ctrl+K 팔레트 · Ctrl+N 새 채팅 · Ctrl+, 설정 · \
+            Ctrl+Shift+P/B 모드",
+        )
+        .size(11);
         let input = text_input("명령 검색…", &self.command_palette_input)
             .on_input(Message::CommandPaletteChanged)
             .on_submit(Message::ExecuteCommand(0))

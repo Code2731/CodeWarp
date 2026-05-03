@@ -569,7 +569,17 @@ impl App {
     }
 
     fn theme(&self) -> Theme {
-        Theme::Dark
+        Theme::custom(
+            "CodeWarp Dark".to_string(),
+            iced::theme::Palette {
+                background: Color::from_rgb(0.055, 0.062, 0.086), // 깊은 다크 navy
+                text: Color::from_rgb(0.92, 0.92, 0.94),
+                primary: Color::from_rgb(0.66, 0.55, 0.96),       // 보라 액센트
+                success: Color::from_rgb(0.31, 0.80, 0.66),       // teal
+                warning: Color::from_rgb(0.95, 0.78, 0.42),       // amber
+                danger: Color::from_rgb(0.96, 0.53, 0.45),        // coral red
+            },
+        )
     }
 
     fn new() -> (Self, Task<Message>) {
@@ -1934,18 +1944,36 @@ impl App {
                             .into()
                     }
                     (BlockBody::Assistant(_), ViewMode::Rendered) => {
-                        let mut settings: markdown::Settings = (&Theme::Dark).into();
+                        let mut settings: markdown::Settings = (&self.theme()).into();
                         settings.style.inline_code_font = Font::with_name("JetBrains Mono");
                         settings.style.code_block_font = Font::with_name("JetBrains Mono");
                         markdown::view_with(b.md_items.iter(), settings, &CodewarpViewer)
                     }
                 };
 
+                let is_user = matches!(&b.body, BlockBody::User(_));
                 let block_view = container(
                     column![header, body_view].spacing(6),
                 )
                 .padding(12)
-                .width(Length::Fill);
+                .width(Length::Fill)
+                .style(move |theme: &Theme| {
+                    let p = theme.extended_palette();
+                    let bg = if is_user {
+                        p.primary.weak.color
+                    } else {
+                        p.background.weak.color
+                    };
+                    container::Style {
+                        background: Some(bg.into()),
+                        border: iced::Border {
+                            color: p.background.strong.color,
+                            width: 1.0,
+                            radius: 10.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                });
                 col = col.push(block_view);
             }
             scrollable(col)

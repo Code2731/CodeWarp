@@ -15,8 +15,8 @@ use iced::widget::operation::snap_to_end;
 use iced::widget::scrollable::{Direction, Scrollbar, Viewport};
 use iced::widget::text_editor::{Action, Edit};
 use iced::widget::{
-    button, checkbox, column, combo_box, container, row, scrollable, text, text_editor, text_input,
-    Id as ScrollId, Space,
+    button, checkbox, column, combo_box, container, row, scrollable, stack, text, text_editor,
+    text_input, Id as ScrollId, Space,
 };
 use iced::{font, Alignment, Color, Element, Font, Length, Size, Task, Theme};
 
@@ -128,6 +128,27 @@ struct Block {
     md_items: Vec<markdown::Item>,
 }
 
+fn persisted_to_block(pb: session::PersistedBlock) -> Block {
+    let role = pb.role;
+    let content = pb.content;
+    let md_items = if role == "assistant" {
+        markdown::parse(&content).collect()
+    } else {
+        Vec::new()
+    };
+    let body = if role == "user" {
+        BlockBody::User(content)
+    } else {
+        BlockBody::Assistant(text_editor::Content::with_text(&content))
+    };
+    Block {
+        id: pb.id,
+        body,
+        view_mode: ViewMode::Rendered,
+        md_items,
+    }
+}
+
 /// 두 텍스트의 line-by-line diff를 색상 표시된 Element로 변환.
 /// 추가 라인은 녹색, 삭제 라인은 빨강, 동일 라인은 흐리게.
 fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
@@ -171,6 +192,40 @@ fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
         count += 1;
     }
     container(col).padding(10).width(Length::Fill).into()
+}
+
+/// 모달 오버레이: 반투명 백드롭 + 가운데 정렬된 콘텐츠 박스.
+/// content는 view_settings/view_write_confirm 같은 기존 화면 함수의 결과.
+fn modal_overlay<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
+    let modal_box = container(content)
+        .padding(0)
+        .width(Length::Shrink)
+        .max_width(720.0)
+        .max_height(620.0)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style {
+                background: Some(palette.background.base.color.into()),
+                border: iced::Border {
+                    color: palette.background.strong.color,
+                    width: 1.0,
+                    radius: 12.0.into(),
+                },
+                ..Default::default()
+            }
+        });
+
+    container(modal_box)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .padding(20)
+        .style(|_theme: &Theme| container::Style {
+            background: Some(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.55).into()),
+            ..Default::default()
+        })
+        .into()
 }
 
 /// markdown::view_with용 커스텀 Viewer. heading은 Bold weight 강제.
@@ -253,6 +308,23 @@ struct App {
     favorites: HashSet<String>,
     /// 모델 리스트 정렬 모드
     sort_mode: SortMode,
+
+    // ── 멀티 세션 ─────────────────────────────────
+    /// 비활성 세션 목록 (활성 세션은 위 conversation/blocks에)
+    inactive_sessions: Vec<InactiveSession>,
+    current_session_id: u64,
+    current_session_title: String,
+    next_session_id: u64,
+}
+
+/// 비활성 세션 (메모리 절약 위해 blocks를 plain text로 보관)
+#[derive(Debug, Clone)]
+struct InactiveSession {
+    id: u64,
+    title: String,
+    conversation: Vec<ChatMessage>,
+    blocks: Vec<session::PersistedBlock>,
+    next_block_id: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -349,6 +421,9 @@ enum Message {
     ToggleFilterFavorites(bool),
     ToggleFavorite,
     CycleSortMode,
+    NewChat,
+    SwitchSession(u64),
+    DeleteSession(u64),
 }
 
 impl App {
@@ -402,37 +477,50 @@ impl App {
             filter_favorites_only: false,
             favorites: session::read_favorites().into_iter().collect(),
             sort_mode: SortMode::Default,
+            inactive_sessions: Vec::new(),
+            current_session_id: 1,
+            current_session_title: String::new(),
+            next_session_id: 1,
         };
 
-        // 이전 세션 복원 시도
-        if let Some(persisted) = session::load() {
-            app.conversation = persisted.conversation;
-            app.next_block_id = persisted.next_block_id;
-            app.blocks = persisted
-                .blocks
-                .into_iter()
-                .map(|pb| {
-                    let role = pb.role;
-                    let content = pb.content;
-                    let md_items = if role == "assistant" {
-                        markdown::parse(&content).collect()
-                    } else {
-                        Vec::new()
-                    };
-                    let body = if role == "user" {
-                        BlockBody::User(content)
-                    } else {
-                        BlockBody::Assistant(text_editor::Content::with_text(&content))
-                    };
-                    Block {
-                        id: pb.id,
-                        body,
-                        view_mode: ViewMode::Rendered,
-                        md_items,
-                    }
-                })
-                .collect();
+        // 멀티 세션 복원
+        let mut persisted = session::load_all();
+        if persisted.sessions.is_empty() {
+            persisted = session::load_all(); // 빈 → default 채워짐
         }
+        let active_idx = persisted.active_idx.min(persisted.sessions.len().saturating_sub(1));
+        let active = persisted.sessions[active_idx].clone();
+        let inactive: Vec<InactiveSession> = persisted
+            .sessions
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != active_idx)
+            .map(|(_, s)| InactiveSession {
+                id: s.id,
+                title: s.title.clone(),
+                conversation: s.conversation.clone(),
+                blocks: s.blocks.clone(),
+                next_block_id: s.next_block_id,
+            })
+            .collect();
+
+        app.current_session_id = active.id;
+        app.current_session_title = active.title;
+        app.conversation = active.conversation;
+        app.next_block_id = active.next_block_id;
+        app.blocks = active
+            .blocks
+            .into_iter()
+            .map(persisted_to_block)
+            .collect();
+        app.inactive_sessions = inactive;
+        app.next_session_id = persisted
+            .sessions
+            .iter()
+            .map(|s| s.id)
+            .max()
+            .unwrap_or(0)
+            + 1;
         let task = if has_key {
             Task::batch(vec![
                 Task::done(Message::FetchModels),
@@ -703,6 +791,7 @@ impl App {
                         }
                         self.streaming_block_id = None;
                         self.pending_tool_calls.clear();
+                        self.maybe_update_title();
                         self.save_session();
                     }
                     ChatEvent::Error(e) => {
@@ -795,6 +884,68 @@ impl App {
                 self.refresh_model_combo();
                 Task::none()
             }
+            Message::NewChat => {
+                // 현재 세션 보존 + 새 빈 세션 시작
+                self.snapshot_current_to_inactive();
+                self.blocks.clear();
+                self.conversation.clear();
+                self.pending_tool_calls.clear();
+                self.pending_write_calls.clear();
+                self.show_write_confirm = false;
+                self.streaming_block_id = None;
+                self.tool_round = 0;
+                self.next_block_id = 0;
+                self.input.clear();
+                self.current_session_id = self.allocate_session_id();
+                self.current_session_title = "새 채팅".into();
+                self.status = "새 채팅".into();
+                self.save_session();
+                Task::none()
+            }
+            Message::SwitchSession(target_id) => {
+                if target_id == self.current_session_id {
+                    return Task::none();
+                }
+                let Some(idx) = self
+                    .inactive_sessions
+                    .iter()
+                    .position(|s| s.id == target_id)
+                else {
+                    return Task::none();
+                };
+                // 현재 활성을 inactive로 보관
+                self.snapshot_current_to_inactive();
+                // target 활성화
+                let target = self.inactive_sessions.remove(idx);
+                self.current_session_id = target.id;
+                self.current_session_title = target.title;
+                self.conversation = target.conversation;
+                self.next_block_id = target.next_block_id;
+                self.blocks = target.blocks.into_iter().map(persisted_to_block).collect();
+                self.pending_tool_calls.clear();
+                self.pending_write_calls.clear();
+                self.show_write_confirm = false;
+                self.streaming_block_id = None;
+                self.tool_round = 0;
+                self.input.clear();
+                self.status = "세션 전환됨".into();
+                self.save_session();
+                Task::none()
+            }
+            Message::DeleteSession(target_id) => {
+                if target_id == self.current_session_id {
+                    // 현재 활성을 삭제 → 빈 세션으로 대체
+                    self.blocks.clear();
+                    self.conversation.clear();
+                    self.next_block_id = 0;
+                    self.current_session_id = self.allocate_session_id();
+                    self.current_session_title = "새 채팅".into();
+                } else {
+                    self.inactive_sessions.retain(|s| s.id != target_id);
+                }
+                self.save_session();
+                Task::none()
+            }
             Message::ToggleFavorite => {
                 if let Some(id) = &self.selected_model {
                     if self.favorites.contains(id) {
@@ -863,9 +1014,9 @@ impl App {
         self.model_combo_state = combo_box::State::new(self.filtered_model_options());
     }
 
-    /// 현재 conversation + blocks를 디스크에 저장. 실패해도 silent.
+    /// 현재 활성 세션 + 비활성 세션 모두를 디스크에 저장.
     fn save_session(&self) {
-        let blocks = self
+        let current_blocks_persisted: Vec<session::PersistedBlock> = self
             .blocks
             .iter()
             .map(|b| session::PersistedBlock {
@@ -877,12 +1028,94 @@ impl App {
                 content: b.body.to_text(),
             })
             .collect();
-        let s = session::PersistedSession {
+
+        let mut sessions: Vec<session::PersistedSessionData> = self
+            .inactive_sessions
+            .iter()
+            .map(|s| session::PersistedSessionData {
+                id: s.id,
+                title: s.title.clone(),
+                conversation: s.conversation.clone(),
+                blocks: s.blocks.clone(),
+                next_block_id: s.next_block_id,
+            })
+            .collect();
+        sessions.push(session::PersistedSessionData {
+            id: self.current_session_id,
+            title: self.current_session_title.clone(),
             conversation: self.conversation.clone(),
-            blocks,
+            blocks: current_blocks_persisted,
+            next_block_id: self.next_block_id,
+        });
+
+        let active_idx = sessions
+            .iter()
+            .position(|s| s.id == self.current_session_id)
+            .unwrap_or(sessions.len() - 1);
+
+        let p = session::PersistedAllSessions {
+            sessions,
+            active_idx,
+        };
+        let _ = session::save_all(&p);
+    }
+
+    /// 현재 활성 세션 제목 자동 갱신 (첫 사용자 메시지 일부).
+    fn maybe_update_title(&mut self) {
+        if self.current_session_title.is_empty()
+            || self.current_session_title.starts_with("새 채팅")
+        {
+            if let Some(first_user) = self
+                .conversation
+                .iter()
+                .find(|m| m.role == "user")
+                .and_then(|m| m.content.as_ref())
+            {
+                let snippet: String = first_user.chars().take(30).collect();
+                self.current_session_title = snippet;
+            }
+        }
+    }
+
+    /// 현재 활성 세션을 inactive_sessions로 이동 (push 또는 update).
+    fn snapshot_current_to_inactive(&mut self) {
+        if self.conversation.is_empty() && self.blocks.is_empty() {
+            return; // 빈 세션은 보관 X
+        }
+        let blocks_persisted: Vec<session::PersistedBlock> = self
+            .blocks
+            .iter()
+            .map(|b| session::PersistedBlock {
+                id: b.id,
+                role: match &b.body {
+                    BlockBody::User(_) => "user".into(),
+                    BlockBody::Assistant(_) => "assistant".into(),
+                },
+                content: b.body.to_text(),
+            })
+            .collect();
+        let snap = InactiveSession {
+            id: self.current_session_id,
+            title: self.current_session_title.clone(),
+            conversation: self.conversation.clone(),
+            blocks: blocks_persisted,
             next_block_id: self.next_block_id,
         };
-        let _ = session::save(&s);
+        if let Some(idx) = self
+            .inactive_sessions
+            .iter()
+            .position(|s| s.id == snap.id)
+        {
+            self.inactive_sessions[idx] = snap;
+        } else {
+            self.inactive_sessions.push(snap);
+        }
+    }
+
+    fn allocate_session_id(&mut self) -> u64 {
+        let id = self.next_session_id;
+        self.next_session_id += 1;
+        id
     }
 
     /// conversation 첫 위치에 cwd를 알려주는 system 메시지를 보장 (없으면 추가, 있으면 갱신).
@@ -1043,18 +1276,21 @@ impl App {
     fn view(&self) -> Element<'_, Message> {
         let topbar = self.view_topbar();
 
+        let main_view: Element<Message> = row![
+            self.view_sidebar(),
+            self.view_stream(),
+            self.view_rightpanel(),
+        ]
+        .height(Length::Fill)
+        .into();
+
+        // overlay가 필요하면 stack으로 메인 위에 띄움 (backdrop + 가운데 모달 박스)
         let middle: Element<Message> = if self.show_settings {
-            self.view_settings()
+            stack![main_view, modal_overlay(self.view_settings())].into()
         } else if self.show_write_confirm {
-            self.view_write_confirm()
+            stack![main_view, modal_overlay(self.view_write_confirm())].into()
         } else {
-            row![
-                self.view_sidebar(),
-                self.view_stream(),
-                self.view_rightpanel(),
-            ]
-            .height(Length::Fill)
-            .into()
+            main_view
         };
 
         let statusbar = self.view_statusbar();
@@ -1165,7 +1401,61 @@ impl App {
             cwd_display.clone()
         };
 
+        // 세션 목록 (활성 + 비활성)
+        let active_label = if self.current_session_title.trim().is_empty() {
+            "새 채팅".to_string()
+        } else {
+            self.current_session_title.clone()
+        };
+        let mut sessions_col = column![
+            container(text(format!("📌 {}", active_label)).size(12))
+                .padding([6, 8])
+                .width(Length::Fill)
+                .style(|theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(p.primary.weak.color.into()),
+                        border: iced::Border {
+                            radius: 6.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }),
+        ]
+        .spacing(2);
+        for s in &self.inactive_sessions {
+            let title = if s.title.trim().is_empty() {
+                "(빈 세션)".to_string()
+            } else {
+                s.title.clone()
+            };
+            let row_widget = row![
+                button(text(format!("📂 {}", title)).size(12))
+                    .on_press(Message::SwitchSession(s.id))
+                    .padding([4, 8])
+                    .width(Length::Fill),
+                button(text("✕").size(11))
+                    .on_press(Message::DeleteSession(s.id))
+                    .padding([2, 6]),
+            ]
+            .spacing(2);
+            sessions_col = sessions_col.push(row_widget);
+        }
+
         let body = column![
+            button(text("＋ 새 채팅").size(13))
+                .on_press(Message::NewChat)
+                .padding([6, 12])
+                .width(Length::Fill),
+            Space::new().height(Length::Fixed(8.0)),
+            text("채팅").size(11),
+            scrollable(sessions_col)
+                .direction(Direction::Vertical(
+                    Scrollbar::new().width(6).scroller_width(6).margin(2),
+                ))
+                .height(Length::Fixed(220.0)),
+            Space::new().height(Length::Fixed(14.0)),
             text("작업 폴더").size(11),
             text(cwd_short).size(12),
             button(text("📁 폴더 변경").size(11))

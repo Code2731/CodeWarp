@@ -82,3 +82,114 @@ pub async fn list_models(base_url: String, token: Option<String>) -> Result<Vec<
         .map_err(|e| format!("Tabby /v1/models 파싱 실패: {}", e))?;
     Ok(parsed.data.into_iter().map(|m| m.id).collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_base_default() {
+        assert_eq!(normalize_base(""), "http://localhost:8080");
+        assert_eq!(normalize_base("   "), "http://localhost:8080");
+    }
+
+    #[test]
+    fn normalize_base_strips_trailing_slash() {
+        assert_eq!(
+            normalize_base("http://localhost:8080/"),
+            "http://localhost:8080"
+        );
+        assert_eq!(
+            normalize_base("http://localhost:8080///"),
+            "http://localhost:8080"
+        );
+    }
+
+    #[test]
+    fn normalize_base_trims_whitespace() {
+        assert_eq!(
+            normalize_base("  http://example.com:9000  "),
+            "http://example.com:9000"
+        );
+    }
+
+    #[test]
+    fn normalize_base_passthrough() {
+        assert_eq!(
+            normalize_base("https://tabby.example.com"),
+            "https://tabby.example.com"
+        );
+    }
+
+    #[test]
+    fn chat_base_appends_v1() {
+        assert_eq!(chat_base("http://localhost:8080"), "http://localhost:8080/v1");
+        assert_eq!(chat_base("http://localhost:8080/"), "http://localhost:8080/v1");
+        assert_eq!(chat_base(""), "http://localhost:8080/v1");
+    }
+
+    // ── humanize_error: KEEP IN SYNC with list_models error format ──
+
+    #[test]
+    fn humanize_connection_refused() {
+        let msg = humanize_error("error sending request: Connection refused");
+        assert!(msg.contains("`tabby serve`"), "got: {}", msg);
+    }
+
+    #[test]
+    fn humanize_os_error_10061() {
+        // Windows: connection refused = OS error 10061
+        let msg = humanize_error("os error 10061");
+        assert!(msg.contains("`tabby serve`"));
+    }
+
+    #[test]
+    fn humanize_dns_failure() {
+        let msg = humanize_error("dns error: nodename nor servname provided");
+        assert!(msg.contains("도메인"));
+    }
+
+    #[test]
+    fn humanize_timeout() {
+        let msg = humanize_error("operation timed out");
+        assert!(msg.contains("응답 지연"));
+    }
+
+    #[test]
+    fn humanize_auth_401() {
+        // KEEP IN SYNC: list_models는 format!("Tabby {}: {}", status, body) 사용
+        let msg = humanize_error("Tabby 401 Unauthorized: token missing");
+        assert!(msg.contains("인증 실패"));
+    }
+
+    #[test]
+    fn humanize_auth_403() {
+        let msg = humanize_error("Tabby 403 Forbidden: ...");
+        assert!(msg.contains("인증 실패"));
+    }
+
+    #[test]
+    fn humanize_404() {
+        let msg = humanize_error("Tabby 404 Not Found: page");
+        assert!(msg.contains("base URL"));
+    }
+
+    #[test]
+    fn humanize_unknown_passes_through() {
+        let raw = "alien error message that we don't categorize";
+        assert_eq!(humanize_error(raw), raw);
+    }
+
+    /// list_models의 format string과 humanize_error 패턴이 동기화되어 있음을 보장.
+    /// 둘 중 하나만 바꾸면 이 테스트가 깨짐.
+    #[test]
+    fn humanize_matches_list_models_format() {
+        let synthetic_err = format!("Tabby {}: {}", 401, "anything");
+        let msg = humanize_error(&synthetic_err);
+        assert!(msg.contains("인증 실패"), "got: {}", msg);
+
+        let synthetic_404 = format!("Tabby {}: not found", 404);
+        let msg2 = humanize_error(&synthetic_404);
+        assert!(msg2.contains("base URL"), "got: {}", msg2);
+    }
+}

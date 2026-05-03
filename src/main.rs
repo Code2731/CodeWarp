@@ -3483,3 +3483,142 @@ impl App {
             .into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── fmt_bytes ───────────────────────────────────────────────────
+
+    #[test]
+    fn fmt_bytes_units() {
+        assert_eq!(fmt_bytes(0), "0 B");
+        assert_eq!(fmt_bytes(512), "512 B");
+        assert_eq!(fmt_bytes(1024), "1 KB");
+        assert_eq!(fmt_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(fmt_bytes(1024 * 1024 * 1024), "1.00 GB");
+    }
+
+    #[test]
+    fn fmt_bytes_large_gb() {
+        let n = 5_500_000_000u64; // 5.5GB 모델 정도
+        let s = fmt_bytes(n);
+        assert!(s.ends_with(" GB"), "got: {}", s);
+        assert!(s.starts_with("5.1"), "got: {}", s); // 5.5e9 / 2^30 ≈ 5.12
+    }
+
+    // ── fmt_context_length ──────────────────────────────────────────
+
+    #[test]
+    fn fmt_context_length_units() {
+        assert_eq!(fmt_context_length(500), "500");
+        assert_eq!(fmt_context_length(8000), "8k");
+        assert_eq!(fmt_context_length(128_000), "128k");
+        assert_eq!(fmt_context_length(1_000_000), "1.0M");
+        assert_eq!(fmt_context_length(2_500_000), "2.5M");
+    }
+
+    // ── parse_price_per_million ─────────────────────────────────────
+
+    #[test]
+    fn parse_price_per_million_typical() {
+        // OpenRouter는 토큰당 USD를 문자열로 줌 (e.g. "0.000005" = $5/M)
+        let p = parse_price_per_million(Some("0.000005"));
+        assert!(matches!(p, Some(v) if (v - 5.0).abs() < 1e-9));
+    }
+
+    #[test]
+    fn parse_price_per_million_free() {
+        let p = parse_price_per_million(Some("0"));
+        assert_eq!(p, Some(0.0));
+    }
+
+    #[test]
+    fn parse_price_per_million_invalid() {
+        assert_eq!(parse_price_per_million(None), None);
+        assert_eq!(parse_price_per_million(Some("")), None);
+        assert_eq!(parse_price_per_million(Some("abc")), None);
+    }
+
+    // ── is_korean_friendly ──────────────────────────────────────────
+
+    #[test]
+    fn ko_friendly_known_models() {
+        assert!(is_korean_friendly("openai/gpt-4o"));
+        assert!(is_korean_friendly("anthropic/claude-3.5-sonnet"));
+        assert!(is_korean_friendly("google/gemini-1.5-pro"));
+        assert!(is_korean_friendly("qwen/qwen2.5-coder-7b"));
+        assert!(is_korean_friendly("meta-llama/llama-3.1-70b-instruct"));
+        assert!(is_korean_friendly("upstage/solar-10.7b"));
+        assert!(is_korean_friendly("LGAI-EXAONE/EXAONE-3.5-7.8B")); // 대문자도 매칭
+        assert!(is_korean_friendly("deepseek/deepseek-v3"));
+    }
+
+    #[test]
+    fn ko_friendly_negative() {
+        assert!(!is_korean_friendly("mistralai/mistral-7b"));
+        assert!(!is_korean_friendly("openai/gpt-3.5-turbo"));
+        assert!(!is_korean_friendly("starcoder2:7b"));
+    }
+
+    // ── categorize_model ────────────────────────────────────────────
+
+    #[test]
+    fn categorize_coding_models() {
+        let cats = categorize_model("qwen/qwen2.5-coder-7b");
+        assert!(cats.contains(&ModelCategory::Coding));
+    }
+
+    #[test]
+    fn categorize_reasoning_models() {
+        let cats = categorize_model("deepseek/deepseek-r1");
+        assert!(cats.contains(&ModelCategory::Reasoning));
+    }
+
+    #[test]
+    fn categorize_general_fallback() {
+        let cats = categorize_model("mistralai/mistral-7b-instruct");
+        assert!(cats.contains(&ModelCategory::General));
+    }
+
+    // ── summarize_tool_result ───────────────────────────────────────
+
+    #[test]
+    fn summarize_write_file_success() {
+        let args = r#"{"path":"src/foo.rs","content":"hello"}"#;
+        let (summary, success) = summarize_tool_result("write_file", args, "OK: wrote 5 bytes");
+        assert!(summary.contains("src/foo.rs"));
+        assert!(summary.contains("5 bytes"));
+        assert!(success);
+    }
+
+    #[test]
+    fn summarize_write_file_error_result() {
+        let args = r#"{"path":"src/foo.rs","content":"x"}"#;
+        let (_, success) = summarize_tool_result("write_file", args, "Error: permission denied");
+        assert!(!success);
+    }
+
+    #[test]
+    fn summarize_run_command_truncates_long_command() {
+        let long = "x".repeat(200);
+        let args = format!(r#"{{"command":"{}"}}"#, long);
+        let (summary, _) = summarize_tool_result("run_command", &args, "OK");
+        assert!(summary.starts_with("$ "));
+        // command 부분만 60자 제한 (prefix "$ " 포함 62자 이내)
+        assert!(summary.len() <= 62);
+    }
+
+    #[test]
+    fn summarize_unknown_tool() {
+        let (summary, success) = summarize_tool_result("foo", "{}", "first line\nsecond line");
+        assert_eq!(summary, "first line");
+        assert!(success);
+    }
+
+    #[test]
+    fn summarize_err_marker() {
+        let (_, success) = summarize_tool_result("foo", "{}", "[err] something broke");
+        assert!(!success);
+    }
+}

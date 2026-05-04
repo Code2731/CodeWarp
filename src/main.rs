@@ -792,6 +792,67 @@ const MODEL_PRESETS: &[ModelPreset] = &[
     },
 ];
 
+/// EXL2 프리셋 — TabbyAPI용. 클릭하면 해당 branch를 바로 다운로드.
+struct Exl2Preset {
+    repo_id: &'static str,
+    revision: &'static str, // HF branch (bpw 수치)
+    folder_name: &'static str, // models 폴더 아래 저장될 이름
+    label: &'static str,
+    note: &'static str,
+    vram: &'static str,
+}
+
+const EXL2_PRESETS: &[Exl2Preset] = &[
+    Exl2Preset {
+        repo_id: "turboderp/Llama-3.2-1B-Instruct-exl2",
+        revision: "4.0bpw",
+        folder_name: "Llama-3.2-1B-Instruct-4.0bpw",
+        label: "Llama 3.2 1B Instruct",
+        note: "검증·테스트용 초소형",
+        vram: "~600MB",
+    },
+    Exl2Preset {
+        repo_id: "turboderp/Llama-3.2-3B-Instruct-exl2",
+        revision: "4.0bpw",
+        folder_name: "Llama-3.2-3B-Instruct-4.0bpw",
+        label: "Llama 3.2 3B Instruct",
+        note: "소형 범용",
+        vram: "~1.8GB",
+    },
+    Exl2Preset {
+        repo_id: "turboderp/Llama-3.1-8B-Instruct-exl2",
+        revision: "4.0bpw",
+        folder_name: "Llama-3.1-8B-Instruct-4.0bpw",
+        label: "Llama 3.1 8B Instruct 4bpw",
+        note: "RTX 3080 최적 균형",
+        vram: "~5GB",
+    },
+    Exl2Preset {
+        repo_id: "turboderp/Llama-3.1-8B-Instruct-exl2",
+        revision: "6.0bpw",
+        folder_name: "Llama-3.1-8B-Instruct-6.0bpw",
+        label: "Llama 3.1 8B Instruct 6bpw",
+        note: "품질 우선 (RTX 3080 10GB 내)",
+        vram: "~7.5GB",
+    },
+    Exl2Preset {
+        repo_id: "turboderp/gemma-2-9b-it-exl2",
+        revision: "4.0bpw",
+        folder_name: "Gemma-2-9B-it-4.0bpw",
+        label: "Gemma 2 9B Instruct",
+        note: "Google 범용 (강력한 instruction following)",
+        vram: "~5.5GB",
+    },
+    Exl2Preset {
+        repo_id: "turboderp/gemma-3-12b-it-exl2",
+        revision: "4.0bpw",
+        folder_name: "Gemma-3-12B-it-4.0bpw",
+        label: "Gemma 3 12B Instruct",
+        note: "최신 Gemma 3 (멀티모달 지원)",
+        vram: "~7GB",
+    },
+];
+
 /// 도구 호출이 SSE delta로 부분씩 도착하는 동안 누적할 임시 구조.
 #[derive(Default, Clone)]
 struct PendingToolCall {
@@ -852,6 +913,8 @@ struct App {
     show_hf_token: bool,
     model_dir_input: String,
     hf_repo_input: String,
+    hf_revision: Option<String>,
+    hf_folder_name: Option<String>,
     /// 진행 중 다운로드 — 없으면 None
     hf_dl: Option<HfDownload>,
 
@@ -1141,6 +1204,8 @@ enum Message {
     HfRepoChanged(String),
     /// 프리셋 클릭 → repo input에 채움
     UsePreset(usize),
+    /// EXL2 프리셋 클릭 → 바로 다운로드
+    DownloadExl2Preset(usize),
     StartHfDownload,
     HfDownloadEvent(hf::DownloadEvent),
     CancelHfDownload,
@@ -1216,6 +1281,8 @@ impl App {
                     .unwrap_or_default()
             }),
             hf_repo_input: String::new(),
+            hf_revision: None,
+            hf_folder_name: None,
             hf_dl: None,
             show_settings: !has_key,
             stream_id: ScrollId::new("stream"),
@@ -1718,6 +1785,17 @@ impl App {
             Message::UsePreset(idx) => {
                 if let Some(p) = MODEL_PRESETS.get(idx) {
                     self.hf_repo_input = p.repo_id.into();
+                    self.hf_revision = None;
+                    self.hf_folder_name = None;
+                }
+                Task::none()
+            }
+            Message::DownloadExl2Preset(idx) => {
+                if let Some(p) = EXL2_PRESETS.get(idx) {
+                    self.hf_repo_input = p.repo_id.into();
+                    self.hf_revision = Some(p.revision.into());
+                    self.hf_folder_name = Some(p.folder_name.into());
+                    return Task::done(Message::StartHfDownload);
                 }
                 Task::none()
             }
@@ -1745,7 +1823,7 @@ impl App {
                 });
                 self.status = format!("다운로드 시작: {}", repo);
                 let (task, handle) = Task::run(
-                    hf::download_repo(repo, std::path::PathBuf::from(dir), token),
+                    hf::download_repo(repo, std::path::PathBuf::from(dir), token, self.hf_revision.take(), self.hf_folder_name.take()),
                     Message::HfDownloadEvent,
                 )
                 .abortable();
@@ -4419,18 +4497,48 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
+        // EXL2 프리셋 섹션 (TabbyAPI용, 클릭 → 즉시 다운로드)
+        let is_downloading = self.hf_dl.is_some();
+        let mut exl2_col = column![
+            text("EXL2 프리셋 (TabbyAPI용) — 클릭하면 바로 다운로드").size(12),
+        ]
+        .spacing(4);
+        for (i, p) in EXL2_PRESETS.iter().enumerate() {
+            let btn = button(
+                row![
+                    column![
+                        text(p.label).size(13),
+                        text(p.note).size(10),
+                        text(p.repo_id)
+                            .size(9)
+                            .font(Font::with_name("JetBrains Mono")),
+                    ]
+                    .spacing(2)
+                    .width(Length::Fill),
+                    text(p.vram).size(11),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .padding([6, 12]);
+            exl2_col = exl2_col.push(if is_downloading {
+                btn.style(button::secondary)
+            } else {
+                btn.on_press(Message::DownloadExl2Preset(i))
+            });
+        }
+
         column![
             header,
             text("HuggingFace에서 모델 받아 디스크에 저장.").size(11),
-            text("→ xLLM / vLLM / llama-server / ollama 등 자체 띄울 OpenAI 호환 백엔드용.")
-                .size(11),
-            text("→ Tabby는 자체 cache. `tabby serve --model X`가 자동 다운로드 (이 매니저 안 씀).")
-                .size(11),
-            Space::new().height(Length::Fixed(8.0)),
+            Space::new().height(Length::Fixed(4.0)),
             text("저장 경로 (변경 가능)").size(11),
             dir_row,
             Space::new().height(Length::Fixed(12.0)),
-            // 가장 흔한 흐름 — 프리셋 클릭 → 자동으로 repo 채움 → 다운로드
+            exl2_col,
+            Space::new().height(Length::Fixed(12.0)),
+            text("HF 일반 모델 (safetensors · xLLM/vLLM용) — 클릭 → 입력란에 채움").size(12),
             presets_col,
             Space::new().height(Length::Fixed(8.0)),
             text("또는 직접 입력").size(11),

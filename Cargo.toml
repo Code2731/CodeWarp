@@ -9,7 +9,7 @@ repository = "https://github.com/Code2731/CodeWarp"
 
 [dependencies]
 iced = { version = "0.14", features = ["tokio", "advanced", "highlighter", "markdown"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "process", "io-util"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 serde = { version = "1", features = ["derive"] }

@@ -17,8 +17,8 @@ use iced::widget::operation::snap_to_end;
 use iced::widget::scrollable::{Direction, Scrollbar, Viewport};
 use iced::widget::text_editor::{Action, Edit};
 use iced::widget::{
-    button, checkbox, column, combo_box, container, row, scrollable, stack, text, text_editor,
-    text_input, Id as ScrollId, Space,
+    button, checkbox, column, combo_box, container, pick_list, row, scrollable, stack, text,
+    text_editor, text_input, Id as ScrollId, Space,
 };
 use iced::keyboard::key::Named;
 use iced::keyboard::{Key, Modifiers};
@@ -27,29 +27,23 @@ use iced::{font, Alignment, Color, Element, Font, Length, Size, Subscription, Ta
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
 
-/// 모델을 어느 백엔드로 라우팅할지.
+/// 모델을 어느 백엔드로 라우팅할지. OpenAICompat은 사용자 임의 endpoint
+/// (xLLM / vLLM / Tabby / llama-server / Ollama 등 — 모두 OpenAI 호환).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum LlmProvider {
     OpenRouter,
-    Tabby,
-}
-
-impl LlmProvider {
-    /// combo_box Display에 prefix로 붙는 짧은 태그.
-    fn tag(self) -> &'static str {
-        match self {
-            LlmProvider::OpenRouter => "[OR]",
-            LlmProvider::Tabby => "[Tb]",
-        }
-    }
+    OpenAICompat,
 }
 
 /// combo_box에 표시할 모델 항목 (가격 정보 포함).
-/// Display 형식: "[OR][KO]★ model-id  128k  $in/$out" 또는 "[Tb] model-id  free"
+/// Display 형식: "[OR][KO]★ model-id  128k  $in/$out" 또는 "[xLLM] model-id  free"
 #[derive(Debug, Clone, PartialEq)]
 struct ModelOption {
     id: String,
     provider: LlmProvider,
+    /// OpenAICompat의 사용자 지정 라벨 (xLLM/Tabby/Local 등). 빈 값이면 "Local".
+    /// OpenRouter일 땐 무의미 (Display에서 사용 안 함).
+    provider_label: String,
     /// 한국어 토크나이저 친화 모델 휴리스틱 결과
     ko_friendly: bool,
     /// 즐겨찾기 여부 (refresh_model_combo에서 self.favorites 기준으로 set)
@@ -94,7 +88,17 @@ fn fmt_context_length(n: u64) -> String {
 
 impl std::fmt::Display for ModelOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let tag = self.provider.tag();
+        let tag: String = match self.provider {
+            LlmProvider::OpenRouter => "[OR]".into(),
+            LlmProvider::OpenAICompat => {
+                let label = self.provider_label.trim();
+                if label.is_empty() {
+                    "[Local]".into()
+                } else {
+                    format!("[{}]", label)
+                }
+            }
+        };
         let ko = if self.ko_friendly { "[KO]" } else { "" };
         let star = if self.favorite { "★" } else { "" };
         let ctx = self
@@ -261,6 +265,216 @@ struct Block {
     model: Option<String>,
     /// 응답 끝난 후 추출된 Apply 가능한 변경사항 + 적용 여부.
     apply_candidates: Vec<(ApplyCandidate, bool)>,
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        // 앱 종료 시 inference child process 정리 (좀비 방지)
+        if let Some(pid) = self.inference_pid {
+            kill_pid(pid);
+        }
+    }
+}
+
+/// inference 서버를 child process로 spawn + stdout/stderr line stream으로 emit.
+/// 첫 message는 `[pid:NNN]` 형식 (App가 inference_pid 저장).
+fn spawn_inference_stream(
+    program: String,
+    args: Vec<String>,
+) -> impl futures_util::Stream<Item = Message> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
+    async_stream::stream! {
+        let mut cmd = Command::new(&program);
+        cmd.args(&args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                yield Message::InferenceLogLine(format!("[spawn 실패] {}: {}", program, e));
+                yield Message::InferenceExited(-1);
+                return;
+            }
+        };
+        if let Some(pid) = child.id() {
+            yield Message::InferenceLogLine(format!("[pid:{}] {} {}", pid, program, args.join(" ")));
+        }
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        if let Some(out) = stdout {
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(out).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if tx.send(line).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        if let Some(err) = stderr {
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(err).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if tx.send(format!("[err] {}", line)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(tx);
+        // child 종료 + 로그 라인을 동시 처리
+        let mut child_done = false;
+        let mut exit_code: i32 = 0;
+        loop {
+            tokio::select! {
+                line = rx.recv() => {
+                    match line {
+                        Some(l) => yield Message::InferenceLogLine(l),
+                        None => {
+                            if child_done { break; }
+                        }
+                    }
+                }
+                status = child.wait(), if !child_done => {
+                    child_done = true;
+                    exit_code = status.ok().and_then(|s| s.code()).unwrap_or(-1);
+                }
+            }
+        }
+        yield Message::InferenceExited(exit_code);
+    }
+}
+
+/// inference 엔진 종류 — 사용자가 dropdown으로 선택.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InferenceEngine {
+    XLlm,
+    VLlm,
+    LlamaServer,
+    Tabby,
+    /// daemon 형태 — 이미 떠있다고 가정, CodeWarp는 spawn 안 함.
+    Ollama,
+    /// 사용자가 직접 명령 입력
+    Custom,
+}
+
+impl InferenceEngine {
+    const ALL: &'static [InferenceEngine] = &[
+        InferenceEngine::XLlm,
+        InferenceEngine::VLlm,
+        InferenceEngine::LlamaServer,
+        InferenceEngine::Tabby,
+        InferenceEngine::Ollama,
+        InferenceEngine::Custom,
+    ];
+
+    fn label(&self) -> &'static str {
+        match self {
+            Self::XLlm => "xLLM",
+            Self::VLlm => "vLLM",
+            Self::LlamaServer => "llama-server",
+            Self::Tabby => "Tabby",
+            Self::Ollama => "Ollama (이미 떠있는 daemon)",
+            Self::Custom => "Custom (직접 명령)",
+        }
+    }
+
+    fn default_port(&self) -> u16 {
+        match self {
+            Self::Tabby => 8080,
+            Self::Ollama => 11434,
+            _ => 9000,
+        }
+    }
+
+    /// 모델 path/ID + port를 받아 spawn할 Command 인자 리스트 반환.
+    /// `None`이면 spawn 안 함 (Ollama는 외부 daemon, Custom은 사용자 정의).
+    fn compose_command(&self, model: &str, port: u16) -> Option<Vec<String>> {
+        let port_s = port.to_string();
+        match self {
+            Self::XLlm => Some(vec![
+                "xllm".into(),
+                "serve".into(),
+                "--model".into(),
+                model.into(),
+                "--port".into(),
+                port_s,
+            ]),
+            Self::VLlm => Some(vec![
+                "vllm".into(),
+                "serve".into(),
+                model.into(),
+                "--port".into(),
+                port_s,
+            ]),
+            Self::LlamaServer => Some(vec![
+                "llama-server".into(),
+                "-m".into(),
+                model.into(),
+                "--port".into(),
+                port_s,
+            ]),
+            Self::Tabby => Some(vec![
+                "tabby".into(),
+                "serve".into(),
+                "--model".into(),
+                model.into(),
+            ]),
+            Self::Ollama | Self::Custom => None,
+        }
+    }
+}
+
+impl std::fmt::Display for InferenceEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+/// 모델 매니저 다운로드 폴더 안의 받은 모델(서브폴더) 리스트.
+/// 빈 폴더는 모델 아님 — skip.
+fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        // 빈 폴더 skip
+        let has_files = std::fs::read_dir(&path)
+            .map(|mut it| it.next().is_some())
+            .unwrap_or(false);
+        if !has_files {
+            continue;
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
+/// 윈도우는 taskkill /T /F (자식 트리 포함), 그 외는 kill SIGTERM.
+fn kill_pid(pid: u32) {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .status();
+    }
 }
 
 /// AI 응답의 fenced code block 첫 줄에서 `// path: ...` 또는 `# path: ...`를
@@ -454,7 +668,7 @@ fn modal_overlay<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
         .padding(0)
         .width(Length::Shrink)
         .max_width(720.0)
-        .max_height(620.0)
+        .max_height(720.0)
         .style(|theme: &Theme| {
             let palette = theme.extended_palette();
             container::Style {
@@ -547,21 +761,24 @@ struct ModelPreset {
     label: &'static str,
     note: &'static str,
 }
+// xLLM / vLLM / llama-server 등 자체 띄울 OpenAI 호환 백엔드용 HF 본판 모델.
+// Tabby는 자체 카탈로그·cache를 사용하므로 Tabby를 위해서는 이 매니저 대신
+// `tabby serve --model X` 명령을 직접 실행 (그러면 Tabby가 자동 다운로드).
 const MODEL_PRESETS: &[ModelPreset] = &[
     ModelPreset {
-        repo_id: "TabbyML/Qwen2.5-Coder-7B",
-        label: "Qwen2.5-Coder 7B",
-        note: "Tabby용 코딩 (다국어/한국어 OK)",
+        repo_id: "Qwen/Qwen2.5-Coder-7B-Instruct",
+        label: "Qwen2.5-Coder 7B Instruct",
+        note: "코딩 + 한국어 친화 (xLLM/vLLM)",
     },
     ModelPreset {
-        repo_id: "TabbyML/DeepSeekCoder-6.7B",
-        label: "DeepSeek-Coder 6.7B",
-        note: "Tabby용 코딩",
+        repo_id: "Qwen/Qwen2.5-7B-Instruct",
+        label: "Qwen2.5 7B Instruct",
+        note: "범용 + 한국어 친화 (xLLM/vLLM)",
     },
     ModelPreset {
         repo_id: "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct",
         label: "EXAONE 3.5 7.8B",
-        note: "한국어 친화 (LG AI)",
+        note: "한국어 특화 (LG AI)",
     },
     ModelPreset {
         repo_id: "upstage/SOLAR-10.7B-Instruct-v1.0",
@@ -569,9 +786,9 @@ const MODEL_PRESETS: &[ModelPreset] = &[
         note: "한국어 친화 (Upstage)",
     },
     ModelPreset {
-        repo_id: "Qwen/Qwen2.5-7B-Instruct",
-        label: "Qwen2.5 7B Instruct",
-        note: "범용 (xLLM/vLLM용 safetensors)",
+        repo_id: "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+        label: "DeepSeek-Coder V2 Lite",
+        note: "코딩 (16B-MoE 활성 2.4B)",
     },
 ];
 
@@ -592,6 +809,23 @@ struct App {
     tabby_url_input: String,
     /// Tabby token 입력값 (선택). 비어있으면 인증 없이 호출.
     tabby_token_input: String,
+    /// Tabby 토큰 입력란 노출 여부 (대부분 사용자는 토큰 불필요).
+    show_tabby_token: bool,
+    /// OpenAICompat endpoint 사용자 라벨 (xLLM/Tabby/Local 등). 빈 값이면 [Local].
+    openai_compat_label: String,
+    /// inference 서버 시작 명령 (Custom 엔진일 때만 사용).
+    inference_command_input: String,
+    /// 선택된 엔진 (xLLM/vLLM/llama-server/Tabby/Ollama/Custom).
+    inference_engine: InferenceEngine,
+    /// 엔진 바이너리 절대 경로 (PATH에 없을 때 override). 비어있으면 PATH default.
+    inference_binary_path: String,
+    /// 받은 모델 폴더 이름 (또는 Tabby/Ollama용 모델 ID).
+    inference_selected_model: String,
+    inference_port_input: String,
+    /// 진행 중인 child process — Some이면 서버 spawn된 상태.
+    inference_pid: Option<u32>,
+    /// stdout/stderr 마지막 줄 (최대 20줄, FIFO).
+    inference_log: std::collections::VecDeque<String>,
     /// 마지막 ping 결과 — None=미시도, Some(Ok)=정상, Some(Err)=실패 사유.
     tabby_status: Option<Result<String, String>>,
     status: String,
@@ -878,6 +1112,19 @@ enum Message {
     ExecuteCommand(usize),
     TabbyUrlChanged(String),
     TabbyTokenChanged(String),
+    ToggleTabbyTokenVisible,
+    OpenAICompatLabelChanged(String),
+    InferenceCommandChanged(String),
+    SelectInferenceEngine(InferenceEngine),
+    SelectInferenceModel(String),
+    InferencePortChanged(String),
+    InferenceBinaryChanged(String),
+    PickInferenceBinary,
+    InferenceBinaryPicked(Option<std::path::PathBuf>),
+    StartInference,
+    StopInference,
+    InferenceLogLine(String),
+    InferenceExited(i32),
     SaveTabby,
     TabbySaved(Result<(), String>),
     ClearTabby,
@@ -938,7 +1185,16 @@ impl App {
             has_key,
             key_input: String::new(),
             tabby_url_input: saved_tabby_url,
-            tabby_token_input: saved_tabby_token,
+            tabby_token_input: saved_tabby_token.clone(),
+            show_tabby_token: !saved_tabby_token.trim().is_empty(),
+            openai_compat_label: keystore::read_openai_compat_label().unwrap_or_default(),
+            inference_command_input: keystore::read_inference_command().unwrap_or_default(),
+            inference_engine: InferenceEngine::XLlm,
+            inference_binary_path: keystore::read_inference_binary().unwrap_or_default(),
+            inference_selected_model: String::new(),
+            inference_port_input: "9000".into(),
+            inference_pid: None,
+            inference_log: std::collections::VecDeque::new(),
             tabby_status: None,
             status,
             busy: false,
@@ -1056,6 +1312,10 @@ impl App {
         if !app.tabby_url_input.trim().is_empty() {
             tasks.push(Task::done(Message::FetchTabbyModels));
         }
+        // 저장된 inference 명령 있으면 boot 시 자동 시작
+        if !app.inference_command_input.trim().is_empty() {
+            tasks.push(Task::done(Message::StartInference));
+        }
         if let Some(t) = restore_scroll {
             tasks.push(t);
         }
@@ -1133,6 +1393,186 @@ impl App {
                 self.tabby_token_input = v;
                 Task::none()
             }
+            Message::ToggleTabbyTokenVisible => {
+                self.show_tabby_token = !self.show_tabby_token;
+                Task::none()
+            }
+            Message::InferenceCommandChanged(v) => {
+                self.inference_command_input = v.clone();
+                let _ = keystore::write_inference_command(&v);
+                Task::none()
+            }
+            Message::SelectInferenceEngine(e) => {
+                self.inference_engine = e;
+                self.inference_port_input = e.default_port().to_string();
+                Task::none()
+            }
+            Message::SelectInferenceModel(m) => {
+                self.inference_selected_model = m;
+                Task::none()
+            }
+            Message::InferencePortChanged(v) => {
+                self.inference_port_input = v;
+                Task::none()
+            }
+            Message::InferenceBinaryChanged(v) => {
+                self.inference_binary_path = v.clone();
+                let _ = keystore::write_inference_binary(&v);
+                Task::none()
+            }
+            Message::PickInferenceBinary => {
+                Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("inference 엔진 바이너리 선택 (xllm.exe / python.exe 등)")
+                            .pick_file()
+                            .await
+                            .map(|h| h.path().to_path_buf())
+                    },
+                    Message::InferenceBinaryPicked,
+                )
+            }
+            Message::InferenceBinaryPicked(maybe) => {
+                if let Some(path) = maybe {
+                    let s = path.display().to_string();
+                    let _ = keystore::write_inference_binary(&s);
+                    self.inference_binary_path = s;
+                    self.status = "바이너리 경로 저장됨".into();
+                }
+                Task::none()
+            }
+            Message::StartInference => {
+                if self.inference_pid.is_some() {
+                    self.status = "이미 실행 중".into();
+                    return Task::none();
+                }
+                // 포트 parse
+                let port: u16 = self.inference_port_input.trim().parse().unwrap_or_else(|_| {
+                    self.inference_engine.default_port()
+                });
+                // 엔진별 명령 합성 + URL 자동 등록
+                let (program, args) = match self.inference_engine {
+                    InferenceEngine::Custom => {
+                        let cmd_str = self.inference_command_input.trim();
+                        if cmd_str.is_empty() {
+                            self.status = "시작 명령 비어있음".into();
+                            return Task::none();
+                        }
+                        let parts: Vec<String> =
+                            cmd_str.split_whitespace().map(|s| s.to_string()).collect();
+                        let Some(p) = parts.first().cloned() else {
+                            return Task::none();
+                        };
+                        (p, parts.into_iter().skip(1).collect::<Vec<_>>())
+                    }
+                    InferenceEngine::Ollama => {
+                        // spawn 안 함 — endpoint만 자동 등록 + ping
+                        self.tabby_url_input = format!("http://localhost:{}", port);
+                        let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                        if self.openai_compat_label.trim().is_empty() {
+                            self.openai_compat_label = "Ollama".into();
+                            let _ = keystore::write_openai_compat_label("Ollama");
+                        }
+                        self.status = "Ollama daemon endpoint 등록 — 연결 테스트".into();
+                        return Task::done(Message::FetchTabbyModels);
+                    }
+                    eng => {
+                        let model = self.inference_selected_model.trim();
+                        if model.is_empty() {
+                            self.status = "모델 선택 안 됨".into();
+                            return Task::none();
+                        }
+                        // xLLM/vLLM/llama-server는 받은 폴더를 absolute path로
+                        let abs_model = if matches!(eng, InferenceEngine::Tabby) {
+                            // Tabby는 카탈로그 ID 그대로
+                            model.to_string()
+                        } else {
+                            std::path::PathBuf::from(&self.model_dir_input)
+                                .join(model)
+                                .display()
+                                .to_string()
+                        };
+                        let Some(cmd) = eng.compose_command(&abs_model, port) else {
+                            return Task::none();
+                        };
+                        let mut iter = cmd.into_iter();
+                        let p = iter.next().unwrap_or_default();
+                        (p, iter.collect::<Vec<_>>())
+                    }
+                };
+
+                // URL/라벨 자동 등록 (시작 시점)
+                self.tabby_url_input = format!("http://localhost:{}", port);
+                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                if self.openai_compat_label.trim().is_empty() {
+                    let label = self.inference_engine.label().split_whitespace().next()
+                        .unwrap_or("Local").to_string();
+                    self.openai_compat_label = label.clone();
+                    let _ = keystore::write_openai_compat_label(&label);
+                }
+
+                // 바이너리 경로가 명시되어 있으면 PATH 의존 안 하고 절대 경로 사용
+                let final_program = if !self.inference_binary_path.trim().is_empty() {
+                    self.inference_binary_path.trim().to_string()
+                } else {
+                    program
+                };
+                self.inference_log.clear();
+                self.status = format!("실행 시작: {} {}", final_program, args.join(" "));
+                Task::batch(vec![
+                    Task::run(spawn_inference_stream(final_program, args), |ev| ev),
+                    Task::perform(
+                        async {
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        },
+                        |_| Message::FetchTabbyModels,
+                    ),
+                ])
+            }
+            Message::StopInference => {
+                if let Some(pid) = self.inference_pid.take() {
+                    kill_pid(pid);
+                    self.status = format!("inference 서버 중지 (pid {})", pid);
+                    self.push_inference_log(format!("[stopped] pid {}", pid));
+                }
+                Task::none()
+            }
+            Message::InferenceLogLine(line) => {
+                if line.starts_with("[pid:") {
+                    if let Some(pid) = line
+                        .strip_prefix("[pid:")
+                        .and_then(|r| r.split(']').next())
+                        .and_then(|s| s.trim().parse::<u32>().ok())
+                    {
+                        self.inference_pid = Some(pid);
+                    }
+                }
+                self.push_inference_log(line);
+                Task::none()
+            }
+            Message::InferenceExited(code) => {
+                self.push_inference_log(format!("[exited] code {}", code));
+                self.inference_pid = None;
+                self.status = format!("inference 서버 종료 (exit {})", code);
+                // endpoint 끊김 표시
+                self.tabby_status = Some(Err("inference 서버 종료됨".into()));
+                self.model_options.retain(|o| o.provider != LlmProvider::OpenAICompat);
+                self.refresh_model_combo();
+                Task::none()
+            }
+            Message::OpenAICompatLabelChanged(v) => {
+                self.openai_compat_label = v;
+                let _ = keystore::write_openai_compat_label(&self.openai_compat_label);
+                // 라벨이 바뀌면 기존 OpenAICompat 모델 옵션의 라벨도 갱신
+                let new_label = self.openai_compat_label.clone();
+                for opt in &mut self.model_options {
+                    if opt.provider == LlmProvider::OpenAICompat {
+                        opt.provider_label = new_label.clone();
+                    }
+                }
+                self.refresh_model_combo();
+                Task::none()
+            }
             Message::SaveTabby => {
                 let url = self.tabby_url_input.clone();
                 let token = self.tabby_token_input.clone();
@@ -1169,7 +1609,7 @@ impl App {
                 self.tabby_status = None;
                 self.status = "Tabby 설정 삭제됨".into();
                 // 모델 리스트에서 Tabby 항목 제거
-                self.model_options.retain(|o| o.provider != LlmProvider::Tabby);
+                self.model_options.retain(|o| o.provider != LlmProvider::OpenAICompat);
                 self.refresh_model_combo();
                 // 선택된 모델이 Tabby였다면 해제
                 if let Some(sel) = self.selected_model.clone() {
@@ -1198,7 +1638,7 @@ impl App {
             }
             Message::TabbyModelsLoaded(r) => {
                 // 기존 Tabby 항목 제거 후 새로 채움 (성공/실패 모두 동일하게 비움)
-                self.model_options.retain(|o| o.provider != LlmProvider::Tabby);
+                self.model_options.retain(|o| o.provider != LlmProvider::OpenAICompat);
                 match r {
                     Ok(ids) => {
                         let label = if ids.is_empty() {
@@ -1208,12 +1648,14 @@ impl App {
                         };
                         self.status = format!("Tabby 연결됨 — {}", label);
                         self.tabby_status = Some(Ok(label));
+                        let provider_label = self.openai_compat_label.clone();
                         for id in ids {
                             let ko_friendly = is_korean_friendly(&id);
                             let favorite = self.favorites.contains(&id);
                             self.model_options.push(ModelOption {
                                 id,
-                                provider: LlmProvider::Tabby,
+                                provider: LlmProvider::OpenAICompat,
+                                provider_label: provider_label.clone(),
                                 ko_friendly,
                                 favorite,
                                 context_length: None,
@@ -1335,7 +1777,10 @@ impl App {
                         }
                         hf::DownloadEvent::FileDone { .. } => {}
                         hf::DownloadEvent::AllDone => {
-                            self.status = format!("다운로드 완료: {}", dl.repo_id);
+                            self.status = format!(
+                                "다운로드 완료: {} — 이 경로를 inference 엔진(xLLM 등)에 지정해 띄운 뒤 Tabby URL 자리에 그 endpoint 입력",
+                                dl.repo_id
+                            );
                             self.hf_dl = None;
                             self.abort_handle = None;
                         }
@@ -1497,6 +1942,7 @@ impl App {
                             ModelOption {
                                 id,
                                 provider: LlmProvider::OpenRouter,
+                                provider_label: String::new(),
                                 ko_friendly,
                                 favorite,
                                 context_length: m.context_length,
@@ -2348,6 +2794,15 @@ impl App {
         self.kick_chat_stream()
     }
 
+    /// inference 서버 로그를 ring buffer에 push (cap 20).
+    fn push_inference_log(&mut self, line: String) {
+        const CAP: usize = 20;
+        self.inference_log.push_back(line);
+        while self.inference_log.len() > CAP {
+            self.inference_log.pop_front();
+        }
+    }
+
     /// 도구 실행 결과 chip 블록을 stream에 push (휘발성 — 세션 저장 안 됨).
     fn push_tool_result_block(&mut self, name: String, summary: String, success: bool) {
         let id = self.next_id();
@@ -2416,7 +2871,7 @@ impl App {
                 let key = keystore::read_api_key()?;
                 Ok((openrouter::BASE_URL.to_string(), Some(key)))
             }
-            LlmProvider::Tabby => {
+            LlmProvider::OpenAICompat => {
                 let base = keystore::read_tabby_base_url()
                     .filter(|s| !s.trim().is_empty())
                     .ok_or_else(|| "Tabby URL 미설정".to_string())?;
@@ -3470,15 +3925,39 @@ impl App {
         .into()
     }
 
+    /// OpenAICompat endpoint 활성화 표시. ● + 한 줄 라벨.
+    /// 녹색=연결됨, 빨강=끊김/실패, 회색=미시도.
+    fn endpoint_indicator(&self, size: f32) -> Element<'_, Message> {
+        #[derive(Clone, Copy)]
+        enum Kind { Ok, Err, Unknown }
+        let (kind, label): (Kind, String) = match &self.tabby_status {
+            Some(Ok(s)) => (Kind::Ok, format!("연결됨 — {}", s)),
+            Some(Err(e)) => (Kind::Err, format!("끊김 — {}", e)),
+            None => (Kind::Unknown, "endpoint 미시도".into()),
+        };
+        let dot = text("●").size(size).style(move |theme: &Theme| {
+            let p = theme.extended_palette();
+            iced::widget::text::Style {
+                color: Some(match kind {
+                    Kind::Ok => p.success.base.color,
+                    Kind::Err => p.danger.base.color,
+                    Kind::Unknown => p.background.strong.color,
+                }),
+            }
+        });
+        row![dot, text(label).size(size)]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+    }
+
     fn view_settings(&self) -> Element<'_, Message> {
         let header = row![
             text("Settings").size(18),
             Space::new().width(Length::Fill),
-            button(text("닫기").size(12)).on_press_maybe(if self.has_key {
-                Some(Message::CloseSettings)
-            } else {
-                None
-            }),
+            button(text("닫기").size(12))
+                .on_press(Message::CloseSettings)
+                .padding([4, 12]),
         ]
         .align_y(Alignment::Center);
 
@@ -3512,16 +3991,44 @@ impl App {
         ]
         .spacing(8);
 
-        // ── Tabby 섹션 ────────────────────────────────────────────
-        let tabby_header = text("Tabby (로컬 / 자체 호스팅)").size(14);
-        let tabby_url = text_input("http://localhost:8080", &self.tabby_url_input)
-            .on_input(Message::TabbyUrlChanged)
-            .padding(10)
-            .width(Length::Fixed(420.0));
-        let tabby_token = text_input("token (선택)", &self.tabby_token_input)
-            .on_input(Message::TabbyTokenChanged)
-            .padding(10)
-            .width(Length::Fixed(420.0));
+        // ── OpenAI 호환 endpoint (Tabby / xLLM / vLLM / llama-server / Ollama 등) ──
+        let tabby_header = text("OpenAI 호환 endpoint (xLLM / Tabby / llama-server 등)").size(14);
+        let label_input: Element<Message> = text_input(
+            "라벨 — 모델 셀렉터에 [xLLM] / [Tabby] / [Local] 같이 표시",
+            &self.openai_compat_label,
+        )
+        .on_input(Message::OpenAICompatLabelChanged)
+        .padding(8)
+        .width(Length::Fixed(420.0))
+        .into();
+        let tabby_url = text_input(
+            "예: http://localhost:9000 (xLLM) 또는 http://localhost:8080 (Tabby) — /v1 자동 추가",
+            &self.tabby_url_input,
+        )
+        .on_input(Message::TabbyUrlChanged)
+        .padding(10)
+        .width(Length::Fixed(420.0));
+        // 토큰은 99% 케이스에서 불필요 — 기본 숨김, 버튼으로 노출.
+        let tabby_token_toggle: Element<Message> = button(
+            text(if self.show_tabby_token {
+                "토큰 숨기기"
+            } else {
+                "토큰 입력 (선택)"
+            })
+            .size(11),
+        )
+        .on_press(Message::ToggleTabbyTokenVisible)
+        .padding([4, 10])
+        .into();
+        let tabby_token: Element<Message> = if self.show_tabby_token {
+            text_input("token (인증 강제 시에만)", &self.tabby_token_input)
+                .on_input(Message::TabbyTokenChanged)
+                .padding(10)
+                .width(Length::Fixed(420.0))
+                .into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
         let tabby_actions = row![
             button(text("저장").size(13)).on_press_maybe(if self.busy {
                 None
@@ -3546,16 +4053,12 @@ impl App {
             ),
         ]
         .spacing(8);
-        let tabby_status_label = match &self.tabby_status {
-            Some(Ok(label)) => text(format!("연결됨: {}", label)).size(11),
-            Some(Err(e)) => text(format!("연결 실패: {}", e)).size(11),
-            None => text("미시도").size(11),
-        };
+        let tabby_status_label: Element<Message> = self.endpoint_indicator(11.0);
 
         let manager_section = self.view_model_manager();
 
-        let body = column![
-            header,
+        // 본문 (스크롤 영역) — header는 별도로 분리해서 항상 상단 고정
+        let scroll_body = column![
             Space::new().height(Length::Fixed(8.0)),
             text("AI provider — 둘 중 하나 이상 필수, 동시 사용 가능").size(11),
             Space::new().height(Length::Fixed(8.0)),
@@ -3570,41 +4073,250 @@ impl App {
             text("키는 OS Credential Manager에 저장됩니다.").size(11),
             Space::new().height(Length::Fixed(20.0)),
             tabby_header,
+            label_input,
             tabby_url,
+            tabby_token_toggle,
             tabby_token,
             tabby_actions,
             tabby_status_label,
             Space::new().height(Length::Fixed(4.0)),
-            text("1. https://tabby.tabbyml.com 에서 설치").size(11),
-            text("2. 예: tabby serve --model TabbyML/Qwen2.5-Coder-7B").size(11),
-            text("3. 위에 URL 입력 (기본 http://localhost:8080)").size(11),
+            text("어떤 OpenAI 호환 endpoint든 등록 가능 — 모델 셀렉터엔 라벨이 prefix로 표시됨").size(11),
+            text("예) xLLM:  xllm serve --model <받은 경로> --port 9000  →  URL: http://localhost:9000").size(11),
+            text("예) Tabby: tabby serve --model TabbyML/Qwen2.5-Coder-7B  →  URL: http://localhost:8080").size(11),
+            Space::new().height(Length::Fixed(16.0)),
+            self.view_inference_runner(),
             Space::new().height(Length::Fixed(20.0)),
             manager_section,
         ]
         .spacing(8)
         .max_width(520);
 
+        // header는 scrollable 밖에 두어 항상 상단 고정 — 닫기 버튼이 가려지지 않게.
+        // column/scrollable에 명시적 size를 줘야 modal max_height 안에서 정상 그려짐.
+        let body = column![
+            header,
+            scrollable(scroll_body)
+                .direction(Direction::Vertical(vscrollbar()))
+                .height(Length::Fill)
+                .width(Length::Fixed(560.0)),
+        ]
+        .height(Length::Fill)
+        .width(Length::Fixed(560.0))
+        .spacing(8);
+
         container(body)
-            .padding(28)
-            .width(Length::Fill)
+            .padding(20)
+            .width(Length::Shrink)
             .height(Length::Fill)
             .into()
+    }
+
+    /// inference 서버 (xLLM/vLLM/llama-server/Tabby/Ollama/Custom) — dropdown 기반.
+    /// CodeWarp가 child process로 spawn 관리.
+    fn view_inference_runner(&self) -> Element<'_, Message> {
+        let header = text("inference 서버 (CodeWarp가 spawn 관리)").size(13);
+
+        let engine_pick: Element<Message> = pick_list(
+            InferenceEngine::ALL,
+            Some(self.inference_engine),
+            Message::SelectInferenceEngine,
+        )
+        .placeholder("엔진 선택")
+        .text_size(12)
+        .into();
+
+        // 바이너리 경로 — 비어있으면 PATH default, 채워져 있으면 절대 경로 사용
+        let binary_section: Element<Message> = if matches!(
+            self.inference_engine,
+            InferenceEngine::Ollama | InferenceEngine::Custom
+        ) {
+            // Ollama는 spawn 안 함, Custom은 명령에 포함 → 별도 binary 입력 불필요
+            Space::new().height(Length::Shrink).into()
+        } else {
+            row![
+                text("바이너리").size(11),
+                text_input(
+                    "PATH의 기본값 사용 (비워두면 됨) 또는 절대 경로",
+                    &self.inference_binary_path,
+                )
+                .on_input(Message::InferenceBinaryChanged)
+                .padding(6)
+                .width(Length::Fixed(300.0)),
+                button(text("📁").size(11))
+                    .on_press(Message::PickInferenceBinary)
+                    .padding([4, 8]),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        };
+
+        // 엔진별 모델 입력 분기
+        let model_section: Element<Message> = match self.inference_engine {
+            InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer => {
+                let dl_dir = std::path::PathBuf::from(&self.model_dir_input);
+                let models = list_downloaded_models(&dl_dir);
+                if models.is_empty() {
+                    text("받은 모델 없음 — 위 모델 매니저에서 먼저 다운로드").size(11).into()
+                } else {
+                    let selected = if self.inference_selected_model.is_empty() {
+                        None
+                    } else {
+                        Some(self.inference_selected_model.clone())
+                    };
+                    pick_list(models, selected, Message::SelectInferenceModel)
+                        .placeholder("받은 모델 선택")
+                        .text_size(12)
+                        .into()
+                }
+            }
+            InferenceEngine::Tabby => text_input(
+                "Tabby 카탈로그 (예: TabbyML/Qwen2.5-Coder-7B — Tabby가 자체 다운로드)",
+                &self.inference_selected_model,
+            )
+            .on_input(Message::SelectInferenceModel)
+            .padding(8)
+            .width(Length::Fixed(420.0))
+            .into(),
+            InferenceEngine::Ollama => text_input(
+                "Ollama 모델 (예: qwen2.5-coder:7b) — daemon은 별도로 떠있어야",
+                &self.inference_selected_model,
+            )
+            .on_input(Message::SelectInferenceModel)
+            .padding(8)
+            .width(Length::Fixed(420.0))
+            .into(),
+            InferenceEngine::Custom => text_input(
+                "직접 명령 (예: xllm serve --model ... --port 9000)",
+                &self.inference_command_input,
+            )
+            .on_input(Message::InferenceCommandChanged)
+            .padding(8)
+            .width(Length::Fixed(420.0))
+            .into(),
+        };
+
+        // 포트 (Ollama는 항상 11434, Custom은 명령에 포함되므로 hide)
+        let port_section: Element<Message> = match self.inference_engine {
+            InferenceEngine::Custom => Space::new().height(Length::Shrink).into(),
+            _ => row![
+                text("포트").size(11),
+                text_input("9000", &self.inference_port_input)
+                    .on_input(Message::InferencePortChanged)
+                    .padding(6)
+                    .width(Length::Fixed(100.0)),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .into(),
+        };
+
+        let running = self.inference_pid.is_some();
+        let can_start = match self.inference_engine {
+            InferenceEngine::Custom => !self.inference_command_input.trim().is_empty(),
+            InferenceEngine::Ollama => false, // Ollama는 spawn 안 함 (daemon)
+            _ => !self.inference_selected_model.trim().is_empty(),
+        };
+
+        let actions: Element<Message> = if running {
+            row![
+                text(format!("● 실행 중 (pid {})", self.inference_pid.unwrap()))
+                    .size(11)
+                    .style(|theme: &Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().success.base.color),
+                    }),
+                Space::new().width(Length::Fill),
+                button(text("중지").size(11))
+                    .on_press(Message::StopInference)
+                    .padding([4, 12])
+                    .style(button::danger),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            let btn_label = if self.inference_engine == InferenceEngine::Ollama {
+                "Ollama는 daemon — 시작 불필요"
+            } else {
+                "시작"
+            };
+            row![
+                text("● 미실행")
+                    .size(11)
+                    .style(|theme: &Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().background.strong.color),
+                    }),
+                Space::new().width(Length::Fill),
+                button(text(btn_label).size(11))
+                    .on_press_maybe(if can_start { Some(Message::StartInference) } else { None })
+                    .padding([4, 12])
+                    .style(button::primary),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .into()
+        };
+
+        // 로그 마지막 N줄 (있을 때만)
+        let log_section: Element<Message> = if self.inference_log.is_empty() {
+            Space::new().height(Length::Shrink).into()
+        } else {
+            let mut col = column![text("로그 (최근)").size(10)].spacing(1);
+            for line in &self.inference_log {
+                col = col.push(
+                    text(line.clone())
+                        .size(10)
+                        .font(Font::with_name("JetBrains Mono")),
+                );
+            }
+            container(col)
+                .padding([6, 10])
+                .style(|theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(p.background.weak.color.into()),
+                        border: iced::Border {
+                            color: p.background.strong.color,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                })
+                .into()
+        };
+
+        column![
+            header,
+            row![text("엔진").size(11), engine_pick]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            binary_section,
+            model_section,
+            port_section,
+            actions,
+            log_section
+        ]
+        .spacing(6)
+        .into()
     }
 
     fn view_model_manager(&self) -> Element<'_, Message> {
         let header = text("모델 매니저 (HuggingFace 다운로드)").size(14);
 
-        // 다운로드 경로
+        // 다운로드 경로 — picker 버튼을 명확하게
         let dir_input = text_input(
             "예: C:\\models 또는 ~/models",
             &self.model_dir_input,
         )
         .on_input(Message::ModelDirChanged)
         .padding(8)
-        .width(Length::Fixed(420.0));
+        .width(Length::Fixed(360.0));
         let dir_row = row![
             dir_input,
-            button(text("📁").size(13)).on_press(Message::PickModelDir),
+            button(text("📁 찾아보기").size(11))
+                .on_press(Message::PickModelDir)
+                .padding([6, 12]),
         ]
         .spacing(6)
         .align_y(Alignment::Center);
@@ -3638,25 +4350,28 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
-        // 추천 프리셋
-        let mut presets_col = column![text("추천 프리셋 (클릭 → repo 입력)").size(11)].spacing(2);
+        // 추천 프리셋 — 카드를 두드러지게 (가장 많이 쓰이는 진입점)
+        let mut presets_col = column![text("추천 프리셋 (클릭 → 입력란에 채움)").size(12)].spacing(4);
         for (i, p) in MODEL_PRESETS.iter().enumerate() {
             presets_col = presets_col.push(
                 button(
                     column![
-                        text(p.label).size(12),
+                        text(p.label).size(13),
                         text(p.note).size(10),
+                        text(p.repo_id)
+                            .size(10)
+                            .font(Font::with_name("JetBrains Mono")),
                     ]
-                    .spacing(1),
+                    .spacing(2),
                 )
                 .on_press(Message::UsePreset(i))
-                .padding([4, 10])
+                .padding([6, 12])
                 .width(Length::Fill),
             );
         }
 
         // repo 입력 + 다운로드 시작
-        let repo_input = text_input("HF repo (예: TabbyML/Qwen2.5-Coder-7B)", &self.hf_repo_input)
+        let repo_input = text_input("HF repo (예: Qwen/Qwen2.5-Coder-7B-Instruct)", &self.hf_repo_input)
             .on_input(Message::HfRepoChanged)
             .on_submit(Message::StartHfDownload)
             .padding(8)
@@ -3706,19 +4421,25 @@ impl App {
 
         column![
             header,
-            text("HuggingFace에서 모델 받아 디스크에 저장. xLLM/Tabby/llama-server 등이 그 경로를 사용.")
+            text("HuggingFace에서 모델 받아 디스크에 저장.").size(11),
+            text("→ xLLM / vLLM / llama-server / ollama 등 자체 띄울 OpenAI 호환 백엔드용.")
                 .size(11),
-            Space::new().height(Length::Fixed(4.0)),
-            text("저장 경로").size(11),
-            dir_row,
-            Space::new().height(Length::Fixed(4.0)),
-            token_toggle,
-            token_section,
+            text("→ Tabby는 자체 cache. `tabby serve --model X`가 자동 다운로드 (이 매니저 안 씀).")
+                .size(11),
             Space::new().height(Length::Fixed(8.0)),
+            text("저장 경로 (변경 가능)").size(11),
+            dir_row,
+            Space::new().height(Length::Fixed(12.0)),
+            // 가장 흔한 흐름 — 프리셋 클릭 → 자동으로 repo 채움 → 다운로드
             presets_col,
             Space::new().height(Length::Fixed(8.0)),
+            text("또는 직접 입력").size(11),
             dl_row,
             progress,
+            Space::new().height(Length::Fixed(12.0)),
+            // gated repo (Llama 등) 받을 때만 필요
+            token_toggle,
+            token_section,
         ]
         .spacing(6)
         .into()
@@ -3768,7 +4489,8 @@ impl App {
                     "키: 미등록"
                 })
                 .size(11),
-            );
+            )
+            .push(self.endpoint_indicator(11.0));
 
         container(bar)
             .padding([4, 14])
@@ -4131,5 +4853,188 @@ mod tests {
         // path 주석이 둘째 줄이면 채택 안 함 (정책: 첫 줄만)
         let md = "```rust\nfn main() {}\n// path: a.rs\n```\n";
         assert!(parse_apply_candidates(md).is_empty());
+    }
+
+    // ── ModelOption Display + provider_label (OpenAICompat rename) ──
+
+    fn or_opt(id: &str) -> ModelOption {
+        ModelOption {
+            id: id.into(),
+            provider: LlmProvider::OpenRouter,
+            provider_label: String::new(),
+            ko_friendly: false,
+            favorite: false,
+            context_length: None,
+            prompt_per_million: None,
+            completion_per_million: None,
+        }
+    }
+
+    fn oai_opt(id: &str, label: &str) -> ModelOption {
+        ModelOption {
+            id: id.into(),
+            provider: LlmProvider::OpenAICompat,
+            provider_label: label.into(),
+            ko_friendly: false,
+            favorite: false,
+            context_length: None,
+            prompt_per_million: None,
+            completion_per_million: None,
+        }
+    }
+
+    #[test]
+    fn display_openrouter_basic() {
+        let m = or_opt("gpt-4o");
+        let s = format!("{}", m);
+        assert!(s.starts_with("[OR]"), "got: {}", s);
+        assert!(s.contains("gpt-4o"));
+    }
+
+    #[test]
+    fn display_openai_compat_with_label() {
+        let m = oai_opt("qwen2.5-coder", "xLLM");
+        let s = format!("{}", m);
+        assert!(s.starts_with("[xLLM]"), "got: {}", s);
+        assert!(s.contains("qwen2.5-coder"));
+    }
+
+    #[test]
+    fn display_openai_compat_empty_label_defaults_to_local() {
+        let m = oai_opt("starcoder", "");
+        let s = format!("{}", m);
+        assert!(s.starts_with("[Local]"), "got: {}", s);
+    }
+
+    #[test]
+    fn display_openai_compat_whitespace_label_defaults() {
+        let m = oai_opt("foo", "   ");
+        let s = format!("{}", m);
+        assert!(s.starts_with("[Local]"), "got: {}", s);
+    }
+
+    #[test]
+    fn display_combined_tags() {
+        let mut m = or_opt("claude-3.5-sonnet");
+        m.ko_friendly = true;
+        m.favorite = true;
+        m.context_length = Some(200_000);
+        m.prompt_per_million = Some(3.0);
+        m.completion_per_million = Some(15.0);
+        let s = format!("{}", m);
+        assert!(s.contains("[OR]"));
+        assert!(s.contains("[KO]"));
+        assert!(s.contains("★"));
+        assert!(s.contains("200k"));
+        assert!(s.contains("$3.00/$15.00"));
+    }
+
+    #[test]
+    fn display_openai_compat_free_marker() {
+        let mut m = oai_opt("local-model", "xLLM");
+        m.prompt_per_million = Some(0.0);
+        m.completion_per_million = Some(0.0);
+        let s = format!("{}", m);
+        assert!(s.contains("[xLLM]"));
+        assert!(s.contains("free"));
+    }
+
+    // ── InferenceEngine ─────────────────────────────────────────────
+
+    #[test]
+    fn engine_default_ports() {
+        assert_eq!(InferenceEngine::Tabby.default_port(), 8080);
+        assert_eq!(InferenceEngine::Ollama.default_port(), 11434);
+        assert_eq!(InferenceEngine::XLlm.default_port(), 9000);
+        assert_eq!(InferenceEngine::VLlm.default_port(), 9000);
+        assert_eq!(InferenceEngine::LlamaServer.default_port(), 9000);
+    }
+
+    #[test]
+    fn engine_compose_xllm() {
+        let cmd = InferenceEngine::XLlm
+            .compose_command("C:\\models\\Qwen", 9000)
+            .unwrap();
+        assert_eq!(cmd[0], "xllm");
+        assert_eq!(cmd[1], "serve");
+        assert!(cmd.contains(&"--model".to_string()));
+        assert!(cmd.contains(&"C:\\models\\Qwen".to_string()));
+        assert!(cmd.contains(&"--port".to_string()));
+        assert!(cmd.contains(&"9000".to_string()));
+    }
+
+    #[test]
+    fn engine_compose_vllm() {
+        let cmd = InferenceEngine::VLlm
+            .compose_command("/path/to/model", 9000)
+            .unwrap();
+        assert_eq!(cmd[0], "vllm");
+        assert_eq!(cmd[1], "serve");
+        assert!(cmd.contains(&"/path/to/model".to_string()));
+    }
+
+    #[test]
+    fn engine_compose_llama_server() {
+        let cmd = InferenceEngine::LlamaServer
+            .compose_command("/path/model.gguf", 9000)
+            .unwrap();
+        assert_eq!(cmd[0], "llama-server");
+        assert!(cmd.contains(&"-m".to_string()));
+        assert!(cmd.contains(&"/path/model.gguf".to_string()));
+    }
+
+    #[test]
+    fn engine_compose_tabby_uses_repo_id() {
+        let cmd = InferenceEngine::Tabby
+            .compose_command("TabbyML/Qwen2.5-Coder-7B", 8080)
+            .unwrap();
+        assert_eq!(cmd[0], "tabby");
+        assert_eq!(cmd[1], "serve");
+        assert!(cmd.contains(&"TabbyML/Qwen2.5-Coder-7B".to_string()));
+    }
+
+    #[test]
+    fn engine_ollama_no_spawn() {
+        // Ollama는 daemon — 이미 떠있다고 가정, spawn 안 함
+        assert!(InferenceEngine::Ollama.compose_command("any", 11434).is_none());
+    }
+
+    #[test]
+    fn engine_custom_no_compose() {
+        // Custom은 사용자가 직접 명령 입력
+        assert!(InferenceEngine::Custom.compose_command("any", 9000).is_none());
+    }
+
+    // ── list_downloaded_models ──────────────────────────────────────
+
+    #[test]
+    fn list_models_empty_dir() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        assert!(list_downloaded_models(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn list_models_returns_subdirs() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let qwen = tmp.path().join("Qwen--Qwen2.5-Coder-7B");
+        std::fs::create_dir_all(&qwen).unwrap();
+        std::fs::write(qwen.join("config.json"), "{}").unwrap();
+        let solar = tmp.path().join("upstage--SOLAR-10.7B");
+        std::fs::create_dir_all(&solar).unwrap();
+        std::fs::write(solar.join("model.safetensors"), "x").unwrap();
+        // 파일은 무시 (디렉토리 아님)
+        std::fs::write(tmp.path().join("ignore.txt"), "x").unwrap();
+        let mut models = list_downloaded_models(tmp.path());
+        models.sort();
+        assert_eq!(models.len(), 2);
+        assert!(models[0].contains("Qwen") || models[1].contains("Qwen"));
+    }
+
+    #[test]
+    fn list_models_skips_empty_dirs() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("empty")).unwrap();
+        // 빈 폴더는 모델 아님 — skip
+        assert!(list_downloaded_models(tmp.path()).is_empty());
     }
 }

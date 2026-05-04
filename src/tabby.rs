@@ -21,8 +21,14 @@ fn normalize_base(url: &str) -> String {
 }
 
 /// `chat_stream`에 넘길 base URL ("/v1" 접두 포함).
+/// 사용자가 `/v1`을 이미 입력했으면 중복 추가하지 않음.
 pub fn chat_base(url: &str) -> String {
-    format!("{}/v1", normalize_base(url))
+    let base = normalize_base(url);
+    if base.ends_with("/v1") {
+        base
+    } else {
+        format!("{}/v1", base)
+    }
 }
 
 /// 연결 에러 원문을 사용자 친화 actionable 메시지로 변환.
@@ -62,8 +68,9 @@ struct ModelsResp {
 /// `GET {base}/v1/models` — Tabby가 서빙 중인 모델 ID 리스트.
 /// 연결 실패 시 Err. 빈 배열은 Ok(vec![])로 반환 (서버는 살아있지만 모델 없음).
 pub async fn list_models(base_url: String, token: Option<String>) -> Result<Vec<String>, String> {
-    let base = normalize_base(&base_url);
-    let url = format!("{}/v1/models", base);
+    // chat_base와 동일하게 /v1 중복 방지
+    let v1 = chat_base(&base_url);
+    let url = format!("{}/models", v1);
     let client = http_client();
     let mut req = client.get(&url);
     if let Some(t) = token.as_ref().filter(|s| !s.trim().is_empty()) {
@@ -126,6 +133,14 @@ mod tests {
         assert_eq!(chat_base("http://localhost:8080"), "http://localhost:8080/v1");
         assert_eq!(chat_base("http://localhost:8080/"), "http://localhost:8080/v1");
         assert_eq!(chat_base(""), "http://localhost:8080/v1");
+    }
+
+    #[test]
+    fn chat_base_no_double_v1() {
+        // 사용자가 /v1까지 입력했으면 중복 추가하지 않음
+        assert_eq!(chat_base("http://localhost:9000/v1"), "http://localhost:9000/v1");
+        assert_eq!(chat_base("http://localhost:9000/v1/"), "http://localhost:9000/v1");
+        assert_eq!(chat_base("  http://x.com:8080/v1  "), "http://x.com:8080/v1");
     }
 
     // ── humanize_error: KEEP IN SYNC with list_models error format ──

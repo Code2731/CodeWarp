@@ -7,6 +7,9 @@ const MODEL_USER: &str = "selected_model";
 const CWD_USER: &str = "working_directory";
 const TABBY_URL_USER: &str = "tabby_base_url";
 const TABBY_TOKEN_USER: &str = "tabby_token";
+const OPENAI_COMPAT_LABEL_USER: &str = "openai_compat_label";
+const INFERENCE_CMD_USER: &str = "inference_start_command";
+const INFERENCE_BIN_USER: &str = "inference_binary_path";
 const HF_TOKEN_USER: &str = "hf_token";
 const MODEL_DIR_USER: &str = "model_download_dir";
 
@@ -131,6 +134,84 @@ pub fn write_tabby_token(token: &str) -> Result<(), String> {
 
 pub fn clear_tabby_token() -> Result<(), String> {
     match tabby_token_entry()?.delete_credential() {
+        Ok(_) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn openai_compat_label_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(SERVICE, OPENAI_COMPAT_LABEL_USER).map_err(|e| e.to_string())
+}
+
+pub fn read_openai_compat_label() -> Option<String> {
+    openai_compat_label_entry().ok()?.get_password().ok()
+}
+
+pub fn write_openai_compat_label(label: &str) -> Result<(), String> {
+    let trimmed = label.trim();
+    if trimmed.is_empty() {
+        return clear_openai_compat_label();
+    }
+    openai_compat_label_entry()?
+        .set_password(trimmed)
+        .map_err(|e| e.to_string())
+}
+
+pub fn clear_openai_compat_label() -> Result<(), String> {
+    match openai_compat_label_entry()?.delete_credential() {
+        Ok(_) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn inference_cmd_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(SERVICE, INFERENCE_CMD_USER).map_err(|e| e.to_string())
+}
+
+pub fn read_inference_command() -> Option<String> {
+    inference_cmd_entry().ok()?.get_password().ok()
+}
+
+pub fn write_inference_command(cmd: &str) -> Result<(), String> {
+    let trimmed = cmd.trim();
+    if trimmed.is_empty() {
+        return clear_inference_command();
+    }
+    inference_cmd_entry()?
+        .set_password(trimmed)
+        .map_err(|e| e.to_string())
+}
+
+pub fn clear_inference_command() -> Result<(), String> {
+    match inference_cmd_entry()?.delete_credential() {
+        Ok(_) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn inference_bin_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(SERVICE, INFERENCE_BIN_USER).map_err(|e| e.to_string())
+}
+
+pub fn read_inference_binary() -> Option<String> {
+    inference_bin_entry().ok()?.get_password().ok()
+}
+
+pub fn write_inference_binary(path: &str) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return clear_inference_binary();
+    }
+    inference_bin_entry()?
+        .set_password(trimmed)
+        .map_err(|e| e.to_string())
+}
+
+pub fn clear_inference_binary() -> Result<(), String> {
+    match inference_bin_entry()?.delete_credential() {
         Ok(_) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),

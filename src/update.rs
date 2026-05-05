@@ -636,6 +636,65 @@ impl App {
                 self.status = msg;
                 Task::none()
             }
+
+            // ── MCP ───────────────────────────────────────────────────
+            Message::McpNameChanged(v) => { self.mcp_name_input = v; Task::none() }
+            Message::McpCommandChanged(v) => { self.mcp_command_input = v; Task::none() }
+            Message::AddMcpServer => {
+                let name = self.mcp_name_input.trim().to_string();
+                let command = self.mcp_command_input.trim().to_string();
+                if name.is_empty() || command.is_empty() {
+                    self.status = "MCP 서버 이름과 명령을 모두 입력하세요.".into();
+                    return Task::none();
+                }
+                let server = mcp::McpServer { name: name.clone(), command };
+                self.mcp_servers.push(server.clone());
+                self.mcp_name_input.clear();
+                self.mcp_command_input.clear();
+                if let Err(e) = mcp::save_servers(&self.mcp_servers) {
+                    self.status = format!("MCP 저장 실패: {e}");
+                    return Task::none();
+                }
+                self.status = format!("MCP 서버 추가됨: {name} — tool 목록 로드 중…");
+                Task::perform(
+                    async move { mcp::list_tools(&server).await },
+                    move |r| match r {
+                        Ok(tools) => Message::McpToolsLoaded(name, tools),
+                        Err(e) => Message::McpToolsLoaded(String::new(), {
+                            // 에러는 status로 전달하기 위해 빈 이름으로 구분
+                            let _ = e;
+                            Vec::new()
+                        }),
+                    },
+                )
+            }
+            Message::RemoveMcpServer(idx) => {
+                if idx < self.mcp_servers.len() {
+                    let removed = self.mcp_servers.remove(idx);
+                    // 해당 서버의 tool 제거
+                    self.mcp_tools.retain(|t| t.server_name != removed.name);
+                    let _ = mcp::save_servers(&self.mcp_servers);
+                    self.status = format!("MCP 서버 제거됨: {}", removed.name);
+                }
+                Task::none()
+            }
+            Message::McpToolsLoaded(server_name, tools) => {
+                if server_name.is_empty() {
+                    self.status = "MCP tool 로드 실패 (서버 시작 오류)".into();
+                    return Task::none();
+                }
+                // 같은 서버의 기존 tool 교체
+                self.mcp_tools.retain(|t| t.server_name != server_name);
+                let count = tools.len();
+                self.mcp_tools.extend(tools);
+                self.status = format!("MCP [{server_name}] tool {count}개 로드 완료");
+                Task::none()
+            }
+            Message::McpToolResult(tool_call_id, result) => {
+                self.conversation.push(ChatMessage::tool_result(&tool_call_id, result));
+                self.tool_round += 1;
+                self.kick_chat_stream()
+            }
             Message::RemoveAttachment(idx) => {
                 if idx < self.attached_files.len() {
                     self.attached_files.remove(idx);
@@ -1575,8 +1634,51 @@ impl App {
         }
         self.conversation.push(assistant_msg);
 
-        // 2) 즉시 실행 가능한 것(read_only)과 승인 필요한 것(mutating) 분리
-        let (read_calls, write_calls): (Vec<_>, Vec<_>) = calls
+        // 2) MCP tool인지 확인
+        let mcp_tool_names: std::collections::HashSet<String> =
+            self.mcp_tools.iter().map(|t| t.name.clone()).collect();
+
+        // 3) MCP / local 분리
+        let (mcp_calls, local_calls): (Vec<_>, Vec<_>) = calls
+            .into_iter()
+            .partition(|tc| mcp_tool_names.contains(&tc.name));
+
+        // 4) MCP tool은 Task::batch로 비동기 처리
+        if !mcp_calls.is_empty() {
+            let servers = self.mcp_servers.clone();
+            let mcp_tools = self.mcp_tools.clone();
+            let mut tasks = Vec::new();
+            for tc in mcp_calls {
+                let server = mcp_tools
+                    .iter()
+                    .find(|t| t.name == tc.name)
+                    .and_then(|t| servers.iter().find(|s| s.name == t.server_name))
+                    .cloned();
+                let tool_name = tc.name.clone();
+                let call_id = tc.id.clone();
+                let args: serde_json::Value =
+                    serde_json::from_str(&tc.arguments).unwrap_or_default();
+                tasks.push(Task::perform(
+                    async move {
+                        match server {
+                            Some(s) => mcp::call_tool(&s, &tool_name, args).await
+                                .unwrap_or_else(|e| format!("[MCP 오류] {e}")),
+                            None => "[MCP 오류] 서버 찾을 수 없음".into(),
+                        }
+                    },
+                    move |result| Message::McpToolResult(call_id, result),
+                ));
+            }
+            // 나머지 로컬 call이 있으면 함께 처리
+            if !local_calls.is_empty() {
+                self.pending_tool_calls = local_calls;
+            }
+            self.status = "MCP tool 실행 중…".into();
+            return Task::batch(tasks);
+        }
+
+        // 5) 로컬 tool: read_only / mutating 분리
+        let (read_calls, write_calls): (Vec<_>, Vec<_>) = local_calls
             .into_iter()
             .partition(|tc| tools::tool_kind(&tc.name) == tools::ToolKind::ReadOnly);
 
@@ -1592,7 +1694,6 @@ impl App {
         }
 
         if !write_calls.is_empty() {
-            // mutating 도구는 사용자 승인 모달로 일시정지
             self.pending_write_calls = write_calls;
             self.show_write_confirm = true;
             self.status = "파일 쓰기 승인 대기".into();
@@ -1706,13 +1807,22 @@ impl App {
         };
         let model = self.selected_model.clone().unwrap_or_default();
         let messages = self.conversation.clone();
+        // 기본 tool + MCP tool 합산
+        let mut tool_defs = tools::tool_definitions(self.agent_mode.allow_mutating());
+        if !self.mcp_tools.is_empty() {
+            if let Some(arr) = tool_defs.as_array_mut() {
+                for t in &self.mcp_tools {
+                    arr.push(t.to_openai_tool());
+                }
+            }
+        }
         let (task, handle) = Task::run(
             openrouter::chat_stream(
                 base_url,
                 api_key,
                 model,
                 messages,
-                Some(tools::tool_definitions(self.agent_mode.allow_mutating())),
+                Some(tool_defs),
             ),
             Message::ChatChunk,
         )

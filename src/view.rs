@@ -1238,6 +1238,8 @@ impl App {
             self.view_inference_runner(),
             Space::new().height(Length::Fixed(20.0)),
             manager_section,
+            Space::new().height(Length::Fixed(20.0)),
+            self.view_mcp_settings(),
         ]
         .spacing(8)
         .max_width(520);
@@ -1450,6 +1452,51 @@ impl App {
         ]
         .spacing(6)
         .into()
+    }
+
+    fn view_mcp_settings(&self) -> Element<'_, Message> {
+        let header = text("MCP 서버 (Model Context Protocol)").size(14);
+        let hint = text("stdio MCP 서버를 등록해 AI tool을 동적으로 확장합니다.").size(11);
+
+        // 등록된 서버 목록
+        let mut server_list = column![].spacing(4);
+        for (i, s) in self.mcp_servers.iter().enumerate() {
+            let tool_count = self.mcp_tools.iter().filter(|t| t.server_name == s.name).count();
+            let label = format!("{} — {} (tool {}개)", s.name, s.command, tool_count);
+            server_list = server_list.push(
+                row![
+                    text(label).size(12).width(Length::Fill),
+                    button(text("✕").size(11))
+                        .on_press(Message::RemoveMcpServer(i))
+                        .padding([2, 6])
+                        .style(button::danger),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            );
+        }
+
+        // 추가 입력 행
+        let add_row = row![
+            text_input("서버 이름 (예: filesystem)", &self.mcp_name_input)
+                .on_input(Message::McpNameChanged)
+                .padding(6)
+                .width(Length::Fixed(140.0)),
+            text_input("명령 (예: npx -y @modelcontextprotocol/server-filesystem /tmp)", &self.mcp_command_input)
+                .on_input(Message::McpCommandChanged)
+                .on_submit(Message::AddMcpServer)
+                .padding(6)
+                .width(Length::Fill),
+            button(text("추가").size(12))
+                .on_press(Message::AddMcpServer)
+                .padding([6, 12]),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center);
+
+        column![header, hint, server_list, add_row]
+            .spacing(6)
+            .into()
     }
 
     fn view_model_manager(&self) -> Element<'_, Message> {

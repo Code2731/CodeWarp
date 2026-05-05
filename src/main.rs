@@ -3,6 +3,7 @@
 
 mod hf;
 mod keystore;
+mod mcp;
 mod openrouter;
 mod session;
 mod tabby;
@@ -1071,6 +1072,15 @@ struct App {
     mention_candidates: Vec<PathBuf>,
     /// mention 팝업 현재 선택 인덱스
     mention_selected: usize,
+
+    // ── MCP 서버 ──────────────────────────────────────────────
+    /// 등록된 MCP 서버 목록
+    mcp_servers: Vec<mcp::McpServer>,
+    /// 로드된 MCP tool 목록 (모든 서버 합산)
+    mcp_tools: Vec<mcp::McpTool>,
+    /// Settings MCP 섹션 입력 상태
+    mcp_name_input: String,
+    mcp_command_input: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1332,6 +1342,17 @@ enum Message {
     MentionCandidatesLoaded(Vec<PathBuf>),
     /// 파일 첨부 실패 (크기 초과 / 읽기 오류)
     FileAttachError(String),
+    // ── MCP ─────────────────────────────────────────────────
+    McpNameChanged(String),
+    McpCommandChanged(String),
+    /// MCP 서버 추가 (현재 입력값으로)
+    AddMcpServer,
+    /// MCP 서버 제거 (인덱스)
+    RemoveMcpServer(usize),
+    /// MCP tool 목록 로드 완료 (서버 이름, tool 목록)
+    McpToolsLoaded(String, Vec<mcp::McpTool>),
+    /// MCP tool 호출 결과 (tool_call_id, 결과 문자열)
+    McpToolResult(String, String),
 }
 
 impl App {
@@ -1435,6 +1456,10 @@ impl App {
             command_palette_input: String::new(),
             attached_files: Vec::new(),
             show_mention: false,
+            mcp_servers: mcp::load_servers(),
+            mcp_tools: Vec::new(),
+            mcp_name_input: String::new(),
+            mcp_command_input: String::new(),
             mention_query: String::new(),
             mention_candidates: Vec::new(),
             mention_selected: 0,
@@ -1504,6 +1529,17 @@ impl App {
         // 저장된 inference 명령 있으면 boot 시 자동 시작
         if !app.inference_command_input.trim().is_empty() {
             tasks.push(Task::done(Message::StartInference));
+        }
+        // 등록된 MCP 서버 tool 목록 로드
+        for server in app.mcp_servers.clone() {
+            let name = server.name.clone();
+            tasks.push(Task::perform(
+                async move { mcp::list_tools(&server).await },
+                move |r| match r {
+                    Ok(tools) => Message::McpToolsLoaded(name, tools),
+                    Err(_) => Message::McpToolsLoaded(String::new(), Vec::new()),
+                },
+            ));
         }
         if let Some(t) = restore_scroll {
             tasks.push(t);

@@ -154,6 +154,64 @@ fn parse_price_per_million(s: Option<&str>) -> Option<f64> {
     Some(v * 1_000_000.0)
 }
 
+/// input 문자열에서 마지막 '@' 이후 mention query 추출.
+/// 공백·개행이 포함되면 None (이미 완성된 멘션이므로 팝업 불필요).
+fn extract_mention_query(input: &str) -> Option<&str> {
+    let at_pos = input.rfind('@')?;
+    let rest = &input[at_pos + 1..];
+    if rest.bytes().any(|b| matches!(b, b' ' | b'\n' | b'\t')) {
+        return None;
+    }
+    Some(rest)
+}
+
+/// PathBuf 목록을 query로 fuzzy filter (대소문자 무시, 부분 포함).
+fn fuzzy_match_paths(candidates: &[PathBuf], query: &str, max_results: usize) -> Vec<PathBuf> {
+    if query.is_empty() {
+        return candidates.iter().take(max_results).cloned().collect();
+    }
+    let q = query.to_lowercase();
+    candidates
+        .iter()
+        .filter(|p| p.to_string_lossy().to_lowercase().contains(&q))
+        .take(max_results)
+        .cloned()
+        .collect()
+}
+
+/// 첨부 파일 목록을 코드 펜스 블록 컨텍스트 문자열로 변환.
+fn build_file_context(files: &[(PathBuf, String)]) -> String {
+    files
+        .iter()
+        .map(|(path, content)| {
+            let name = path.display();
+            format!("```{name}\n{content}\n```")
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// cwd 기준으로 파일 목록을 비동기 수집 (최대 200개, max_depth=5).
+async fn collect_mention_candidates(cwd: PathBuf) -> Vec<PathBuf> {
+    tokio::task::spawn_blocking(move || {
+        let mut results = Vec::new();
+        for entry in ignore::WalkBuilder::new(&cwd).max_depth(Some(5)).build() {
+            let entry = match entry { Ok(e) => e, Err(_) => continue };
+            if !entry.file_type().map_or(false, |ft| ft.is_file()) { continue; }
+            if let Ok(rel) = entry.path().strip_prefix(&cwd) {
+                results.push(rel.to_path_buf());
+            }
+            if results.len() >= 200 { break; }
+        }
+        results
+    })
+    .await
+    .unwrap_or_default()
+}
+
+// 첨부 파일 크기 상한 (500 KB 초과 시 거부)
+const MAX_ATTACH_BYTES: u64 = 512 * 1024;
+
 // 본문용 — 한국어/영문 동시 지원 (Pretendard, OFL)
 const PRETENDARD_REGULAR: &[u8] =
     include_bytes!("../assets/fonts/Pretendard-Regular.otf");
@@ -188,6 +246,34 @@ fn handle_key(key: Key, modifiers: Modifiers) -> Option<Message> {
         };
     }
     None
+}
+
+/// keyboard + window 이벤트를 하나의 listen_with로 통합.
+/// (listen_with는 fn pointer만 받으므로 closure 캡처 불가)
+fn on_event(
+    event: iced::Event,
+    _status: iced::event::Status,
+    _window: iced::window::Id,
+) -> Option<Message> {
+    match event {
+        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+            match key.as_ref() {
+                Key::Named(Named::ArrowUp) => Some(Message::MentionMove(-1)),
+                Key::Named(Named::ArrowDown) => Some(Message::MentionMove(1)),
+                _ => handle_key(key, modifiers),
+            }
+        }
+        iced::Event::Window(iced::window::Event::FileDropped(path)) => {
+            Some(Message::FileDropped(path))
+        }
+        iced::Event::Window(iced::window::Event::FileHovered(_)) => {
+            Some(Message::FileDragHover(true))
+        }
+        iced::Event::Window(iced::window::Event::FilesHoveredLeft) => {
+            Some(Message::FileDragHover(false))
+        }
+        _ => None,
+    }
 }
 
 fn main() -> iced::Result {
@@ -971,6 +1057,20 @@ struct App {
     /// 명령 팔레트 (Ctrl+K)
     show_command_palette: bool,
     command_palette_input: String,
+
+    // ── 파일 컨텍스트 첨부 ────────────────────────────────────
+    /// 전송 대기 중인 첨부 파일 (경로, 내용). Send 후 초기화.
+    attached_files: Vec<(PathBuf, String)>,
+    /// 드래그 오버 상태 (배경 오버레이 표시용)
+    drag_hover: bool,
+    /// @-mention 팝업 표시 여부
+    show_mention: bool,
+    /// '@' 이후 입력 문자열
+    mention_query: String,
+    /// mention 팝업 후보 파일 목록 (cwd 기준)
+    mention_candidates: Vec<PathBuf>,
+    /// mention 팝업 현재 선택 인덱스
+    mention_selected: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1215,6 +1315,23 @@ enum Message {
     EditLastUser,
     /// 코드 블록을 파일에 적용 (block_id, candidate idx).
     ApplyChange(u64, usize),
+    // ── 파일 컨텍스트 첨부 ───────────────────────────────────
+    /// 창에 파일 드롭됨 (D&D)
+    FileDropped(PathBuf),
+    /// 드래그 오버 상태 변경
+    FileDragHover(bool),
+    /// 파일 읽기 완료 → attached_files에 추가
+    FileReadDone(PathBuf, String),
+    /// 첨부 파일 제거 (인덱스)
+    RemoveAttachment(usize),
+    /// mention 팝업 ↑(-1) ↓(+1)
+    MentionMove(i32),
+    /// mention 팝업에서 선택 확정 (Enter)
+    MentionConfirm,
+    /// mention 팝업 닫기
+    MentionCancel,
+    /// @-mention 파일 후보 목록 로드 완료
+    MentionCandidatesLoaded(Vec<PathBuf>),
 }
 
 impl App {
@@ -1316,6 +1433,12 @@ impl App {
             last_response_cost: None,
             show_command_palette: false,
             command_palette_input: String::new(),
+            attached_files: Vec::new(),
+            drag_hover: false,
+            show_mention: false,
+            mention_query: String::new(),
+            mention_candidates: Vec::new(),
+            mention_selected: 0,
         };
 
         // 멀티 세션 복원
@@ -1993,6 +2116,100 @@ impl App {
                 self.status = "편집 모드 — 수정 후 Enter".into();
                 Task::none()
             }
+
+            // ── 파일 컨텍스트 첨부 ────────────────────────────────
+            Message::FileDropped(path) => {
+                self.drag_hover = false;
+                // 중복 첨부 방지
+                if self.attached_files.iter().any(|(p, _)| p == &path) {
+                    return Task::none();
+                }
+                let meta = std::fs::metadata(&path).ok();
+                if meta.map_or(true, |m| m.len() > MAX_ATTACH_BYTES) {
+                    self.status = format!("첨부 거부 (500KB 초과): {}", path.display());
+                    return Task::none();
+                }
+                Task::perform(
+                    async move { tokio::fs::read_to_string(&path).await.map(|s| (path, s)) },
+                    |r| match r {
+                        Ok((p, s)) => Message::FileReadDone(p, s),
+                        Err(_) => Message::FileDragHover(false), // 무시 (에러 로그 불필요)
+                    },
+                )
+            }
+            Message::FileDragHover(v) => {
+                self.drag_hover = v;
+                Task::none()
+            }
+            Message::FileReadDone(path, content) => {
+                if !self.attached_files.iter().any(|(p, _)| p == &path) {
+                    self.status = format!("첨부됨: {}", path.display());
+                    self.attached_files.push((path, content));
+                }
+                Task::none()
+            }
+            Message::RemoveAttachment(idx) => {
+                if idx < self.attached_files.len() {
+                    self.attached_files.remove(idx);
+                }
+                Task::none()
+            }
+
+            // ── @-mention ─────────────────────────────────────────
+            Message::MentionMove(delta) => {
+                if !self.show_mention || self.mention_candidates.is_empty() {
+                    return Task::none();
+                }
+                let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
+                let n = filtered.len();
+                if n == 0 { return Task::none(); }
+                self.mention_selected = (self.mention_selected as i64 + delta as i64)
+                    .rem_euclid(n as i64) as usize;
+                Task::none()
+            }
+            Message::MentionConfirm => {
+                if !self.show_mention { return Task::none(); }
+                let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
+                let Some(chosen) = filtered.into_iter().nth(self.mention_selected) else {
+                    return Task::none();
+                };
+                // input에서 '@query' 제거
+                if let Some(at_pos) = self.input.rfind('@') {
+                    self.input.truncate(at_pos);
+                }
+                self.show_mention = false;
+                self.mention_query.clear();
+                self.mention_selected = 0;
+                // 중복 방지
+                if self.attached_files.iter().any(|(p, _)| p == &chosen) {
+                    return Task::none();
+                }
+                let full_path = self.cwd.join(&chosen);
+                if std::fs::metadata(&full_path).map_or(true, |m| m.len() > MAX_ATTACH_BYTES) {
+                    self.status = format!("첨부 거부 (500KB 초과): {}", chosen.display());
+                    return Task::none();
+                }
+                Task::perform(
+                    async move {
+                        tokio::fs::read_to_string(&full_path).await.map(|s| (chosen, s))
+                    },
+                    |r| match r {
+                        Ok((p, s)) => Message::FileReadDone(p, s),
+                        Err(_) => Message::MentionCancel,
+                    },
+                )
+            }
+            Message::MentionCancel => {
+                self.show_mention = false;
+                self.mention_query.clear();
+                self.mention_selected = 0;
+                Task::none()
+            }
+            Message::MentionCandidatesLoaded(paths) => {
+                self.mention_candidates = paths;
+                Task::none()
+            }
+
             Message::FetchModels => {
                 let key = match keystore::read_api_key() {
                     Ok(k) => k,
@@ -2074,6 +2291,28 @@ impl App {
             }
             Message::InputChanged(v) => {
                 self.input = v;
+                // @-mention 팝업 감지
+                match extract_mention_query(&self.input) {
+                    Some(q) => {
+                        self.mention_query = q.to_string();
+                        self.mention_selected = 0;
+                        if !self.show_mention {
+                            self.show_mention = true;
+                            let cwd = self.cwd.clone();
+                            return Task::perform(
+                                collect_mention_candidates(cwd),
+                                Message::MentionCandidatesLoaded,
+                            );
+                        }
+                    }
+                    None => {
+                        if self.show_mention {
+                            self.show_mention = false;
+                            self.mention_query.clear();
+                            self.mention_selected = 0;
+                        }
+                    }
+                }
                 Task::none()
             }
             Message::Send => {
@@ -2115,7 +2354,16 @@ impl App {
 
                 // 새 turn 시작: system 메시지(cwd 안내) 보장 → user 메시지 push.
                 self.ensure_system_message();
-                self.conversation.push(ChatMessage::user(text.clone()));
+                // 첨부 파일이 있으면 user 메시지 앞에 파일 컨텍스트를 붙임
+                let user_msg = if !self.attached_files.is_empty() {
+                    let ctx = build_file_context(&self.attached_files);
+                    format!("{ctx}\n\n{text}")
+                } else {
+                    text.clone()
+                };
+                self.conversation.push(ChatMessage::user(user_msg));
+                self.attached_files.clear();
+                self.show_mention = false;
                 self.pending_tool_calls.clear();
                 self.tool_round = 0;
                 let messages = self.conversation.clone();
@@ -2484,6 +2732,9 @@ impl App {
                 self.show_command_palette = false;
                 self.show_settings = false;
                 self.show_write_confirm = false;
+                self.show_mention = false;
+                self.mention_query.clear();
+                self.mention_selected = 0;
                 Task::none()
             }
             Message::CommandPaletteChanged(v) => {
@@ -2987,12 +3238,7 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        iced::keyboard::listen().filter_map(|event| match event {
-            iced::keyboard::Event::KeyPressed {
-                key, modifiers, ..
-            } => handle_key(key, modifiers),
-            _ => None,
-        })
+        iced::event::listen_with(on_event)
     }
 
     fn filtered_palette_commands(&self) -> Vec<&'static PaletteCommand> {
@@ -3656,6 +3902,78 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
+        // @-mention 드롭다운 (show_mention 시 입력창 위에 표시)
+        let mention_popup: Element<Message> = if self.show_mention {
+            let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
+            if filtered.is_empty() {
+                Space::new().height(Length::Shrink).into()
+            } else {
+                let mut list = column![].spacing(2);
+                for (i, path) in filtered.iter().enumerate() {
+                    let label = path.to_string_lossy().to_string();
+                    let is_selected = i == self.mention_selected;
+                    let btn = button(text(label).size(12))
+                        .on_press(Message::MentionConfirm)
+                        .padding([4, 10])
+                        .width(Length::Fill)
+                        .style(if is_selected { button::primary } else { button::text });
+                    list = list.push(btn);
+                }
+                container(
+                    scrollable(list)
+                        .direction(Direction::Vertical(vscrollbar()))
+                        .height(Length::Shrink),
+                )
+                .padding([4, 0])
+                .style(|theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(p.background.strong.color.into()),
+                        border: iced::Border { color: p.primary.base.color, width: 1.0, radius: 6.0.into() },
+                        ..Default::default()
+                    }
+                })
+                .into()
+            }
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
+        // 첨부 파일 칩 행 (attached_files가 있을 때만)
+        let attach_row: Element<Message> = if !self.attached_files.is_empty() {
+            let mut chips = row![].spacing(6).align_y(Alignment::Center);
+            for (i, (path, _)) in self.attached_files.iter().enumerate() {
+                let name = path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+                chips = chips.push(
+                    container(
+                        row![
+                            text(format!("📄 {name}")).size(11),
+                            button(text("✕").size(10))
+                                .on_press(Message::RemoveAttachment(i))
+                                .padding([1, 4])
+                                .style(button::text),
+                        ]
+                        .spacing(4)
+                        .align_y(Alignment::Center),
+                    )
+                    .padding([3, 8])
+                    .style(|theme: &Theme| {
+                        let p = theme.extended_palette();
+                        container::Style {
+                            background: Some(p.background.strong.color.into()),
+                            border: iced::Border { color: p.primary.weak.color, width: 1.0, radius: 12.0.into() },
+                            ..Default::default()
+                        }
+                    }),
+                );
+            }
+            container(chips).padding([4, 0]).into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
         let action_btn: Element<Message> = if self.streaming_block_id.is_some() {
             button(text("■ 중지").size(13))
                 .on_press(Message::StopStream)
@@ -3674,11 +3992,18 @@ impl App {
                 .into()
         };
 
+        // mention 팝업 활성 시 Enter → MentionConfirm, 비활성 시 → Send
+        let submit_msg = if self.show_mention {
+            Message::MentionConfirm
+        } else {
+            Message::Send
+        };
+
         let input_row = row![
             mode_label,
-            text_input("질문을 입력하세요…  (/plan, /build로 모드 전환)", &self.input)
+            text_input("질문을 입력하세요…  (@파일 첨부, /plan, /build)", &self.input)
                 .on_input(Message::InputChanged)
-                .on_submit(Message::Send)
+                .on_submit(submit_msg)
                 .padding(10),
             action_btn,
         ]
@@ -3698,6 +4023,8 @@ impl App {
                 .padding([14, 18]),
             container(confirm_panel).padding([0, 14]),
             container(slash_hint).padding([0, 14]),
+            container(mention_popup).padding([0, 14]),
+            container(attach_row).padding([0, 14]),
             container(input_row)
                 .padding([10, 14])
                 .width(Length::Fill),
@@ -5144,5 +5471,80 @@ mod tests {
         std::fs::create_dir_all(tmp.path().join("empty")).unwrap();
         // 빈 폴더는 모델 아님 — skip
         assert!(list_downloaded_models(tmp.path()).is_empty());
+    }
+
+    // ── extract_mention_query ───────────────────────────────────────
+
+    #[test]
+    fn mention_query_basic() {
+        // '@' 뒤에 공백 없으면 Some, 있으면 None
+        assert_eq!(extract_mention_query("fix @main"), Some("main"));
+        assert_eq!(extract_mention_query("fix @main "), None); // '@main' 이후 공백
+        assert_eq!(extract_mention_query("@src/lib"), Some("src/lib"));
+        assert_eq!(extract_mention_query("no at sign"), None);
+        assert_eq!(extract_mention_query("@"), Some(""));
+    }
+
+    #[test]
+    fn mention_query_last_at_wins() {
+        // 마지막 '@' 기준으로 query 추출
+        assert_eq!(extract_mention_query("@foo @bar"), Some("bar")); // 마지막 '@bar' 뒤 공백 없음
+        assert_eq!(extract_mention_query("@foo @bar "), None);       // 마지막 '@bar' 뒤 공백 있음
+        assert_eq!(extract_mention_query("email@ex.com @file"), Some("file")); // 마지막 '@file'
+    }
+
+    // ── fuzzy_match_paths ───────────────────────────────────────────
+
+    #[test]
+    fn fuzzy_match_empty_query_returns_all() {
+        let paths: Vec<PathBuf> = vec![
+            PathBuf::from("src/main.rs"),
+            PathBuf::from("src/tools.rs"),
+        ];
+        let result = fuzzy_match_paths(&paths, "", 10);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn fuzzy_match_filters_by_query() {
+        let paths: Vec<PathBuf> = vec![
+            PathBuf::from("src/main.rs"),
+            PathBuf::from("src/tools.rs"),
+            PathBuf::from("Cargo.toml"),
+        ];
+        let result = fuzzy_match_paths(&paths, "tool", 10);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], PathBuf::from("src/tools.rs"));
+    }
+
+    #[test]
+    fn fuzzy_match_respects_max_results() {
+        let paths: Vec<PathBuf> = (0..20).map(|i| PathBuf::from(format!("file{i}.rs"))).collect();
+        let result = fuzzy_match_paths(&paths, "file", 5);
+        assert_eq!(result.len(), 5);
+    }
+
+    // ── build_file_context ──────────────────────────────────────────
+
+    #[test]
+    fn build_file_context_single() {
+        let files = vec![(PathBuf::from("src/main.rs"), "fn main() {}".to_string())];
+        let ctx = build_file_context(&files);
+        assert!(ctx.contains("src/main.rs"));
+        assert!(ctx.contains("fn main() {}"));
+        assert!(ctx.starts_with("```"));
+    }
+
+    #[test]
+    fn build_file_context_multi_separator() {
+        let files = vec![
+            (PathBuf::from("a.rs"), "aaa".to_string()),
+            (PathBuf::from("b.rs"), "bbb".to_string()),
+        ];
+        let ctx = build_file_context(&files);
+        // 두 파일 사이 빈 줄 구분
+        assert!(ctx.contains("\n\n"));
+        assert!(ctx.contains("aaa"));
+        assert!(ctx.contains("bbb"));
     }
 }

@@ -722,16 +722,13 @@ impl App {
             Message::PtyLine(line) => {
                 let clean = pty::strip_ansi(&line);
                 if !clean.trim().is_empty() {
-                    self.pty_output.push_back(clean);
-                    while self.pty_output.len() > PTY_MAX_LINES {
-                        self.pty_output.pop_front();
-                    }
+                    self.push_pty_line(clean);
                 }
                 Task::none()
             }
             Message::PtyExited => {
                 self.pty_session = None;
-                self.pty_output.push_back("-- 셸 종료 --".into());
+                self.push_pty_line("-- 셸 종료 --".into());
                 self.status = "터미널 종료됨".into();
                 Task::none()
             }
@@ -743,11 +740,6 @@ impl App {
                 let line = self.pty_input.trim_end().to_string();
                 if let Some(s) = &self.pty_session {
                     s.write_line(&line);
-                    // 에코 (터미널은 보통 자체 에코를 하지만, raw 모드에서 안 될 수도)
-                    self.pty_output.push_back(format!("> {line}"));
-                    while self.pty_output.len() > PTY_MAX_LINES {
-                        self.pty_output.pop_front();
-                    }
                 }
                 self.pty_input.clear();
                 Task::none()
@@ -1786,6 +1778,13 @@ impl App {
         self.inference_log.push_back(line);
         while self.inference_log.len() > CAP {
             self.inference_log.pop_front();
+        }
+    }
+
+    fn push_pty_line(&mut self, line: String) {
+        self.pty_output.push_back(line);
+        if self.pty_output.len() > PTY_MAX_LINES {
+            self.pty_output.pop_front();
         }
     }
 

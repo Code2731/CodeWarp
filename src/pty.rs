@@ -83,7 +83,7 @@ pub fn spawn_pty(
     let session = PtySession { writer };
 
     // spawn_blocking으로 blocking reader를 tokio channel로 브릿지
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<PtyEvent>(256);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<PtyEvent>(512);
     tokio::task::spawn_blocking(move || {
         let buf = BufReader::new(reader);
         for line in buf.lines() {

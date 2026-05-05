@@ -31,19 +31,14 @@ impl App {
 
         let statusbar = self.view_statusbar();
 
-        // PTY 터미널 패널 (pty_visible 시 하단에 추가)
-        let body: Element<Message> = if self.pty_visible {
-            column![topbar, middle, self.view_pty_panel(), statusbar]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            column![topbar, middle, statusbar]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        };
-        body
+        let mut col = column![topbar, middle];
+        if self.pty_visible {
+            col = col.push(self.view_pty_panel());
+        }
+        col.push(statusbar)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     fn view_topbar(&self) -> Element<'_, Message> {

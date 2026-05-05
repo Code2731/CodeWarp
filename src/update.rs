@@ -693,6 +693,76 @@ impl App {
                 self.tool_round += 1;
                 self.kick_chat_stream()
             }
+
+            // ── PTY 터미널 ─────────────────────────────────────────
+            Message::PtyToggle => {
+                self.pty_visible = !self.pty_visible;
+                if self.pty_visible && self.pty_session.is_none() {
+                    return Task::done(Message::PtyStart);
+                }
+                Task::none()
+            }
+            Message::PtyStart => {
+                match pty::spawn_pty(&self.cwd) {
+                    Ok((session, stream)) => {
+                        self.pty_session = Some(session);
+                        self.pty_output.clear();
+                        self.status = "터미널 시작됨".into();
+                        Task::run(stream, |event| match event {
+                            pty::PtyEvent::Line(l) => Message::PtyLine(l),
+                            pty::PtyEvent::Exited => Message::PtyExited,
+                        })
+                    }
+                    Err(e) => {
+                        self.status = format!("터미널 시작 실패: {e}");
+                        Task::none()
+                    }
+                }
+            }
+            Message::PtyLine(line) => {
+                let clean = pty::strip_ansi(&line);
+                if !clean.trim().is_empty() {
+                    self.pty_output.push_back(clean);
+                    while self.pty_output.len() > PTY_MAX_LINES {
+                        self.pty_output.pop_front();
+                    }
+                }
+                Task::none()
+            }
+            Message::PtyExited => {
+                self.pty_session = None;
+                self.pty_output.push_back("-- 셸 종료 --".into());
+                self.status = "터미널 종료됨".into();
+                Task::none()
+            }
+            Message::PtyInputChanged(v) => {
+                self.pty_input = v;
+                Task::none()
+            }
+            Message::PtySend => {
+                let line = self.pty_input.trim_end().to_string();
+                if let Some(s) = &self.pty_session {
+                    s.write_line(&line);
+                    // 에코 (터미널은 보통 자체 에코를 하지만, raw 모드에서 안 될 수도)
+                    self.pty_output.push_back(format!("> {line}"));
+                    while self.pty_output.len() > PTY_MAX_LINES {
+                        self.pty_output.pop_front();
+                    }
+                }
+                self.pty_input.clear();
+                Task::none()
+            }
+            Message::PtyCtrlC => {
+                if let Some(s) = &self.pty_session {
+                    s.ctrl_c();
+                }
+                Task::none()
+            }
+            Message::PtyClear => {
+                self.pty_output.clear();
+                Task::none()
+            }
+
             Message::RemoveAttachment(idx) => {
                 if idx < self.attached_files.len() {
                     self.attached_files.remove(idx);

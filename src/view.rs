@@ -5,7 +5,7 @@ use iced::widget::scrollable::Direction;
 use iced::widget::
     {button, checkbox, column, combo_box, container, pick_list, row, scrollable, stack, text,
     text_editor, text_input, Space};
-use iced::{Alignment, Element, Length, Theme};
+use iced::{Alignment, Element, Font, Length, Theme};
 
 impl App {
     pub(crate) fn view(&self) -> Element<'_, Message> {
@@ -31,10 +31,19 @@ impl App {
 
         let statusbar = self.view_statusbar();
 
-        column![topbar, middle, statusbar]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        // PTY 터미널 패널 (pty_visible 시 하단에 추가)
+        let body: Element<Message> = if self.pty_visible {
+            column![topbar, middle, self.view_pty_panel(), statusbar]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            column![topbar, middle, statusbar]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        };
+        body
     }
 
     fn view_topbar(&self) -> Element<'_, Message> {
@@ -1670,6 +1679,81 @@ impl App {
             token_section,
         ]
         .spacing(6)
+        .into()
+    }
+
+    fn view_pty_panel(&self) -> Element<'_, Message> {
+        // 헤더 행: 제목 + 버튼들
+        let header = row![
+            text("터미널").size(13),
+            Space::new().width(Length::Fill),
+            button(text("✕ Clear").size(11))
+                .on_press(Message::PtyClear)
+                .padding([2, 8])
+                .style(button::text),
+            button(text("✕").size(11))
+                .on_press(Message::PtyToggle)
+                .padding([2, 8])
+                .style(button::text),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .padding([4, 8]);
+
+        // 출력 영역 (최근 줄이 아래)
+        let mut out_col = column![].spacing(0);
+        for line in &self.pty_output {
+            out_col = out_col.push(
+                text(line)
+                    .size(12)
+                    .font(Font::with_name("JetBrains Mono")),
+            );
+        }
+        let output_area = scrollable(out_col)
+            .direction(Direction::Vertical(vscrollbar()))
+            .height(Length::Fixed(200.0))
+            .width(Length::Fill);
+
+        // 입력 행
+        let session_active = self.pty_session.is_some();
+        let input_row = row![
+            text_input(
+                if session_active { "> 명령 입력…" } else { "터미널 종료됨 (Ctrl+` 로 재시작)" },
+                &self.pty_input
+            )
+            .on_input(Message::PtyInputChanged)
+            .on_submit(Message::PtySend)
+            .padding(6)
+            .font(Font::with_name("JetBrains Mono"))
+            .width(Length::Fill),
+            button(text("전송").size(11))
+                .on_press_maybe(if session_active { Some(Message::PtySend) } else { None })
+                .padding([6, 10]),
+            button(text("^C").size(11))
+                .on_press_maybe(if session_active { Some(Message::PtyCtrlC) } else { None })
+                .padding([6, 8])
+                .style(button::danger),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center);
+
+        container(
+            column![header, output_area, container(input_row).padding([4, 8])]
+                .spacing(0),
+        )
+        .width(Length::Fill)
+        .style(|theme: &Theme| {
+            let p = theme.extended_palette();
+            container::Style {
+                background: Some(p.background.weak.color.into()),
+                border: iced::Border {
+                    color: p.background.strong.color,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            }
+        })
         .into()
     }
 

@@ -4,6 +4,7 @@
 mod hf;
 mod keystore;
 mod mcp;
+mod pty;
 mod openrouter;
 mod session;
 mod tabby;
@@ -215,6 +216,9 @@ async fn collect_mention_candidates(cwd: PathBuf) -> Vec<PathBuf> {
 // 첨부 파일 크기 상한 (512 KB 초과 시 거부)
 const MAX_ATTACH_BYTES: u64 = 512 * 1024;
 
+/// PTY 출력 버퍼 최대 줄 수 (FIFO)
+const PTY_MAX_LINES: usize = 500;
+
 // 본문용 — 한국어/영문 동시 지원 (Pretendard, OFL)
 const PRETENDARD_REGULAR: &[u8] =
     include_bytes!("../assets/fonts/Pretendard-Regular.otf");
@@ -239,6 +243,7 @@ fn handle_key(key: Key, modifiers: Modifiers) -> Option<Message> {
             Key::Character("k") => Some(Message::OpenCommandPalette),
             Key::Character("n") => Some(Message::NewChat),
             Key::Character(",") => Some(Message::OpenSettings),
+            Key::Character("`") => Some(Message::PtyToggle),
             Key::Character("p") if modifiers.shift() => {
                 Some(Message::SetAgentMode(AgentMode::Plan))
             }
@@ -1073,6 +1078,16 @@ struct App {
     /// mention 팝업 현재 선택 인덱스
     mention_selected: usize,
 
+    // ── PTY 터미널 ────────────────────────────────────────────
+    /// 터미널 패널 표시 여부
+    pty_visible: bool,
+    /// PTY 출력 줄 (ANSI strip 후). 최대 PTY_MAX_LINES줄 FIFO.
+    pty_output: std::collections::VecDeque<String>,
+    /// 터미널 입력창
+    pty_input: String,
+    /// 활성 PTY 세션 (None이면 셸 미실행)
+    pty_session: Option<pty::PtySession>,
+
     // ── MCP 서버 ──────────────────────────────────────────────
     /// 등록된 MCP 서버 목록
     mcp_servers: Vec<mcp::McpServer>,
@@ -1355,6 +1370,23 @@ enum Message {
     McpToolsFailed(String),
     /// MCP tool 호출 결과 (tool_call_id, 결과 문자열)
     McpToolResult(String, String),
+    // ── PTY 터미널 ──────────────────────────────────────────
+    /// 터미널 패널 토글 (Ctrl+`)
+    PtyToggle,
+    /// PTY 세션 시작
+    PtyStart,
+    /// PTY 출력 한 줄 도착
+    PtyLine(String),
+    /// PTY 프로세스 종료
+    PtyExited,
+    /// 터미널 입력창 변경
+    PtyInputChanged(String),
+    /// 입력 전송 (Enter)
+    PtySend,
+    /// Ctrl+C 전송
+    PtyCtrlC,
+    /// 출력 버퍼 지우기
+    PtyClear,
 }
 
 impl App {
@@ -1458,6 +1490,10 @@ impl App {
             command_palette_input: String::new(),
             attached_files: Vec::new(),
             show_mention: false,
+            pty_visible: false,
+            pty_output: std::collections::VecDeque::new(),
+            pty_input: String::new(),
+            pty_session: None,
             mcp_servers: mcp::load_servers(),
             mcp_tools: Vec::new(),
             mcp_name_input: String::new(),

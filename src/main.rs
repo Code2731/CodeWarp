@@ -209,7 +209,7 @@ async fn collect_mention_candidates(cwd: PathBuf) -> Vec<PathBuf> {
     .unwrap_or_default()
 }
 
-// 첨부 파일 크기 상한 (500 KB 초과 시 거부)
+// 첨부 파일 크기 상한 (512 KB 초과 시 거부)
 const MAX_ATTACH_BYTES: u64 = 512 * 1024;
 
 // 본문용 — 한국어/영문 동시 지원 (Pretendard, OFL)
@@ -267,10 +267,10 @@ fn on_event(
             Some(Message::FileDropped(path))
         }
         iced::Event::Window(iced::window::Event::FileHovered(_)) => {
-            Some(Message::FileDragHover(true))
+            Some(Message::FileDragHover)
         }
         iced::Event::Window(iced::window::Event::FilesHoveredLeft) => {
-            Some(Message::FileDragHover(false))
+            Some(Message::FileDragHover)
         }
         _ => None,
     }
@@ -1061,8 +1061,6 @@ struct App {
     // ── 파일 컨텍스트 첨부 ────────────────────────────────────
     /// 전송 대기 중인 첨부 파일 (경로, 내용). Send 후 초기화.
     attached_files: Vec<(PathBuf, String)>,
-    /// 드래그 오버 상태 (배경 오버레이 표시용)
-    drag_hover: bool,
     /// @-mention 팝업 표시 여부
     show_mention: bool,
     /// '@' 이후 입력 문자열
@@ -1318,8 +1316,8 @@ enum Message {
     // ── 파일 컨텍스트 첨부 ───────────────────────────────────
     /// 창에 파일 드롭됨 (D&D)
     FileDropped(PathBuf),
-    /// 드래그 오버 상태 변경
-    FileDragHover(bool),
+    /// 드래그 오버 이벤트 (noop — 시각 피드백 미구현)
+    FileDragHover,
     /// 파일 읽기 완료 → attached_files에 추가
     FileReadDone(PathBuf, String),
     /// 첨부 파일 제거 (인덱스)
@@ -1328,10 +1326,10 @@ enum Message {
     MentionMove(i32),
     /// mention 팝업에서 선택 확정 (Enter)
     MentionConfirm,
-    /// mention 팝업 닫기
-    MentionCancel,
     /// @-mention 파일 후보 목록 로드 완료
     MentionCandidatesLoaded(Vec<PathBuf>),
+    /// 파일 첨부 실패 (크기 초과 / 읽기 오류)
+    FileAttachError(String),
 }
 
 impl App {
@@ -1434,7 +1432,6 @@ impl App {
             show_command_palette: false,
             command_palette_input: String::new(),
             attached_files: Vec::new(),
-            drag_hover: false,
             show_mention: false,
             mention_query: String::new(),
             mention_candidates: Vec::new(),
@@ -2119,33 +2116,34 @@ impl App {
 
             // ── 파일 컨텍스트 첨부 ────────────────────────────────
             Message::FileDropped(path) => {
-                self.drag_hover = false;
-                // 중복 첨부 방지
-                if self.attached_files.iter().any(|(p, _)| p == &path) {
-                    return Task::none();
-                }
-                let meta = std::fs::metadata(&path).ok();
-                if meta.map_or(true, |m| m.len() > MAX_ATTACH_BYTES) {
-                    self.status = format!("첨부 거부 (500KB 초과): {}", path.display());
+                if self.is_already_attached(&path) {
                     return Task::none();
                 }
                 Task::perform(
-                    async move { tokio::fs::read_to_string(&path).await.map(|s| (path, s)) },
+                    async move {
+                        let content = tokio::fs::read_to_string(&path).await
+                            .map_err(|e| format!("읽기 실패: {e}"))?;
+                        if content.len() > MAX_ATTACH_BYTES as usize {
+                            return Err(format!("첨부 거부 (512KB 초과): {}", path.display()));
+                        }
+                        Ok((path, content))
+                    },
                     |r| match r {
                         Ok((p, s)) => Message::FileReadDone(p, s),
-                        Err(_) => Message::FileDragHover(false), // 무시 (에러 로그 불필요)
+                        Err(msg) => Message::FileAttachError(msg),
                     },
                 )
             }
-            Message::FileDragHover(v) => {
-                self.drag_hover = v;
-                Task::none()
-            }
+            Message::FileDragHover => Task::none(),
             Message::FileReadDone(path, content) => {
-                if !self.attached_files.iter().any(|(p, _)| p == &path) {
+                if !self.is_already_attached(&path) {
                     self.status = format!("첨부됨: {}", path.display());
                     self.attached_files.push((path, content));
                 }
+                Task::none()
+            }
+            Message::FileAttachError(msg) => {
+                self.status = msg;
                 Task::none()
             }
             Message::RemoveAttachment(idx) => {
@@ -2177,33 +2175,25 @@ impl App {
                 if let Some(at_pos) = self.input.rfind('@') {
                     self.input.truncate(at_pos);
                 }
-                self.show_mention = false;
-                self.mention_query.clear();
-                self.mention_selected = 0;
-                // 중복 방지
-                if self.attached_files.iter().any(|(p, _)| p == &chosen) {
+                self.close_mention();
+                if self.is_already_attached(&chosen) {
                     return Task::none();
                 }
                 let full_path = self.cwd.join(&chosen);
-                if std::fs::metadata(&full_path).map_or(true, |m| m.len() > MAX_ATTACH_BYTES) {
-                    self.status = format!("첨부 거부 (500KB 초과): {}", chosen.display());
-                    return Task::none();
-                }
                 Task::perform(
                     async move {
-                        tokio::fs::read_to_string(&full_path).await.map(|s| (chosen, s))
+                        let content = tokio::fs::read_to_string(&full_path).await
+                            .map_err(|e| format!("읽기 실패: {e}"))?;
+                        if content.len() > MAX_ATTACH_BYTES as usize {
+                            return Err(format!("첨부 거부 (512KB 초과): {}", chosen.display()));
+                        }
+                        Ok((chosen, content))
                     },
                     |r| match r {
                         Ok((p, s)) => Message::FileReadDone(p, s),
-                        Err(_) => Message::MentionCancel,
+                        Err(msg) => Message::FileAttachError(msg),
                     },
                 )
-            }
-            Message::MentionCancel => {
-                self.show_mention = false;
-                self.mention_query.clear();
-                self.mention_selected = 0;
-                Task::none()
             }
             Message::MentionCandidatesLoaded(paths) => {
                 self.mention_candidates = paths;
@@ -2306,11 +2296,7 @@ impl App {
                         }
                     }
                     None => {
-                        if self.show_mention {
-                            self.show_mention = false;
-                            self.mention_query.clear();
-                            self.mention_selected = 0;
-                        }
+                        if self.show_mention { self.close_mention(); }
                     }
                 }
                 Task::none()
@@ -2363,7 +2349,7 @@ impl App {
                 };
                 self.conversation.push(ChatMessage::user(user_msg));
                 self.attached_files.clear();
-                self.show_mention = false;
+                self.close_mention();
                 self.pending_tool_calls.clear();
                 self.tool_round = 0;
                 let messages = self.conversation.clone();
@@ -2732,9 +2718,7 @@ impl App {
                 self.show_command_palette = false;
                 self.show_settings = false;
                 self.show_write_confirm = false;
-                self.show_mention = false;
-                self.mention_query.clear();
-                self.mention_selected = 0;
+                self.close_mention();
                 Task::none()
             }
             Message::CommandPaletteChanged(v) => {
@@ -3004,6 +2988,16 @@ impl App {
     }
 
     /// conversation 첫 위치에 cwd를 알려주는 system 메시지를 보장 (없으면 추가, 있으면 갱신).
+    fn close_mention(&mut self) {
+        self.show_mention = false;
+        self.mention_query.clear();
+        self.mention_selected = 0;
+    }
+
+    fn is_already_attached(&self, path: &std::path::Path) -> bool {
+        self.attached_files.iter().any(|(p, _)| p == path)
+    }
+
     fn ensure_system_message(&mut self) {
         let mode_block = match self.agent_mode {
             AgentMode::Plan => {

@@ -657,21 +657,20 @@ impl App {
                 }
                 self.status = format!("MCP 서버 추가됨: {name} — tool 목록 로드 중…");
                 Task::perform(
-                    async move { mcp::list_tools(&server).await },
-                    move |r| match r {
-                        Ok(tools) => Message::McpToolsLoaded(name, tools),
-                        Err(e) => Message::McpToolsLoaded(String::new(), {
-                            // 에러는 status로 전달하기 위해 빈 이름으로 구분
-                            let _ = e;
-                            Vec::new()
-                        }),
+                    async move {
+                        mcp::list_tools(&server).await
+                            .map(|tools| (name.clone(), tools))
+                            .map_err(|e| format!("[{name}] {e}"))
+                    },
+                    |r| match r {
+                        Ok((name, tools)) => Message::McpToolsLoaded(name, tools),
+                        Err(msg) => Message::McpToolsFailed(msg),
                     },
                 )
             }
             Message::RemoveMcpServer(idx) => {
                 if idx < self.mcp_servers.len() {
                     let removed = self.mcp_servers.remove(idx);
-                    // 해당 서버의 tool 제거
                     self.mcp_tools.retain(|t| t.server_name != removed.name);
                     let _ = mcp::save_servers(&self.mcp_servers);
                     self.status = format!("MCP 서버 제거됨: {}", removed.name);
@@ -679,15 +678,14 @@ impl App {
                 Task::none()
             }
             Message::McpToolsLoaded(server_name, tools) => {
-                if server_name.is_empty() {
-                    self.status = "MCP tool 로드 실패 (서버 시작 오류)".into();
-                    return Task::none();
-                }
-                // 같은 서버의 기존 tool 교체
                 self.mcp_tools.retain(|t| t.server_name != server_name);
                 let count = tools.len();
                 self.mcp_tools.extend(tools);
                 self.status = format!("MCP [{server_name}] tool {count}개 로드 완료");
+                Task::none()
+            }
+            Message::McpToolsFailed(msg) => {
+                self.status = format!("MCP tool 로드 실패: {msg}");
                 Task::none()
             }
             Message::McpToolResult(tool_call_id, result) => {
@@ -1610,7 +1608,6 @@ impl App {
     fn run_tool_round(&mut self, assistant_partial: String) -> Task<Message> {
         let calls = std::mem::take(&mut self.pending_tool_calls);
 
-        // 1) assistant tool_calls 메시지 누적
         let tool_calls_json = serde_json::Value::Array(
             calls
                 .iter()
@@ -1634,17 +1631,27 @@ impl App {
         }
         self.conversation.push(assistant_msg);
 
-        // 2) MCP tool인지 확인
         let mcp_tool_names: std::collections::HashSet<String> =
             self.mcp_tools.iter().map(|t| t.name.clone()).collect();
 
-        // 3) MCP / local 분리
         let (mcp_calls, local_calls): (Vec<_>, Vec<_>) = calls
             .into_iter()
             .partition(|tc| mcp_tool_names.contains(&tc.name));
 
-        // 4) MCP tool은 Task::batch로 비동기 처리
         if !mcp_calls.is_empty() {
+            // 로컬 read-only는 MCP와 함께 즉시 처리, mutating은 승인 대기
+            let (local_read, local_write): (Vec<_>, Vec<_>) = local_calls
+                .into_iter()
+                .partition(|tc| tools::tool_kind(&tc.name) == tools::ToolKind::ReadOnly);
+            for tc in &local_read {
+                let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
+                self.conversation.push(ChatMessage::tool_result(&tc.id, result));
+            }
+            if !local_write.is_empty() {
+                self.pending_write_calls = local_write;
+                self.show_write_confirm = true;
+            }
+
             let servers = self.mcp_servers.clone();
             let mcp_tools = self.mcp_tools.clone();
             let mut tasks = Vec::new();
@@ -1669,15 +1676,10 @@ impl App {
                     move |result| Message::McpToolResult(call_id, result),
                 ));
             }
-            // 나머지 로컬 call이 있으면 함께 처리
-            if !local_calls.is_empty() {
-                self.pending_tool_calls = local_calls;
-            }
             self.status = "MCP tool 실행 중…".into();
             return Task::batch(tasks);
         }
 
-        // 5) 로컬 tool: read_only / mutating 분리
         let (read_calls, write_calls): (Vec<_>, Vec<_>) = local_calls
             .into_iter()
             .partition(|tc| tools::tool_kind(&tc.name) == tools::ToolKind::ReadOnly);

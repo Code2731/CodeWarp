@@ -1351,6 +1351,8 @@ enum Message {
     RemoveMcpServer(usize),
     /// MCP tool 목록 로드 완료 (서버 이름, tool 목록)
     McpToolsLoaded(String, Vec<mcp::McpTool>),
+    /// MCP tool 목록 로드 실패
+    McpToolsFailed(String),
     /// MCP tool 호출 결과 (tool_call_id, 결과 문자열)
     McpToolResult(String, String),
 }
@@ -1534,10 +1536,10 @@ impl App {
         for server in app.mcp_servers.clone() {
             let name = server.name.clone();
             tasks.push(Task::perform(
-                async move { mcp::list_tools(&server).await },
-                move |r| match r {
-                    Ok(tools) => Message::McpToolsLoaded(name, tools),
-                    Err(_) => Message::McpToolsLoaded(String::new(), Vec::new()),
+                async move { mcp::list_tools(&server).await.map(|tools| (name.clone(), tools)).map_err(|e| format!("[{name}] {e}")) },
+                |r| match r {
+                    Ok((name, tools)) => Message::McpToolsLoaded(name, tools),
+                    Err(msg) => Message::McpToolsFailed(msg),
                 },
             ));
         }

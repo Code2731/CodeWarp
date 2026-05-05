@@ -1,0 +1,1681 @@
+// view.rs — App 뷰 메서드 (main.rs child module)
+use super::*;
+use iced::widget::markdown::{self};
+use iced::widget::scrollable::Direction;
+use iced::widget::
+    {button, checkbox, column, combo_box, container, pick_list, row, scrollable, stack, text,
+    text_editor, text_input, Space};
+use iced::{Alignment, Element, Length, Theme};
+
+impl App {
+    pub(crate) fn view(&self) -> Element<'_, Message> {
+        let topbar = self.view_topbar();
+
+        let main_view: Element<Message> = row![
+            self.view_sidebar(),
+            self.view_stream(),
+            self.view_rightpanel(),
+        ]
+        .height(Length::Fill)
+        .into();
+
+        // overlay가 필요하면 stack으로 메인 위에 띄움 (backdrop + 가운데 모달 박스)
+        let middle: Element<Message> = if self.show_command_palette {
+            stack![main_view, modal_overlay(self.view_command_palette())].into()
+        } else if self.show_settings {
+            stack![main_view, modal_overlay(self.view_settings())].into()
+        } else {
+            // write_confirm은 입력창 위 인라인 패널(view_stream 안에서 처리)
+            main_view
+        };
+
+        let statusbar = self.view_statusbar();
+
+        column![topbar, middle, statusbar]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn view_topbar(&self) -> Element<'_, Message> {
+        let model_picker: Element<Message> = if self.model_ids.is_empty() {
+            text("모델 없음").size(12).into()
+        } else {
+            {
+                let selected_opt = self.selected_model.as_ref().and_then(|id| {
+                    self.model_options.iter().find(|o| &o.id == id)
+                });
+                iced::widget::container(
+                    combo_box(
+                        &self.model_combo_state,
+                        "모델 검색…",
+                        selected_opt,
+                        Message::SelectModel,
+                    )
+                    .size(12),
+                )
+                .width(Length::Fixed(420.0))
+                .into()
+            }
+        };
+
+        let is_fav = self
+            .selected_model
+            .as_ref()
+            .map(|id| self.favorites.contains(id))
+            .unwrap_or(false);
+        let fav_btn = button(text(if is_fav { "★" } else { "☆" }).size(16))
+            .on_press(Message::ToggleFavorite)
+            .padding([6, 10]);
+
+        let filters = row![
+            checkbox(self.filter_coding)
+                .label("코딩")
+                .on_toggle(Message::ToggleFilterCoding)
+                .size(14)
+                .text_size(12),
+            checkbox(self.filter_reasoning)
+                .label("추론")
+                .on_toggle(Message::ToggleFilterReasoning)
+                .size(14)
+                .text_size(12),
+            checkbox(self.filter_general)
+                .label("범용")
+                .on_toggle(Message::ToggleFilterGeneral)
+                .size(14)
+                .text_size(12),
+            checkbox(self.filter_favorites_only)
+                .label("⭐만")
+                .on_toggle(Message::ToggleFilterFavorites)
+                .size(14)
+                .text_size(12),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let sort_btn = button(text(self.sort_mode.label()).size(12))
+            .on_press(Message::CycleSortMode)
+            .padding([6, 10]);
+
+        let bar = row![
+            filters,
+            Space::new().width(Length::Fill),
+            sort_btn,
+            model_picker,
+            fav_btn,
+            button(
+                text("⚙")
+                    .size(16)
+                    .align_y(Alignment::Center)
+            )
+            .on_press(Message::OpenSettings)
+            .padding([6, 12]),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center);
+
+        container(bar)
+            .padding([10, 16])
+            .width(Length::Fill)
+            .into()
+    }
+
+    fn view_usage_summary(&self) -> Element<'_, Message> {
+        if self.usage.by_model.is_empty() {
+            return text("(사용 기록 없음)").size(11).into();
+        }
+        // 비용 큰 순 5개
+        let mut entries: Vec<(&String, &session::ModelUsage)> =
+            self.usage.by_model.iter().collect();
+        entries.sort_by(|a, b| {
+            b.1.total_cost
+                .partial_cmp(&a.1.total_cost)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut col = column![].spacing(2);
+        for (id, u) in entries.iter().take(5) {
+            // model id가 너무 길면 끝부분만
+            let short_id: String = if id.chars().count() > 24 {
+                let tail: String = id
+                    .chars()
+                    .rev()
+                    .take(22)
+                    .collect::<Vec<char>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                format!("…{}", tail)
+            } else {
+                (*id).clone()
+            };
+            col = col.push(
+                row![
+                    text(short_id).size(11),
+                    Space::new().width(Length::Fill),
+                    text(format!("${:.4}", u.total_cost)).size(11),
+                ]
+                .spacing(6),
+            );
+        }
+        let total: f64 = self.usage.by_model.values().map(|u| u.total_cost).sum();
+        col = col.push(Space::new().height(Length::Fixed(4.0)));
+        col = col.push(
+            row![
+                text("총합").size(11),
+                Space::new().width(Length::Fill),
+                text(format!("${:.4}", total)).size(11),
+            ]
+            .spacing(6),
+        );
+        col.into()
+    }
+
+    fn view_sidebar(&self) -> Element<'_, Message> {
+        let cwd_display = self.cwd.display().to_string();
+        // 너무 긴 경로는 끝부분만 표시
+        let cwd_short = if cwd_display.chars().count() > 36 {
+            let tail: String = cwd_display
+                .chars()
+                .rev()
+                .take(34)
+                .collect::<Vec<char>>()
+                .into_iter()
+                .rev()
+                .collect();
+            format!("…{}", tail)
+        } else {
+            cwd_display.clone()
+        };
+
+        // 세션 목록 (활성 + 비활성)
+        let active_label = if self.current_session_title.trim().is_empty() {
+            "새 채팅".to_string()
+        } else {
+            self.current_session_title.clone()
+        };
+        let mut sessions_col = column![
+            container(text(format!("📌 {}", active_label)).size(12))
+                .padding([6, 8])
+                .width(Length::Fill)
+                .style(|theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(p.primary.weak.color.into()),
+                        border: iced::Border {
+                            radius: 6.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }),
+        ]
+        .spacing(2);
+        for s in &self.inactive_sessions {
+            let title = if s.title.trim().is_empty() {
+                "(빈 세션)".to_string()
+            } else {
+                s.title.clone()
+            };
+            let is_pending = self.pending_delete_session == Some(s.id);
+            let trailing: Element<Message> = if is_pending {
+                row![
+                    button(text("✓").size(11))
+                        .on_press(Message::DeleteSession(s.id))
+                        .padding([2, 6]),
+                    button(text("✗").size(11))
+                        .on_press(Message::CancelDeleteSession)
+                        .padding([2, 6]),
+                ]
+                .spacing(2)
+                .into()
+            } else {
+                button(text("✕").size(11))
+                    .on_press(Message::AskDeleteSession(s.id))
+                    .padding([2, 6])
+                    .into()
+            };
+            let row_widget = row![
+                button(text(format!("📂 {}", title)).size(12))
+                    .on_press(Message::SwitchSession(s.id))
+                    .padding([4, 8])
+                    .width(Length::Fill),
+                trailing,
+            ]
+            .spacing(2);
+            sessions_col = sessions_col.push(row_widget);
+        }
+
+        let body = column![
+            button(text("＋ 새 채팅").size(13))
+                .on_press(Message::NewChat)
+                .padding([6, 12])
+                .width(Length::Fill),
+            Space::new().height(Length::Fixed(8.0)),
+            text("채팅").size(11),
+            scrollable(sessions_col)
+                .direction(Direction::Vertical(
+                    vscrollbar(),
+                ))
+                .height(Length::Fixed(220.0)),
+            Space::new().height(Length::Fixed(14.0)),
+            text("모델 사용량 (누적)").size(11),
+            self.view_usage_summary(),
+            Space::new().height(Length::Fixed(14.0)),
+            text("작업 폴더").size(11),
+            text(cwd_short).size(12),
+            button(text("📁 폴더 변경").size(11))
+                .on_press(Message::PickCwd)
+                .padding([4, 8]),
+            Space::new().height(Length::Fixed(14.0)),
+            text("프로젝트").size(11),
+            text("CodeWarp").size(13),
+            Space::new().height(Length::Fixed(14.0)),
+            text("컨텍스트").size(11),
+            text("선택 안 됨").size(13),
+        ]
+        .spacing(6);
+
+        container(scrollable(body)
+                .direction(Direction::Vertical(
+                    vscrollbar(),
+                ))
+                .height(Length::Fill))
+            .width(Length::Fixed(220.0))
+            .height(Length::Fill)
+            .padding(14)
+            .into()
+    }
+
+    fn view_rightpanel(&self) -> Element<'_, Message> {
+        // 세션 통계 — blocks/conversation에서 derive
+        let user_msg_count = self
+            .conversation
+            .iter()
+            .filter(|m| m.role == "user")
+            .count();
+        let tool_results: Vec<(&str, &str, bool)> = self
+            .blocks
+            .iter()
+            .filter_map(|b| match &b.body {
+                BlockBody::ToolResult {
+                    name,
+                    summary,
+                    success,
+                } => Some((name.as_str(), summary.as_str(), *success)),
+                _ => None,
+            })
+            .collect();
+        let tool_count = tool_results.len();
+        let success_count = tool_results.iter().filter(|(_, _, s)| *s).count();
+        let fail_count = tool_count - success_count;
+
+        let stats = column![
+            text("세션 통계").size(11),
+            text(format!("· 메시지: {}", user_msg_count)).size(12),
+            text(format!(
+                "· 도구 호출: {} (✓{} ✗{})",
+                tool_count, success_count, fail_count
+            ))
+            .size(12),
+            text(format!("· 모드: {}", self.agent_mode.label())).size(12),
+        ]
+        .spacing(2);
+
+        // 도구 호출 로그 (역순 — 최근이 위)
+        let mut log_col = column![text("도구 호출 로그").size(11)].spacing(2);
+        if tool_results.is_empty() {
+            log_col = log_col.push(text("// 도구 호출 시 여기 누적").size(11));
+        } else {
+            for (name, summary, success) in tool_results.iter().rev() {
+                let icon = if *success { "✓" } else { "✗" };
+                let line = text(format!("{} {} → {}", icon, name, summary))
+                    .size(11)
+                    .font(Font::with_name("JetBrains Mono"));
+                log_col = log_col.push(line);
+            }
+        }
+
+        // 도구 라운드 진행 표시 (streaming 중일 때만)
+        let round_indicator: Element<Message> = if self.streaming_block_id.is_some()
+            && self.tool_round > 0
+        {
+            text(format!(
+                "▶ 도구 라운드 {}/{}",
+                self.tool_round, MAX_TOOL_ROUNDS
+            ))
+            .size(11)
+            .style(|theme: &Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().primary.base.color),
+            })
+            .into()
+        } else {
+            Space::new().width(Length::Shrink).height(Length::Shrink).into()
+        };
+
+        let body = column![
+            stats,
+            Space::new().height(Length::Fixed(14.0)),
+            round_indicator,
+            Space::new().height(Length::Fixed(6.0)),
+            log_col,
+        ]
+        .spacing(6);
+
+        container(
+            scrollable(body)
+                .direction(Direction::Vertical(
+                    vscrollbar(),
+                ))
+                .height(Length::Fill),
+        )
+        .width(Length::Fixed(280.0))
+        .height(Length::Fill)
+        .padding(14)
+        .into()
+    }
+
+    /// 빈 채팅(blocks가 없을 때) 화면 — 예시 프롬프트 + 슬래시 명령 + 단축키.
+    fn view_empty_chat(&self) -> Element<'_, Message> {
+        const EXAMPLES: &[&str] = &[
+            "이 프로젝트의 의존성을 알려줘",
+            "src/main.rs의 첫 30줄을 요약해줘",
+            "examples/hello.rs 만들어줘",
+        ];
+        let title = text("CodeWarp").size(28);
+        let subtitle = text("AI 코딩 데스크톱 — Plan으로 안전하게 둘러보고, Build로 변경 적용").size(12);
+
+        let mut examples_col = column![text("다음을 시도해보세요").size(11)].spacing(4);
+        for ex in EXAMPLES {
+            examples_col = examples_col.push(
+                button(text(format!("▸ {}", ex)).size(13))
+                    .on_press(Message::InputChanged((*ex).to_string()))
+                    .padding([4, 10]),
+            );
+        }
+
+        let modes = column![
+            text("모드 (입력창 좌측 라벨 클릭 또는 슬래시)").size(11),
+            text("/plan   계획 먼저, 도구는 read-only").size(12),
+            text("/build  변경 적용 (write_file, run_command)").size(12),
+        ]
+        .spacing(2);
+
+        let shortcuts = text("Ctrl+K 명령 팔레트 · Ctrl+N 새 채팅 · Ctrl+, 설정").size(11);
+
+        container(
+            column![
+                title,
+                subtitle,
+                Space::new().height(Length::Fixed(20.0)),
+                examples_col,
+                Space::new().height(Length::Fixed(20.0)),
+                modes,
+                Space::new().height(Length::Fixed(14.0)),
+                shortcuts,
+            ]
+            .spacing(6)
+            .max_width(560),
+        )
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .padding(20)
+        .into()
+    }
+
+    fn view_stream(&self) -> Element<'_, Message> {
+        let blocks_view: Element<Message> = if self.blocks.is_empty() {
+            self.view_empty_chat()
+        } else {
+            // 마지막 user/assistant 블록 인덱스 — regenerate/edit 버튼 노출 결정
+            let last_user_idx = last_user_block_idx(&self.blocks);
+            let last_asst_idx = last_assistant_block_idx(&self.blocks);
+            let streaming = self.streaming_block_id.is_some();
+            let mut col = column![].spacing(10).width(Length::Fill);
+            for (i, b) in self.blocks.iter().enumerate() {
+                // ToolResult 블록은 별도 작은 chip으로 표시
+                if let BlockBody::ToolResult { name, summary, success } = &b.body {
+                    let icon = if *success { "✓" } else { "✗" };
+                    let chip = container(
+                        text(format!("{} {} → {}", icon, name, summary))
+                            .size(11)
+                            .font(Font::with_name("JetBrains Mono")),
+                    )
+                    .padding([4, 10])
+                    .style({
+                        let success = *success;
+                        move |theme: &Theme| {
+                            let p = theme.extended_palette();
+                            container::Style {
+                                background: Some(p.background.strong.color.into()),
+                                border: iced::Border {
+                                    color: if success {
+                                        p.success.weak.color
+                                    } else {
+                                        p.danger.weak.color
+                                    },
+                                    width: 1.0,
+                                    radius: 6.0.into(),
+                                },
+                                ..Default::default()
+                            }
+                        }
+                    });
+                    col = col.push(chip);
+                    continue;
+                }
+                let role_label = b.body.role_label();
+                let has_content = !b.body.is_empty_for_history();
+                let copy_btn: Element<Message> = if has_content {
+                    button(text("복사").size(10))
+                        .on_press(Message::CopyBlock(b.id))
+                        .padding([2, 8])
+                        .into()
+                } else {
+                    Space::new().width(Length::Shrink).height(Length::Shrink).into()
+                };
+                let toggle_btn: Element<Message> =
+                    if has_content && matches!(&b.body, BlockBody::Assistant(_)) {
+                        let label = match b.view_mode {
+                            ViewMode::Rendered => "원문",
+                            ViewMode::Raw => "예쁘게",
+                        };
+                        button(text(label).size(10))
+                            .on_press(Message::ToggleBlockView(b.id))
+                            .padding([2, 8])
+                            .into()
+                    } else {
+                        Space::new().width(Length::Shrink).height(Length::Shrink).into()
+                    };
+                // 마지막 user/assistant 블록에만 ✎ / ↻ 버튼 (streaming 중엔 숨김)
+                let action_btn: Element<Message> = if streaming {
+                    Space::new().width(Length::Shrink).height(Length::Shrink).into()
+                } else if Some(i) == last_user_idx
+                    && matches!(&b.body, BlockBody::User(_))
+                {
+                    button(text("✎").size(10))
+                        .on_press(Message::EditLastUser)
+                        .padding([2, 8])
+                        .into()
+                } else if Some(i) == last_asst_idx
+                    && matches!(&b.body, BlockBody::Assistant(_))
+                    && has_content
+                {
+                    button(text("↻").size(10))
+                        .on_press(Message::RegenerateLast)
+                        .padding([2, 8])
+                        .into()
+                } else {
+                    Space::new().width(Length::Shrink).height(Length::Shrink).into()
+                };
+                let model_label: Element<Message> = match &b.model {
+                    Some(m) => text(format!("· {}", m)).size(10).into(),
+                    None => Space::new().width(Length::Shrink).height(Length::Shrink).into(),
+                };
+                let header = row![
+                    text(role_label).size(11),
+                    model_label,
+                    Space::new().width(Length::Fill),
+                    action_btn,
+                    toggle_btn,
+                    copy_btn,
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center);
+
+                let body_view: Element<Message> = match (&b.body, b.view_mode) {
+                    (BlockBody::User(s), _) => text(s).size(13).into(),
+                    (BlockBody::Assistant(content), ViewMode::Raw) => {
+                        let id = b.id;
+                        text_editor(content)
+                            .on_action(move |action| Message::EditorAction(id, action))
+                            .height(Length::Shrink)
+                            .padding(0)
+                            .size(13)
+                            .into()
+                    }
+                    (BlockBody::Assistant(_), ViewMode::Rendered) => {
+                        let mut settings: markdown::Settings = (&self.theme()).into();
+                        settings.style.inline_code_font = Font::with_name("JetBrains Mono");
+                        settings.style.code_block_font = Font::with_name("JetBrains Mono");
+                        markdown::view_with(b.md_items.iter(), settings, &CodewarpViewer)
+                    }
+                    (BlockBody::ToolResult { .. }, _) => unreachable!("ToolResult is handled above"),
+                };
+
+                // Apply 후보 카드 (assistant 블록만, 후보 있을 때)
+                let apply_section: Element<Message> = if b.apply_candidates.is_empty() {
+                    Space::new().height(Length::Shrink).into()
+                } else {
+                    let mut col = column![text("적용 가능한 변경사항").size(11)].spacing(4);
+                    for (ci, (cand, applied)) in b.apply_candidates.iter().enumerate() {
+                        let label = if *applied {
+                            format!("✓ {} ({} bytes)", cand.path, cand.content.len())
+                        } else {
+                            format!("📝 {} ({} bytes)", cand.path, cand.content.len())
+                        };
+                        let btn: Element<Message> = if *applied {
+                            text("적용됨").size(11).into()
+                        } else {
+                            button(text("Apply").size(11))
+                                .on_press(Message::ApplyChange(b.id, ci))
+                                .padding([2, 10])
+                                .style(button::primary)
+                                .into()
+                        };
+                        col = col.push(
+                            row![
+                                text(label).size(12).font(Font::with_name("JetBrains Mono")),
+                                Space::new().width(Length::Fill),
+                                btn,
+                            ]
+                            .spacing(8)
+                            .align_y(Alignment::Center),
+                        );
+                    }
+                    col.into()
+                };
+
+                let is_user = matches!(&b.body, BlockBody::User(_));
+                let block_view = container(
+                    column![header, body_view, apply_section].spacing(6),
+                )
+                .padding(12)
+                .width(Length::Fill)
+                .style(move |theme: &Theme| {
+                    let p = theme.extended_palette();
+                    let (bg, fg, border) = if is_user {
+                        (
+                            p.primary.base.color,
+                            p.primary.base.text,
+                            p.primary.strong.color,
+                        )
+                    } else {
+                        (
+                            p.background.weak.color,
+                            p.background.base.text,
+                            p.background.strong.color,
+                        )
+                    };
+                    container::Style {
+                        background: Some(bg.into()),
+                        text_color: Some(fg),
+                        border: iced::Border {
+                            color: border,
+                            width: 1.0,
+                            radius: 10.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                });
+                col = col.push(block_view);
+            }
+            scrollable(col)
+                .id(self.stream_id.clone())
+                .on_scroll(Message::StreamScrolled)
+                .direction(Direction::Vertical(
+                    vscrollbar(),
+                ))
+                .height(Length::Fill)
+                .into()
+        };
+
+        let send_disabled =
+            self.input.trim().is_empty() || self.selected_model.is_none();
+
+        // 입력창 좌측 모드 라벨 (클릭으로 Plan ↔ Build 토글)
+        let mode_label = button(text(self.agent_mode.label()).size(11))
+            .on_press(Message::ToggleAgentMode)
+            .padding([6, 10]);
+
+        // 슬래시 hint: 입력이 '/'로 시작하면 입력창 위에 명령 버튼 줄
+        let slash_hint: Element<Message> = if self.input.starts_with('/') {
+            container(
+                row![
+                    text("커맨드:").size(11),
+                    button(text("/plan").size(11))
+                        .on_press(Message::SetAgentMode(AgentMode::Plan))
+                        .padding([2, 8]),
+                    button(text("/build").size(11))
+                        .on_press(Message::SetAgentMode(AgentMode::Build))
+                        .padding([2, 8]),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            )
+            .padding([4, 8])
+            .into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
+        // @-mention 드롭다운 (show_mention 시 입력창 위에 표시)
+        let mention_popup: Element<Message> = if self.show_mention {
+            let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
+            if filtered.is_empty() {
+                Space::new().height(Length::Shrink).into()
+            } else {
+                let mut list = column![].spacing(2);
+                for (i, path) in filtered.iter().enumerate() {
+                    let label = path.to_string_lossy().to_string();
+                    let is_selected = i == self.mention_selected;
+                    let btn = button(text(label).size(12))
+                        .on_press(Message::MentionConfirm)
+                        .padding([4, 10])
+                        .width(Length::Fill)
+                        .style(if is_selected { button::primary } else { button::text });
+                    list = list.push(btn);
+                }
+                container(
+                    scrollable(list)
+                        .direction(Direction::Vertical(vscrollbar()))
+                        .height(Length::Shrink),
+                )
+                .padding([4, 0])
+                .style(|theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(p.background.strong.color.into()),
+                        border: iced::Border { color: p.primary.base.color, width: 1.0, radius: 6.0.into() },
+                        ..Default::default()
+                    }
+                })
+                .into()
+            }
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
+        // 첨부 파일 칩 행 (attached_files가 있을 때만)
+        let attach_row: Element<Message> = if !self.attached_files.is_empty() {
+            let mut chips = row![].spacing(6).align_y(Alignment::Center);
+            for (i, (path, _)) in self.attached_files.iter().enumerate() {
+                let name = path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+                chips = chips.push(
+                    container(
+                        row![
+                            text(format!("📄 {name}")).size(11),
+                            button(text("✕").size(10))
+                                .on_press(Message::RemoveAttachment(i))
+                                .padding([1, 4])
+                                .style(button::text),
+                        ]
+                        .spacing(4)
+                        .align_y(Alignment::Center),
+                    )
+                    .padding([3, 8])
+                    .style(|theme: &Theme| {
+                        let p = theme.extended_palette();
+                        container::Style {
+                            background: Some(p.background.strong.color.into()),
+                            border: iced::Border { color: p.primary.weak.color, width: 1.0, radius: 12.0.into() },
+                            ..Default::default()
+                        }
+                    }),
+                );
+            }
+            container(chips).padding([4, 0]).into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
+        let action_btn: Element<Message> = if self.streaming_block_id.is_some() {
+            button(text("■ 중지").size(13))
+                .on_press(Message::StopStream)
+                .padding([8, 18])
+                .style(button::danger)
+                .into()
+        } else {
+            button(text("Send  ⏎").size(13))
+                .on_press_maybe(if send_disabled {
+                    None
+                } else {
+                    Some(Message::Send)
+                })
+                .padding([8, 18])
+                .style(button::primary)
+                .into()
+        };
+
+        // mention 팝업 활성 시 Enter → MentionConfirm, 비활성 시 → Send
+        let submit_msg = if self.show_mention {
+            Message::MentionConfirm
+        } else {
+            Message::Send
+        };
+
+        let input_row = row![
+            mode_label,
+            text_input("질문을 입력하세요…  (@파일 첨부, /plan, /build)", &self.input)
+                .on_input(Message::InputChanged)
+                .on_submit(submit_msg)
+                .padding(10),
+            action_btn,
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+        let confirm_panel: Element<Message> = if self.show_write_confirm {
+            self.view_inline_confirm()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
+        column![
+            container(blocks_view)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding([14, 18]),
+            container(confirm_panel).padding([0, 14]),
+            container(slash_hint).padding([0, 14]),
+            container(mention_popup).padding([0, 14]),
+            container(attach_row).padding([0, 14]),
+            container(input_row)
+                .padding([10, 14])
+                .width(Length::Fill),
+        ]
+        .height(Length::Fill)
+        .width(Length::Fill)
+        .into()
+    }
+
+    fn view_command_palette(&self) -> Element<'_, Message> {
+        let header = text("명령 팔레트").size(18);
+        let hint = column![
+            text("탐색  Esc 닫기 · Ctrl+K 토글").size(11),
+            text("작업  Ctrl+N 새 채팅 · Ctrl+, 설정").size(11),
+            text("모드  Ctrl+Shift+P 계획 · Ctrl+Shift+B 빌드").size(11),
+        ]
+        .spacing(2);
+        let input = text_input("명령 검색…", &self.command_palette_input)
+            .on_input(Message::CommandPaletteChanged)
+            .on_submit(Message::ExecuteCommand(0))
+            .padding(10);
+
+        let filtered = self.filtered_palette_commands();
+        let mut list = column![].spacing(4);
+        if filtered.is_empty() {
+            list = list.push(text("(매칭 없음)").size(12));
+        } else {
+            for (i, cmd) in filtered.iter().enumerate() {
+                list = list.push(
+                    button(
+                        column![
+                            text(cmd.label).size(13),
+                            text(cmd.hint).size(11),
+                        ]
+                        .spacing(2),
+                    )
+                    .on_press(Message::ExecuteCommand(i))
+                    .padding([6, 10])
+                    .width(Length::Fill),
+                );
+            }
+        }
+
+        let body = column![
+            header,
+            hint,
+            Space::new().height(Length::Fixed(8.0)),
+            input,
+            Space::new().height(Length::Fixed(8.0)),
+            scrollable(list)
+                .direction(Direction::Vertical(
+                    vscrollbar(),
+                ))
+                .height(Length::Fixed(320.0)),
+            Space::new().height(Length::Fixed(8.0)),
+            row![
+                Space::new().width(Length::Fill),
+                button(text("닫기").size(12))
+                    .on_press(Message::CloseCommandPalette)
+                    .padding([4, 12]),
+            ],
+        ]
+        .spacing(4);
+
+        container(body)
+            .padding(20)
+            .width(Length::Fixed(560.0))
+            .into()
+    }
+
+    fn view_inline_confirm(&self) -> Element<'_, Message> {
+        let n = self.pending_write_calls.len();
+        let header = text(format!(
+            "⚠ AI가 {}개 도구 실행을 요청했습니다 (카드 클릭으로 미리보기)",
+            n
+        ))
+        .size(12);
+
+        let mut cards = column![].spacing(4);
+        for (idx, tc) in self.pending_write_calls.iter().enumerate() {
+            let is_expanded = self.expanded_confirm_idx == Some(idx);
+            let arrow = if is_expanded { "▾" } else { "▸" };
+
+            let (summary_text, expanded_view): (String, Option<Element<Message>>) = match tc
+                .name
+                .as_str()
+            {
+                "write_file" => match tools::WriteFileArgs::parse(&tc.arguments) {
+                    Ok(args) => {
+                        let abs_path = self.cwd.join(&args.path);
+                        let exists = abs_path.exists();
+                        let icon = if exists { "📝" } else { "✨" };
+                        let summary = format!(
+                            "{} {}  {}  ({} bytes)",
+                            arrow,
+                            icon,
+                            args.path,
+                            args.content.len()
+                        );
+                        let expanded = if is_expanded {
+                            let old = std::fs::read_to_string(&abs_path).unwrap_or_default();
+                            Some(render_diff(&old, &args.content))
+                        } else {
+                            None
+                        };
+                        (summary, expanded)
+                    }
+                    Err(e) => (format!("{} [err] {}", arrow, e), None),
+                },
+                "run_command" => match tools::RunCommandArgs::parse(&tc.arguments) {
+                    Ok(args) => {
+                        let summary = format!("{} 🖥  $ {}", arrow, args.command);
+                        (summary, None) // run_command는 펼칠 내용 없음 (명령어만)
+                    }
+                    Err(e) => (format!("{} [err] {}", arrow, e), None),
+                },
+                _ => (format!("{} [?] {}", arrow, tc.name), None),
+            };
+
+            let summary_btn: Element<Message> = button(
+                text(summary_text)
+                    .size(12)
+                    .font(if tc.name == "run_command" {
+                        Font::with_name("JetBrains Mono")
+                    } else {
+                        Font::with_name("Pretendard")
+                    }),
+            )
+            .on_press(Message::ToggleConfirmExpand(idx))
+            .padding([2, 6])
+            .width(Length::Fill)
+            .into();
+
+            let discard_btn: Element<Message> = button(text("✗").size(11))
+                .on_press(Message::DiscardWriteCall(idx))
+                .padding([2, 6])
+                .into();
+
+            let row_widget = row![summary_btn, discard_btn].spacing(4);
+            let mut card_col = column![row_widget].spacing(2);
+            if let Some(expanded) = expanded_view {
+                card_col = card_col.push(container(expanded).padding([0, 18]));
+            }
+            cards = cards.push(card_col);
+        }
+
+        let actions = row![
+            button(text("거부").size(12))
+                .on_press(Message::DenyWrites)
+                .padding([4, 14]),
+            Space::new().width(Length::Fill),
+            button(text("✓ 모두 승인").size(12))
+                .on_press(Message::ApproveWrites)
+                .padding([4, 14]),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+        container(
+            column![
+                header,
+                Space::new().height(Length::Fixed(4.0)),
+                container(
+                    scrollable(cards)
+                        .direction(Direction::Vertical(
+                            vscrollbar(),
+                        ))
+                )
+                .max_height(140.0),
+                Space::new().height(Length::Fixed(6.0)),
+                actions,
+            ]
+            .spacing(2),
+        )
+        .padding(10)
+        .width(Length::Fill)
+        .style(|theme: &Theme| {
+            let p = theme.extended_palette();
+            container::Style {
+                background: Some(p.background.weak.color.into()),
+                border: iced::Border {
+                    color: p.danger.weak.color,
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .into()
+    }
+
+    #[allow(dead_code)]
+    fn view_write_confirm(&self) -> Element<'_, Message> {
+        let mut col = column![
+            text("파일 쓰기 승인 대기").size(22),
+            text(format!(
+                "AI가 {}개의 파일을 변경하려고 합니다. 내용을 검토한 뒤 승인 또는 거부하세요.",
+                self.pending_write_calls.len()
+            ))
+            .size(13),
+            Space::new().height(Length::Fixed(14.0)),
+        ]
+        .spacing(6);
+
+        for tc in &self.pending_write_calls {
+            let card: Element<Message> = match tc.name.as_str() {
+                "write_file" => match tools::WriteFileArgs::parse(&tc.arguments) {
+                    Ok(args) => {
+                        let abs_path = self.cwd.join(&args.path);
+                        let old_content = std::fs::read_to_string(&abs_path).ok();
+                        let header = match &old_content {
+                            Some(_) => format!(
+                                "📝 {} ({} bytes)",
+                                args.path,
+                                args.content.len()
+                            ),
+                            None => format!(
+                                "✨ 새 파일: {} ({} bytes)",
+                                args.path,
+                                args.content.len()
+                            ),
+                        };
+                        let diff_view: Element<Message> = match old_content {
+                            Some(old) => render_diff(&old, &args.content),
+                            None => container(
+                                text(args.content.clone())
+                                    .size(12)
+                                    .font(Font::with_name("JetBrains Mono")),
+                            )
+                            .padding(10)
+                            .width(Length::Fill)
+                            .into(),
+                        };
+                        column![
+                            text(header).size(15),
+                            Space::new().height(Length::Fixed(6.0)),
+                            diff_view,
+                        ]
+                        .spacing(4)
+                        .into()
+                    }
+                    Err(e) => column![
+                        text(format!("[arguments 파싱 실패] {}", e)).size(13),
+                        text(tc.arguments.clone()).size(11),
+                    ]
+                    .spacing(4)
+                    .into(),
+                },
+                "run_command" => match tools::RunCommandArgs::parse(&tc.arguments) {
+                    Ok(args) => column![
+                        text("🖥 셸 명령 실행").size(15),
+                        Space::new().height(Length::Fixed(6.0)),
+                        container(
+                            text(format!("$ {}", args.command))
+                                .size(13)
+                                .font(Font::with_name("JetBrains Mono")),
+                        )
+                        .padding(10)
+                        .width(Length::Fill),
+                    ]
+                    .spacing(4)
+                    .into(),
+                    Err(e) => column![
+                        text(format!("[arguments 파싱 실패] {}", e)).size(13),
+                        text(tc.arguments.clone()).size(11),
+                    ]
+                    .spacing(4)
+                    .into(),
+                },
+                other => column![
+                    text(format!("[알 수 없는 도구] {}", other)).size(13),
+                    text(tc.arguments.clone()).size(11),
+                ]
+                .spacing(4)
+                .into(),
+            };
+            col = col.push(container(card).padding(12).width(Length::Fill));
+        }
+
+        let actions = row![
+            button(text("거부").size(13))
+                .on_press(Message::DenyWrites)
+                .padding([6, 16]),
+            button(text("✓ 모두 승인").size(13))
+                .on_press(Message::ApproveWrites)
+                .padding([6, 16]),
+        ]
+        .spacing(8);
+
+        col = col.push(Space::new().height(Length::Fixed(14.0)));
+        col = col.push(actions);
+
+        container(
+            scrollable(col)
+                .direction(Direction::Vertical(
+                    vscrollbar(),
+                ))
+                .height(Length::Fill),
+        )
+        .padding(20)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// OpenAICompat endpoint 활성화 표시. ● + 한 줄 라벨.
+    /// 녹색=연결됨, 빨강=끊김/실패, 회색=미시도.
+    fn endpoint_indicator(&self, size: f32) -> Element<'_, Message> {
+        #[derive(Clone, Copy)]
+        enum Kind { Ok, Err, Unknown }
+        let (kind, label): (Kind, String) = match &self.tabby_status {
+            Some(Ok(s)) => (Kind::Ok, format!("연결됨 — {}", s)),
+            Some(Err(e)) => (Kind::Err, format!("끊김 — {}", e)),
+            None => (Kind::Unknown, "endpoint 미시도".into()),
+        };
+        let dot = text("●").size(size).style(move |theme: &Theme| {
+            let p = theme.extended_palette();
+            iced::widget::text::Style {
+                color: Some(match kind {
+                    Kind::Ok => p.success.base.color,
+                    Kind::Err => p.danger.base.color,
+                    Kind::Unknown => p.background.strong.color,
+                }),
+            }
+        });
+        row![dot, text(label).size(size)]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+    }
+
+    fn view_settings(&self) -> Element<'_, Message> {
+        let header = row![
+            text("Settings").size(18),
+            Space::new().width(Length::Fill),
+            button(text("닫기").size(12))
+                .on_press(Message::CloseSettings)
+                .padding([4, 12]),
+        ]
+        .align_y(Alignment::Center);
+
+        let key_status = if self.has_key {
+            text("OpenRouter 키: 저장됨 ✓").size(13)
+        } else {
+            text("OpenRouter 키 미등록").size(13)
+        };
+
+        let key_input = text_input("sk-or-v1-...", &self.key_input)
+            .on_input(Message::KeyInputChanged)
+            .on_submit(Message::SaveKey)
+            .padding(10)
+            .width(Length::Fixed(420.0));
+
+        let actions = row![
+            button(text("저장").size(13)).on_press_maybe(
+                if self.busy || self.key_input.trim().is_empty() {
+                    None
+                } else {
+                    Some(Message::SaveKey)
+                }
+            ),
+            button(text("삭제").size(13)).on_press_maybe(
+                if self.busy || !self.has_key {
+                    None
+                } else {
+                    Some(Message::ClearKey)
+                }
+            ),
+        ]
+        .spacing(8);
+
+        // ── OpenAI 호환 endpoint (Tabby / xLLM / vLLM / llama-server / Ollama 등) ──
+        let tabby_header = text("OpenAI 호환 endpoint (xLLM / Tabby / llama-server 등)").size(14);
+        let label_input: Element<Message> = text_input(
+            "라벨 — 모델 셀렉터에 [xLLM] / [Tabby] / [Local] 같이 표시",
+            &self.openai_compat_label,
+        )
+        .on_input(Message::OpenAICompatLabelChanged)
+        .padding(8)
+        .width(Length::Fixed(420.0))
+        .into();
+        let tabby_url = text_input(
+            "예: http://localhost:9000 (xLLM) 또는 http://localhost:8080 (Tabby) — /v1 자동 추가",
+            &self.tabby_url_input,
+        )
+        .on_input(Message::TabbyUrlChanged)
+        .padding(10)
+        .width(Length::Fixed(420.0));
+        // 토큰은 99% 케이스에서 불필요 — 기본 숨김, 버튼으로 노출.
+        let tabby_token_toggle: Element<Message> = button(
+            text(if self.show_tabby_token {
+                "토큰 숨기기"
+            } else {
+                "토큰 입력 (선택)"
+            })
+            .size(11),
+        )
+        .on_press(Message::ToggleTabbyTokenVisible)
+        .padding([4, 10])
+        .into();
+        let tabby_token: Element<Message> = if self.show_tabby_token {
+            text_input("token (인증 강제 시에만)", &self.tabby_token_input)
+                .on_input(Message::TabbyTokenChanged)
+                .padding(10)
+                .width(Length::Fixed(420.0))
+                .into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+        let tabby_actions = row![
+            button(text("저장").size(13)).on_press_maybe(if self.busy {
+                None
+            } else {
+                Some(Message::SaveTabby)
+            }),
+            button(text("연결 테스트").size(13)).on_press_maybe(
+                if self.busy || self.tabby_url_input.trim().is_empty() {
+                    None
+                } else {
+                    Some(Message::FetchTabbyModels)
+                }
+            ),
+            button(text("삭제").size(13)).on_press_maybe(
+                if self.busy
+                    || (self.tabby_url_input.is_empty() && self.tabby_token_input.is_empty())
+                {
+                    None
+                } else {
+                    Some(Message::ClearTabby)
+                }
+            ),
+        ]
+        .spacing(8);
+        let tabby_status_label: Element<Message> = self.endpoint_indicator(11.0);
+
+        let manager_section = self.view_model_manager();
+
+        // 본문 (스크롤 영역) — header는 별도로 분리해서 항상 상단 고정
+        let scroll_body = column![
+            Space::new().height(Length::Fixed(8.0)),
+            text("AI provider — 둘 중 하나 이상 필수, 동시 사용 가능").size(11),
+            Space::new().height(Length::Fixed(8.0)),
+            text("OpenRouter (클라우드)").size(14),
+            key_status,
+            key_input,
+            actions,
+            Space::new().height(Length::Fixed(4.0)),
+            text("1. https://openrouter.ai 가입").size(11),
+            text("2. /credits 에서 충전 (무료 모델도 일부 있음)").size(11),
+            text("3. /keys 에서 키 발급 → 위에 붙여넣기").size(11),
+            text("키는 OS Credential Manager에 저장됩니다.").size(11),
+            Space::new().height(Length::Fixed(20.0)),
+            tabby_header,
+            label_input,
+            tabby_url,
+            tabby_token_toggle,
+            tabby_token,
+            tabby_actions,
+            tabby_status_label,
+            Space::new().height(Length::Fixed(4.0)),
+            text("어떤 OpenAI 호환 endpoint든 등록 가능 — 모델 셀렉터엔 라벨이 prefix로 표시됨").size(11),
+            text("예) xLLM:  xllm serve --model <받은 경로> --port 9000  →  URL: http://localhost:9000").size(11),
+            text("예) Tabby: tabby serve --model TabbyML/Qwen2.5-Coder-7B  →  URL: http://localhost:8080").size(11),
+            Space::new().height(Length::Fixed(16.0)),
+            self.view_inference_runner(),
+            Space::new().height(Length::Fixed(20.0)),
+            manager_section,
+        ]
+        .spacing(8)
+        .max_width(520);
+
+        // header는 scrollable 밖에 두어 항상 상단 고정 — 닫기 버튼이 가려지지 않게.
+        // column/scrollable에 명시적 size를 줘야 modal max_height 안에서 정상 그려짐.
+        let body = column![
+            header,
+            scrollable(scroll_body)
+                .direction(Direction::Vertical(vscrollbar()))
+                .height(Length::Fill)
+                .width(Length::Fixed(560.0)),
+        ]
+        .height(Length::Fill)
+        .width(Length::Fixed(560.0))
+        .spacing(8);
+
+        container(body)
+            .padding(20)
+            .width(Length::Shrink)
+            .height(Length::Fill)
+            .into()
+    }
+
+    /// inference 서버 (xLLM/vLLM/llama-server/Tabby/Ollama/Custom) — dropdown 기반.
+    /// CodeWarp가 child process로 spawn 관리.
+    fn view_inference_runner(&self) -> Element<'_, Message> {
+        let header = text("inference 서버 (CodeWarp가 spawn 관리)").size(13);
+
+        let engine_pick: Element<Message> = pick_list(
+            InferenceEngine::ALL,
+            Some(self.inference_engine),
+            Message::SelectInferenceEngine,
+        )
+        .placeholder("엔진 선택")
+        .text_size(12)
+        .into();
+
+        // 바이너리 경로 — 비어있으면 PATH default, 채워져 있으면 절대 경로 사용
+        let binary_section: Element<Message> = if matches!(
+            self.inference_engine,
+            InferenceEngine::Ollama | InferenceEngine::Custom
+        ) {
+            // Ollama는 spawn 안 함, Custom은 명령에 포함 → 별도 binary 입력 불필요
+            Space::new().height(Length::Shrink).into()
+        } else {
+            row![
+                text("바이너리").size(11),
+                text_input(
+                    "PATH의 기본값 사용 (비워두면 됨) 또는 절대 경로",
+                    &self.inference_binary_path,
+                )
+                .on_input(Message::InferenceBinaryChanged)
+                .padding(6)
+                .width(Length::Fixed(300.0)),
+                button(text("📁").size(11))
+                    .on_press(Message::PickInferenceBinary)
+                    .padding([4, 8]),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        };
+
+        // 엔진별 모델 입력 분기
+        let model_section: Element<Message> = match self.inference_engine {
+            InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer => {
+                let dl_dir = std::path::PathBuf::from(&self.model_dir_input);
+                let models = list_downloaded_models(&dl_dir);
+                if models.is_empty() {
+                    text("받은 모델 없음 — 위 모델 매니저에서 먼저 다운로드").size(11).into()
+                } else {
+                    let selected = if self.inference_selected_model.is_empty() {
+                        None
+                    } else {
+                        Some(self.inference_selected_model.clone())
+                    };
+                    pick_list(models, selected, Message::SelectInferenceModel)
+                        .placeholder("받은 모델 선택")
+                        .text_size(12)
+                        .into()
+                }
+            }
+            InferenceEngine::Tabby => text_input(
+                "Tabby 카탈로그 (예: TabbyML/Qwen2.5-Coder-7B — Tabby가 자체 다운로드)",
+                &self.inference_selected_model,
+            )
+            .on_input(Message::SelectInferenceModel)
+            .padding(8)
+            .width(Length::Fixed(420.0))
+            .into(),
+            InferenceEngine::Ollama => text_input(
+                "Ollama 모델 (예: qwen2.5-coder:7b) — daemon은 별도로 떠있어야",
+                &self.inference_selected_model,
+            )
+            .on_input(Message::SelectInferenceModel)
+            .padding(8)
+            .width(Length::Fixed(420.0))
+            .into(),
+            InferenceEngine::Custom => text_input(
+                "직접 명령 (예: xllm serve --model ... --port 9000)",
+                &self.inference_command_input,
+            )
+            .on_input(Message::InferenceCommandChanged)
+            .padding(8)
+            .width(Length::Fixed(420.0))
+            .into(),
+        };
+
+        // 포트 (Ollama는 항상 11434, Custom은 명령에 포함되므로 hide)
+        let port_section: Element<Message> = match self.inference_engine {
+            InferenceEngine::Custom => Space::new().height(Length::Shrink).into(),
+            _ => row![
+                text("포트").size(11),
+                text_input("9000", &self.inference_port_input)
+                    .on_input(Message::InferencePortChanged)
+                    .padding(6)
+                    .width(Length::Fixed(100.0)),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .into(),
+        };
+
+        let running = self.inference_pid.is_some();
+        let can_start = match self.inference_engine {
+            InferenceEngine::Custom => !self.inference_command_input.trim().is_empty(),
+            InferenceEngine::Ollama => false, // Ollama는 spawn 안 함 (daemon)
+            _ => !self.inference_selected_model.trim().is_empty(),
+        };
+
+        let actions: Element<Message> = if running {
+            row![
+                text(format!("● 실행 중 (pid {})", self.inference_pid.unwrap()))
+                    .size(11)
+                    .style(|theme: &Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().success.base.color),
+                    }),
+                Space::new().width(Length::Fill),
+                button(text("중지").size(11))
+                    .on_press(Message::StopInference)
+                    .padding([4, 12])
+                    .style(button::danger),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            let btn_label = if self.inference_engine == InferenceEngine::Ollama {
+                "Ollama는 daemon — 시작 불필요"
+            } else {
+                "시작"
+            };
+            row![
+                text("● 미실행")
+                    .size(11)
+                    .style(|theme: &Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().background.strong.color),
+                    }),
+                Space::new().width(Length::Fill),
+                button(text(btn_label).size(11))
+                    .on_press_maybe(if can_start { Some(Message::StartInference) } else { None })
+                    .padding([4, 12])
+                    .style(button::primary),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .into()
+        };
+
+        // 로그 마지막 N줄 (있을 때만)
+        let log_section: Element<Message> = if self.inference_log.is_empty() {
+            Space::new().height(Length::Shrink).into()
+        } else {
+            let mut col = column![text("로그 (최근)").size(10)].spacing(1);
+            for line in &self.inference_log {
+                col = col.push(
+                    text(line.clone())
+                        .size(10)
+                        .font(Font::with_name("JetBrains Mono")),
+                );
+            }
+            container(col)
+                .padding([6, 10])
+                .style(|theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(p.background.weak.color.into()),
+                        border: iced::Border {
+                            color: p.background.strong.color,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                })
+                .into()
+        };
+
+        column![
+            header,
+            row![text("엔진").size(11), engine_pick]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            binary_section,
+            model_section,
+            port_section,
+            actions,
+            log_section
+        ]
+        .spacing(6)
+        .into()
+    }
+
+    fn view_model_manager(&self) -> Element<'_, Message> {
+        let header = text("모델 매니저 (HuggingFace 다운로드)").size(14);
+
+        // 다운로드 경로 — picker 버튼을 명확하게
+        let dir_input = text_input(
+            "예: C:\\models 또는 ~/models",
+            &self.model_dir_input,
+        )
+        .on_input(Message::ModelDirChanged)
+        .padding(8)
+        .width(Length::Fixed(360.0));
+        let dir_row = row![
+            dir_input,
+            button(text("📁 찾아보기").size(11))
+                .on_press(Message::PickModelDir)
+                .padding([6, 12]),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center);
+
+        // HF 토큰 toggle
+        let token_toggle = button(
+            text(if self.show_hf_token {
+                "토큰 숨기기"
+            } else {
+                "토큰 입력"
+            })
+            .size(11),
+        )
+        .on_press(Message::ToggleHfTokenVisible)
+        .padding([4, 10]);
+        let token_section: Element<Message> = if self.show_hf_token {
+            row![
+                text_input("hf_xxx... (gated repo용, 선택)", &self.hf_token_input)
+                    .on_input(Message::HfTokenChanged)
+                    .on_submit(Message::SaveHfToken)
+                    .padding(8)
+                    .width(Length::Fixed(360.0)),
+                button(text("저장").size(11))
+                    .on_press(Message::SaveHfToken)
+                    .padding([4, 10]),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
+        // 추천 프리셋 — 카드를 두드러지게 (가장 많이 쓰이는 진입점)
+        let mut presets_col = column![text("추천 프리셋 (클릭 → 입력란에 채움)").size(12)].spacing(4);
+        for (i, p) in MODEL_PRESETS.iter().enumerate() {
+            presets_col = presets_col.push(
+                button(
+                    column![
+                        text(p.label).size(13),
+                        text(p.note).size(10),
+                        text(p.repo_id)
+                            .size(10)
+                            .font(Font::with_name("JetBrains Mono")),
+                    ]
+                    .spacing(2),
+                )
+                .on_press(Message::UsePreset(i))
+                .padding([6, 12])
+                .width(Length::Fill),
+            );
+        }
+
+        // repo 입력 + 다운로드 시작
+        let repo_input = text_input("HF repo (예: Qwen/Qwen2.5-Coder-7B-Instruct)", &self.hf_repo_input)
+            .on_input(Message::HfRepoChanged)
+            .on_submit(Message::StartHfDownload)
+            .padding(8)
+            .width(Length::Fixed(360.0));
+        let action_btn: Element<Message> = if self.hf_dl.is_some() {
+            button(text("취소").size(11))
+                .on_press(Message::CancelHfDownload)
+                .padding([4, 10])
+                .style(button::danger)
+                .into()
+        } else {
+            button(text("다운로드").size(11))
+                .on_press(Message::StartHfDownload)
+                .padding([4, 10])
+                .style(button::primary)
+                .into()
+        };
+        let dl_row = row![repo_input, action_btn]
+            .spacing(6)
+            .align_y(Alignment::Center);
+
+        // 진행률
+        let progress: Element<Message> = if let Some(dl) = &self.hf_dl {
+            let pct_text = match dl.file_bytes_total {
+                Some(t) if t > 0 => format!(
+                    "{:.0}%",
+                    (dl.file_bytes_done as f64 / t as f64) * 100.0
+                ),
+                _ => format!("{}", fmt_bytes(dl.file_bytes_done)),
+            };
+            column![
+                text(format!(
+                    "[{}/{}] {}",
+                    dl.file_idx + 1,
+                    dl.total_files.max(1),
+                    dl.file_name
+                ))
+                .size(11)
+                .font(Font::with_name("JetBrains Mono")),
+                text(pct_text).size(11),
+            ]
+            .spacing(2)
+            .into()
+        } else {
+            Space::new().height(Length::Shrink).into()
+        };
+
+        // EXL2 프리셋 섹션 (TabbyAPI용, 클릭 → 즉시 다운로드)
+        let is_downloading = self.hf_dl.is_some();
+        let mut exl2_col = column![
+            text("EXL2 프리셋 (TabbyAPI용) — 클릭하면 바로 다운로드").size(12),
+        ]
+        .spacing(4);
+        for (i, p) in EXL2_PRESETS.iter().enumerate() {
+            let btn = button(
+                row![
+                    column![
+                        text(p.label).size(13),
+                        text(p.note).size(10),
+                        text(p.repo_id)
+                            .size(9)
+                            .font(Font::with_name("JetBrains Mono")),
+                    ]
+                    .spacing(2)
+                    .width(Length::Fill),
+                    text(p.vram).size(11),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .padding([6, 12]);
+            exl2_col = exl2_col.push(if is_downloading {
+                btn.style(button::secondary)
+            } else {
+                btn.on_press(Message::DownloadExl2Preset(i))
+            });
+        }
+
+        column![
+            header,
+            text("HuggingFace에서 모델 받아 디스크에 저장.").size(11),
+            Space::new().height(Length::Fixed(4.0)),
+            text("저장 경로 (변경 가능)").size(11),
+            dir_row,
+            Space::new().height(Length::Fixed(12.0)),
+            exl2_col,
+            Space::new().height(Length::Fixed(12.0)),
+            text("HF 일반 모델 (safetensors · xLLM/vLLM용) — 클릭 → 입력란에 채움").size(12),
+            presets_col,
+            Space::new().height(Length::Fixed(8.0)),
+            text("또는 직접 입력").size(11),
+            dl_row,
+            progress,
+            Space::new().height(Length::Fixed(12.0)),
+            // gated repo (Llama 등) 받을 때만 필요
+            token_toggle,
+            token_section,
+        ]
+        .spacing(6)
+        .into()
+    }
+
+    fn view_statusbar(&self) -> Element<'_, Message> {
+        let model_label = self
+            .selected_model
+            .clone()
+            .unwrap_or_else(|| "(없음)".into());
+        let credit_label = match &self.account {
+            Some(a) => match (a.usage, a.limit) {
+                (Some(u), Some(l)) => format!("잔액: ${:.2} / ${:.2}", (l - u).max(0.0), l),
+                (Some(u), None) => format!("사용: ${:.4}", u),
+                _ => "잔액: -".into(),
+            },
+            None => "잔액: -".into(),
+        };
+        let last_cost_label = match self.last_response_cost {
+            Some(c) if c > 0.0 => format!("최근: ${:.4}", c),
+            _ => String::new(),
+        };
+        let busy_prefix: Element<Message> = if self.streaming_block_id.is_some() {
+            text("▶ ").size(11).style(|theme: &Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().primary.base.color),
+            }).into()
+        } else {
+            Space::new().width(Length::Shrink).height(Length::Shrink).into()
+        };
+        let mut bar = row![
+            busy_prefix,
+            text(&self.status).size(11),
+            Space::new().width(Length::Fill),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center);
+        if !last_cost_label.is_empty() {
+            bar = bar.push(text(last_cost_label).size(11));
+        }
+        bar = bar
+            .push(text(credit_label).size(11))
+            .push(text(format!("모델: {}", model_label)).size(11))
+            .push(
+                text(if self.has_key {
+                    "키: 등록됨"
+                } else {
+                    "키: 미등록"
+                })
+                .size(11),
+            )
+            .push(self.endpoint_indicator(11.0));
+
+        container(bar)
+            .padding([4, 14])
+            .width(Length::Fill)
+            .into()
+    }
+}

@@ -8,10 +8,15 @@ impl App {
         match message {
             Message::OpenSettings => {
                 self.show_settings = true;
+                self.settings_tab = SettingsTab::Provider;
                 Task::none()
             }
             Message::CloseSettings => {
                 self.show_settings = false;
+                Task::none()
+            }
+            Message::SetSettingsTab(tab) => {
+                self.settings_tab = tab;
                 Task::none()
             }
             Message::KeyInputChanged(v) => {
@@ -1168,8 +1173,21 @@ impl App {
                 }
                 Task::none()
             }
-            Message::LinkClicked(_uri) => {
-                // TODO: 시스템 브라우저 열기 (webbrowser crate 등)
+            Message::LinkClicked(uri) => {
+                let url = uri.to_string();
+                let lower = url.to_ascii_lowercase();
+                if lower.starts_with("javascript:") {
+                    self.status = "차단된 링크 스킴입니다.".into();
+                    return Task::none();
+                }
+                match webbrowser::open(&url) {
+                    Ok(_) => {
+                        self.status = format!("브라우저에서 열기: {}", url);
+                    }
+                    Err(e) => {
+                        self.status = format!("링크 열기 실패: {}", e);
+                    }
+                }
                 Task::none()
             }
             Message::PickCwd => Task::perform(

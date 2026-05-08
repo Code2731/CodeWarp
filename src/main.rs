@@ -61,7 +61,7 @@ struct ModelOption {
 }
 
 fn vscrollbar() -> Scrollbar {
-    Scrollbar::new().width(8).scroller_width(8).margin(2)
+    Scrollbar::new().width(10).scroller_width(10).margin(2)
 }
 
 /// 바이트 수를 KB/MB/GB 단위로 표시 (1024 진법).
@@ -1013,6 +1013,7 @@ struct App {
     hf_dl: Option<HfDownload>,
 
     show_settings: bool,
+    settings_tab: SettingsTab,
 
     stream_id: ScrollId,
     follow_bottom: bool,
@@ -1219,6 +1220,14 @@ impl SortMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsTab {
+    Provider,
+    Runtime,
+    Models,
+    Mcp,
+}
+
 /// 모델 ID에서 카테고리를 추정. 키워드 매칭 기반.
 /// 코딩/추론 전용 모델만 좁게 매칭하고, 나머지(Claude/GPT-4/Gemini 등)는 범용으로.
 fn categorize_model(model_id: &str) -> Vec<ModelCategory> {
@@ -1250,6 +1259,7 @@ fn categorize_model(model_id: &str) -> Vec<ModelCategory> {
 enum Message {
     OpenSettings,
     CloseSettings,
+    SetSettingsTab(SettingsTab),
     KeyInputChanged(String),
     SaveKey,
     KeySaved(Result<(), String>),
@@ -1398,12 +1408,12 @@ impl App {
         Theme::custom(
             "CodeWarp Dark".to_string(),
             iced::theme::Palette {
-                background: Color::from_rgb(0.055, 0.062, 0.086), // 깊은 다크 navy
-                text: Color::from_rgb(0.92, 0.92, 0.94),
-                primary: Color::from_rgb(0.66, 0.55, 0.96),       // 보라 액센트
-                success: Color::from_rgb(0.31, 0.80, 0.66),       // teal
-                warning: Color::from_rgb(0.95, 0.78, 0.42),       // amber
-                danger: Color::from_rgb(0.96, 0.53, 0.45),        // coral red
+                background: Color::from_rgb(0.047, 0.063, 0.090), // deep midnight blue
+                text: Color::from_rgb(0.93, 0.95, 0.98),
+                primary: Color::from_rgb(0.17, 0.63, 0.95),       // electric blue
+                success: Color::from_rgb(0.20, 0.79, 0.61),       // mint green
+                warning: Color::from_rgb(0.96, 0.74, 0.30),       // amber
+                danger: Color::from_rgb(0.95, 0.42, 0.38),        // warm red
             },
         )
     }
@@ -1457,6 +1467,7 @@ impl App {
             hf_folder_name: None,
             hf_dl: None,
             show_settings: !has_key,
+            settings_tab: SettingsTab::Provider,
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
             current_scroll_y: 0.0,

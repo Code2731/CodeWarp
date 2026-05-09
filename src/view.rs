@@ -140,6 +140,7 @@ impl App {
     }
 
     fn view_usage_summary(&self) -> Element<'_, Message> {
+        const MODEL_ID_PREVIEW_MAX: usize = 24;
         if self.usage.by_model.is_empty() {
             return text("(사용 기록 없음)").size(FS_LABEL).into();
         }
@@ -154,7 +155,7 @@ impl App {
         let mut col = column![].spacing(2);
         for (id, u) in entries.iter().take(5) {
             // model id가 너무 길면 끝부분만
-            let short_id = shorten_tail(id, 24);
+            let short_id = shorten_tail(id, MODEL_ID_PREVIEW_MAX);
             col = col.push(
                 row![
                     text(short_id).size(FS_LABEL),
@@ -178,9 +179,10 @@ impl App {
     }
 
     fn view_sidebar(&self) -> Element<'_, Message> {
+        const CWD_PREVIEW_MAX: usize = 36;
         let cwd_display = self.cwd.display().to_string();
         // 너무 긴 경로는 끝부분만 표시
-        let cwd_short = shorten_tail(&cwd_display, 36);
+        let cwd_short = shorten_tail(&cwd_display, CWD_PREVIEW_MAX);
 
         // 세션 목록 (활성 + 비활성)
         let active_label = if self.current_session_title.trim().is_empty() {

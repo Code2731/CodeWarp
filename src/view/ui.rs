@@ -43,13 +43,15 @@ pub(crate) fn topbar_style(theme: &Theme) -> container::Style {
 
 pub(crate) fn primary_btn(theme: &Theme, status: button::Status) -> button::Style {
     let p = theme.extended_palette();
-    let mut style = button::Style::default();
-    style.background = Some(p.primary.base.color.into());
-    style.text_color = p.primary.base.text;
-    style.border = Border {
-        color: p.primary.strong.color,
-        width: 1.0,
-        radius: 10.0.into(),
+    let mut style = button::Style {
+        background: Some(p.primary.base.color.into()),
+        text_color: p.primary.base.text,
+        border: Border {
+            color: p.primary.strong.color,
+            width: 1.0,
+            radius: 10.0.into(),
+        },
+        ..Default::default()
     };
     if matches!(status, button::Status::Hovered | button::Status::Pressed) {
         style.background = Some(p.primary.strong.color.into());
@@ -76,15 +78,16 @@ pub(crate) fn secondary_btn(theme: &Theme, status: button::Status) -> button::St
     } else {
         p.background.weak.color
     };
-    let mut style = button::Style::default();
-    style.background = Some(bg.into());
-    style.text_color = p.background.base.text;
-    style.border = Border {
-        color: p.background.strong.color,
-        width: 1.0,
-        radius: 10.0.into(),
-    };
-    style
+    button::Style {
+        background: Some(bg.into()),
+        text_color: p.background.base.text,
+        border: Border {
+            color: p.background.strong.color,
+            width: 1.0,
+            radius: 10.0.into(),
+        },
+        ..Default::default()
+    }
 }
 
 pub(crate) fn danger_btn(theme: &Theme, status: button::Status) -> button::Style {
@@ -94,15 +97,16 @@ pub(crate) fn danger_btn(theme: &Theme, status: button::Status) -> button::Style
     } else {
         p.danger.base.color
     };
-    let mut style = button::Style::default();
-    style.background = Some(bg.into());
-    style.text_color = p.danger.base.text;
-    style.border = Border {
-        color: p.danger.strong.color,
-        width: 1.0,
-        radius: 10.0.into(),
-    };
-    style
+    button::Style {
+        background: Some(bg.into()),
+        text_color: p.danger.base.text,
+        border: Border {
+            color: p.danger.strong.color,
+            width: 1.0,
+            radius: 10.0.into(),
+        },
+        ..Default::default()
+    }
 }
 
 pub(crate) fn field_input(theme: &Theme, status: text_input::Status) -> text_input::Style {

@@ -229,7 +229,6 @@ impl App {
                             color: p.primary.base.color,
                             width: 1.0,
                             radius: 10.0.into(),
-                            ..Default::default()
                         },
                         ..Default::default()
                     }
@@ -1196,9 +1195,7 @@ impl App {
         } else {
             TabHealth::Warn
         };
-        let mcp_health = if self.mcp_servers.is_empty() {
-            TabHealth::Warn
-        } else if self.mcp_tools.is_empty() {
+        let mcp_health = if self.mcp_servers.is_empty() || self.mcp_tools.is_empty() {
             TabHealth::Warn
         } else {
             TabHealth::Good
@@ -2110,7 +2107,7 @@ impl App {
                     "{:.0}%",
                     (dl.file_bytes_done as f64 / t as f64) * 100.0
                 ),
-                _ => format!("{}", fmt_bytes(dl.file_bytes_done)),
+                _ => fmt_bytes(dl.file_bytes_done).to_string(),
             };
             column![
                 text(format!(

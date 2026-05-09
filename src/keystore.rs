@@ -57,10 +57,9 @@ pub fn delete_api_key() -> Result<(), String> {
 }
 
 pub fn has_api_key() -> bool {
-    matches!(
-        keyring::Entry::new(SERVICE, USER).and_then(|e| e.get_password()),
-        Ok(_)
-    )
+    keyring::Entry::new(SERVICE, USER)
+        .and_then(|e| e.get_password())
+        .is_ok()
 }
 
 pub fn read_selected_model() -> Option<String> {

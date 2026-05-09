@@ -232,7 +232,7 @@ fn glob_files(cwd: &Path, pattern: &str, max_results: usize) -> Result<Vec<Strin
             Ok(e) => e,
             Err(_) => continue,
         };
-        if !entry.file_type().map_or(false, |ft| ft.is_file()) {
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
         let rel = match entry.path().strip_prefix(cwd) {
@@ -257,7 +257,7 @@ fn grep_files(cwd: &Path, pattern: &str, max_lines: usize) -> Result<Vec<String>
             Ok(e) => e,
             Err(_) => continue,
         };
-        if !entry.file_type().map_or(false, |ft| ft.is_file()) {
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
         let rel = match entry.path().strip_prefix(cwd) {

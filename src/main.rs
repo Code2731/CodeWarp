@@ -201,7 +201,7 @@ async fn collect_mention_candidates(cwd: PathBuf) -> Vec<PathBuf> {
         let mut results = Vec::new();
         for entry in ignore::WalkBuilder::new(&cwd).max_depth(Some(5)).build() {
             let entry = match entry { Ok(e) => e, Err(_) => continue };
-            if !entry.file_type().map_or(false, |ft| ft.is_file()) { continue; }
+            if !entry.file_type().is_some_and(|ft| ft.is_file()) { continue; }
             if let Ok(rel) = entry.path().strip_prefix(&cwd) {
                 results.push(rel.to_path_buf());
             }
@@ -605,7 +605,7 @@ fn parse_apply_candidates(markdown: &str) -> Vec<ApplyCandidate> {
             continue;
         };
         // fence 시작 — language는 fence info의 첫 단어
-        let language = rest.trim().split_whitespace().next().unwrap_or("").to_string();
+        let language = rest.split_whitespace().next().unwrap_or("").to_string();
         // 첫 본문 라인에서 path 추출
         let Some(first) = lines.next() else { break };
         let Some(path) = extract_path_from_comment(first) else {
@@ -722,8 +722,7 @@ fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
 
     let diff = TextDiff::from_lines(old, new);
     let mut col = column![].spacing(0);
-    let mut count = 0usize;
-    for change in diff.iter_all_changes() {
+    for (count, change) in diff.iter_all_changes().enumerate() {
         if count >= MAX_LINES {
             col = col.push(
                 text(format!("…(diff 라인 {}+ 생략)", MAX_LINES))
@@ -750,7 +749,6 @@ fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
                 .font(Font::with_name("JetBrains Mono"))
                 .color(color),
         );
-        count += 1;
     }
     container(col).padding(10).width(Length::Fill).into()
 }

@@ -273,6 +273,7 @@ pub fn humanize_error(raw: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 

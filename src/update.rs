@@ -1361,19 +1361,13 @@ impl App {
                 self.show_command_palette = false;
                 self.command_palette_input.clear();
                 match action {
-                    PaletteAction::NewChat => return Task::done(Message::NewChat),
-                    PaletteAction::PlanMode => {
-                        return Task::done(Message::SetAgentMode(AgentMode::Plan))
-                    }
-                    PaletteAction::BuildMode => {
-                        return Task::done(Message::SetAgentMode(AgentMode::Build))
-                    }
-                    PaletteAction::OpenSettings => return Task::done(Message::OpenSettings),
-                    PaletteAction::PickCwd => return Task::done(Message::PickCwd),
-                    PaletteAction::CycleSort => return Task::done(Message::CycleSortMode),
-                    PaletteAction::ToggleFavorite => {
-                        return Task::done(Message::ToggleFavorite)
-                    }
+                    PaletteAction::NewChat => Task::done(Message::NewChat),
+                    PaletteAction::PlanMode => Task::done(Message::SetAgentMode(AgentMode::Plan)),
+                    PaletteAction::BuildMode => Task::done(Message::SetAgentMode(AgentMode::Build)),
+                    PaletteAction::OpenSettings => Task::done(Message::OpenSettings),
+                    PaletteAction::PickCwd => Task::done(Message::PickCwd),
+                    PaletteAction::CycleSort => Task::done(Message::CycleSortMode),
+                    PaletteAction::ToggleFavorite => Task::done(Message::ToggleFavorite),
                 }
             }
             Message::GenerationLoaded(r) => {

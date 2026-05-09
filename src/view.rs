@@ -50,7 +50,10 @@ impl App {
 
     fn view_topbar(&self) -> Element<'_, Message> {
         let model_picker: Element<Message> = if self.model_ids.is_empty() {
-            text("모델 없음").size(12).into()
+            container(text("모델 없음").size(FS_BODY))
+                .padding([6, 10])
+                .style(panel_style)
+                .into()
         } else {
             {
                 let selected_opt = self.selected_model.as_ref().and_then(|id| {
@@ -138,7 +141,7 @@ impl App {
 
     fn view_usage_summary(&self) -> Element<'_, Message> {
         if self.usage.by_model.is_empty() {
-            return text("(사용 기록 없음)").size(11).into();
+            return text("(사용 기록 없음)").size(FS_LABEL).into();
         }
         // 비용 큰 순 5개
         let mut entries: Vec<(&String, &session::ModelUsage)> =
@@ -166,9 +169,9 @@ impl App {
             };
             col = col.push(
                 row![
-                    text(short_id).size(11),
+                    text(short_id).size(FS_LABEL),
                     Space::new().width(Length::Fill),
-                    text(format!("${:.4}", u.total_cost)).size(11),
+                    text(format!("${:.4}", u.total_cost)).size(FS_LABEL).font(Font::with_name("JetBrains Mono")),
                 ]
                 .spacing(6),
             );
@@ -177,9 +180,9 @@ impl App {
         col = col.push(Space::new().height(Length::Fixed(4.0)));
         col = col.push(
             row![
-                text("총합").size(11),
+                text("총합").size(FS_LABEL).font(semibold_font()),
                 Space::new().width(Length::Fill),
-                text(format!("${:.4}", total)).size(11),
+                text(format!("${:.4}", total)).size(FS_LABEL).font(Font::with_name("JetBrains Mono")),
             ]
             .spacing(6),
         );
@@ -210,15 +213,22 @@ impl App {
             self.current_session_title.clone()
         };
         let mut sessions_col = column![
-            container(text(format!("📌 {}", active_label)).size(12))
+            container(text(format!("📌 {}", active_label)).size(FS_BODY).font(semibold_font()))
                 .padding([6, 8])
                 .width(Length::Fill)
                 .style(|theme: &Theme| {
                     let p = theme.extended_palette();
                     container::Style {
-                        background: Some(p.primary.weak.color.into()),
+                        background: Some(iced::Color::from_rgba(
+                            p.primary.base.color.r,
+                            p.primary.base.color.g,
+                            p.primary.base.color.b,
+                            0.16,
+                        ).into()),
                         border: iced::Border {
-                            radius: 6.0.into(),
+                            color: p.primary.base.color,
+                            width: 1.0,
+                            radius: 10.0.into(),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -237,10 +247,12 @@ impl App {
                 row![
                     button(text("✓").size(11))
                         .on_press(Message::DeleteSession(s.id))
-                        .padding([2, 6]),
+                        .padding([2, 6])
+                        .style(primary_btn),
                     button(text("✗").size(11))
                         .on_press(Message::CancelDeleteSession)
-                        .padding([2, 6]),
+                        .padding([2, 6])
+                        .style(secondary_btn),
                 ]
                 .spacing(2)
                 .into()
@@ -248,13 +260,15 @@ impl App {
                 button(text("✕").size(11))
                     .on_press(Message::AskDeleteSession(s.id))
                     .padding([2, 6])
+                    .style(danger_btn)
                     .into()
             };
             let row_widget = row![
-                button(text(format!("📂 {}", title)).size(12))
+                button(text(format!("📂 {}", title)).size(FS_BODY))
                     .on_press(Message::SwitchSession(s.id))
                     .padding([4, 8])
-                    .width(Length::Fill),
+                    .width(Length::Fill)
+                    .style(secondary_btn),
                 trailing,
             ]
             .spacing(2);
@@ -262,32 +276,34 @@ impl App {
         }
 
         let body = column![
-            button(text("＋ 새 채팅").size(13))
+            button(text("＋ 새 채팅").size(FS_SUBTITLE).font(semibold_font()))
                 .on_press(Message::NewChat)
                 .padding([6, 12])
-                .width(Length::Fill),
+                .width(Length::Fill)
+                .style(primary_btn),
             Space::new().height(Length::Fixed(8.0)),
-            text("채팅").size(11),
+            text("채팅").size(FS_LABEL).font(semibold_font()),
             scrollable(sessions_col)
                 .direction(Direction::Vertical(
                     vscrollbar(),
                 ))
                 .height(Length::Fixed(220.0)),
             Space::new().height(Length::Fixed(14.0)),
-            text("모델 사용량 (누적)").size(11),
+            text("모델 사용량 (누적)").size(FS_LABEL).font(semibold_font()),
             self.view_usage_summary(),
             Space::new().height(Length::Fixed(14.0)),
-            text("작업 폴더").size(11),
-            text(cwd_short).size(12),
-            button(text("📁 폴더 변경").size(11))
+            text("작업 폴더").size(FS_LABEL).font(semibold_font()),
+            text(cwd_short).size(FS_BODY),
+            button(text("📁 폴더 변경").size(FS_LABEL))
                 .on_press(Message::PickCwd)
-                .padding([4, 8]),
+                .padding([4, 8])
+                .style(secondary_btn),
             Space::new().height(Length::Fixed(14.0)),
-            text("프로젝트").size(11),
-            text("CodeWarp").size(13),
+            text("프로젝트").size(FS_LABEL).font(semibold_font()),
+            text("CodeWarp").size(FS_SUBTITLE).font(semibold_font()),
             Space::new().height(Length::Fixed(14.0)),
-            text("컨텍스트").size(11),
-            text("선택 안 됨").size(13),
+            text("컨텍스트").size(FS_LABEL).font(semibold_font()),
+            text("선택 안 됨").size(FS_SUBTITLE),
         ]
         .spacing(6);
 
@@ -299,6 +315,7 @@ impl App {
             .width(Length::Fixed(220.0))
             .height(Length::Fill)
             .padding(14)
+            .style(panel_style)
             .into()
     }
 
@@ -326,26 +343,26 @@ impl App {
         let fail_count = tool_count - success_count;
 
         let stats = column![
-            text("세션 통계").size(11),
-            text(format!("· 메시지: {}", user_msg_count)).size(12),
+            text("세션 통계").size(FS_LABEL).font(semibold_font()),
+            text(format!("· 메시지: {}", user_msg_count)).size(FS_BODY),
             text(format!(
                 "· 도구 호출: {} (✓{} ✗{})",
                 tool_count, success_count, fail_count
             ))
-            .size(12),
-            text(format!("· 모드: {}", self.agent_mode.label())).size(12),
+            .size(FS_BODY),
+            text(format!("· 모드: {}", self.agent_mode.label())).size(FS_BODY),
         ]
         .spacing(2);
 
         // 도구 호출 로그 (역순 — 최근이 위)
-        let mut log_col = column![text("도구 호출 로그").size(11)].spacing(2);
+        let mut log_col = column![text("도구 호출 로그").size(FS_LABEL).font(semibold_font())].spacing(2);
         if tool_results.is_empty() {
-            log_col = log_col.push(text("// 도구 호출 시 여기 누적").size(11));
+            log_col = log_col.push(text("// 도구 호출 시 여기 누적").size(FS_LABEL));
         } else {
             for (name, summary, success) in tool_results.iter().rev() {
                 let icon = if *success { "✓" } else { "✗" };
                 let line = text(format!("{} {} → {}", icon, name, summary))
-                    .size(11)
+                    .size(FS_LABEL)
                     .font(Font::with_name("JetBrains Mono"));
                 log_col = log_col.push(line);
             }
@@ -359,7 +376,8 @@ impl App {
                 "▶ 도구 라운드 {}/{}",
                 self.tool_round, MAX_TOOL_ROUNDS
             ))
-            .size(11)
+            .size(FS_LABEL)
+            .font(semibold_font())
             .style(|theme: &Theme| iced::widget::text::Style {
                 color: Some(theme.extended_palette().primary.base.color),
             })
@@ -387,6 +405,7 @@ impl App {
         .width(Length::Fixed(280.0))
         .height(Length::Fill)
         .padding(14)
+        .style(panel_style)
         .into()
     }
 
@@ -397,26 +416,28 @@ impl App {
             "src/main.rs의 첫 30줄을 요약해줘",
             "examples/hello.rs 만들어줘",
         ];
-        let title = text("CodeWarp").size(28);
-        let subtitle = text("AI 코딩 데스크톱 — Plan으로 안전하게 둘러보고, Build로 변경 적용").size(12);
+        let title = text("CodeWarp").size(30).font(bold_font());
+        let subtitle = text("AI 코딩 데스크톱 — Plan으로 안전하게 둘러보고, Build로 변경 적용").size(FS_BODY);
 
-        let mut examples_col = column![text("다음을 시도해보세요").size(11)].spacing(4);
+        let mut examples_col = column![text("다음을 시도해보세요").size(FS_LABEL).font(semibold_font())].spacing(6);
         for ex in EXAMPLES {
             examples_col = examples_col.push(
-                button(text(format!("▸ {}", ex)).size(13))
+                button(text(format!("▸ {}", ex)).size(FS_SUBTITLE))
                     .on_press(Message::InputChanged((*ex).to_string()))
-                    .padding([4, 10]),
+                    .padding([7, 12])
+                    .width(Length::Fill)
+                    .style(secondary_btn),
             );
         }
 
         let modes = column![
-            text("모드 (입력창 좌측 라벨 클릭 또는 슬래시)").size(11),
-            text("/plan   계획 먼저, 도구는 read-only").size(12),
-            text("/build  변경 적용 (write_file, run_command)").size(12),
+            text("모드 (입력창 좌측 라벨 클릭 또는 슬래시)").size(FS_LABEL).font(semibold_font()),
+            text("/plan   계획 먼저, 도구는 read-only").size(FS_BODY),
+            text("/build  변경 적용 (write_file, run_command)").size(FS_BODY),
         ]
         .spacing(2);
 
-        let shortcuts = text("Ctrl+K 명령 팔레트 · Ctrl+N 새 채팅 · Ctrl+, 설정").size(11);
+        let shortcuts = text("Ctrl+K 명령 팔레트 · Ctrl+N 새 채팅 · Ctrl+, 설정").size(FS_LABEL);
 
         container(
             column![
@@ -435,6 +456,7 @@ impl App {
         .center_x(Length::Fill)
         .center_y(Length::Fill)
         .padding(20)
+        .style(panel_style)
         .into()
     }
 
@@ -453,7 +475,7 @@ impl App {
                     let icon = if *success { "✓" } else { "✗" };
                     let chip = container(
                         text(format!("{} {} → {}", icon, name, summary))
-                            .size(11)
+                            .size(FS_LABEL)
                             .font(Font::with_name("JetBrains Mono")),
                     )
                     .padding([4, 10])
@@ -470,7 +492,7 @@ impl App {
                                         p.danger.weak.color
                                     },
                                     width: 1.0,
-                                    radius: 6.0.into(),
+                                    radius: 10.0.into(),
                                 },
                                 ..Default::default()
                             }
@@ -482,9 +504,10 @@ impl App {
                 let role_label = b.body.role_label();
                 let has_content = !b.body.is_empty_for_history();
                 let copy_btn: Element<Message> = if has_content {
-                    button(text("복사").size(10))
+                    button(text("복사").size(FS_MICRO))
                         .on_press(Message::CopyBlock(b.id))
                         .padding([2, 8])
+                        .style(secondary_btn)
                         .into()
                 } else {
                     Space::new().width(Length::Shrink).height(Length::Shrink).into()
@@ -495,9 +518,10 @@ impl App {
                             ViewMode::Rendered => "원문",
                             ViewMode::Raw => "예쁘게",
                         };
-                        button(text(label).size(10))
+                        button(text(label).size(FS_MICRO))
                             .on_press(Message::ToggleBlockView(b.id))
                             .padding([2, 8])
+                            .style(secondary_btn)
                             .into()
                     } else {
                         Space::new().width(Length::Shrink).height(Length::Shrink).into()
@@ -508,27 +532,29 @@ impl App {
                 } else if Some(i) == last_user_idx
                     && matches!(&b.body, BlockBody::User(_))
                 {
-                    button(text("✎").size(10))
+                    button(text("✎").size(FS_MICRO))
                         .on_press(Message::EditLastUser)
                         .padding([2, 8])
+                        .style(secondary_btn)
                         .into()
                 } else if Some(i) == last_asst_idx
                     && matches!(&b.body, BlockBody::Assistant(_))
                     && has_content
                 {
-                    button(text("↻").size(10))
+                    button(text("↻").size(FS_MICRO))
                         .on_press(Message::RegenerateLast)
                         .padding([2, 8])
+                        .style(secondary_btn)
                         .into()
                 } else {
                     Space::new().width(Length::Shrink).height(Length::Shrink).into()
                 };
                 let model_label: Element<Message> = match &b.model {
-                    Some(m) => text(format!("· {}", m)).size(10).into(),
+                    Some(m) => text(format!("· {}", m)).size(FS_MICRO).into(),
                     None => Space::new().width(Length::Shrink).height(Length::Shrink).into(),
                 };
                 let header = row![
-                    text(role_label).size(11),
+                    text(role_label).size(FS_LABEL).font(semibold_font()),
                     model_label,
                     Space::new().width(Length::Fill),
                     action_btn,
@@ -539,14 +565,14 @@ impl App {
                 .align_y(Alignment::Center);
 
                 let body_view: Element<Message> = match (&b.body, b.view_mode) {
-                    (BlockBody::User(s), _) => text(s).size(13).into(),
+                    (BlockBody::User(s), _) => text(s).size(FS_SUBTITLE).into(),
                     (BlockBody::Assistant(content), ViewMode::Raw) => {
                         let id = b.id;
                         text_editor(content)
                             .on_action(move |action| Message::EditorAction(id, action))
                             .height(Length::Shrink)
                             .padding(0)
-                            .size(13)
+                            .size(FS_SUBTITLE)
                             .into()
                     }
                     (BlockBody::Assistant(_), ViewMode::Rendered) => {
@@ -562,7 +588,7 @@ impl App {
                 let apply_section: Element<Message> = if b.apply_candidates.is_empty() {
                     Space::new().height(Length::Shrink).into()
                 } else {
-                    let mut col = column![text("적용 가능한 변경사항").size(11)].spacing(4);
+                    let mut col = column![text("적용 가능한 변경사항").size(FS_LABEL).font(semibold_font())].spacing(4);
                     for (ci, (cand, applied)) in b.apply_candidates.iter().enumerate() {
                         let label = if *applied {
                             format!("✓ {} ({} bytes)", cand.path, cand.content.len())
@@ -570,9 +596,9 @@ impl App {
                             format!("📝 {} ({} bytes)", cand.path, cand.content.len())
                         };
                         let btn: Element<Message> = if *applied {
-                            text("적용됨").size(11).into()
+                            text("적용됨").size(FS_LABEL).into()
                         } else {
-                            button(text("Apply").size(11))
+                            button(text("적용").size(FS_LABEL))
                                 .on_press(Message::ApplyChange(b.id, ci))
                                 .padding([2, 10])
                                 .style(primary_btn)
@@ -580,7 +606,7 @@ impl App {
                         };
                         col = col.push(
                             row![
-                                text(label).size(12).font(Font::with_name("JetBrains Mono")),
+                                text(label).size(FS_BODY).font(Font::with_name("JetBrains Mono")),
                                 Space::new().width(Length::Fill),
                                 btn,
                             ]
@@ -601,8 +627,8 @@ impl App {
                     let p = theme.extended_palette();
                     let (bg, fg, border) = if is_user {
                         (
-                            p.primary.base.color,
-                            p.primary.base.text,
+                            p.primary.weak.color,
+                            p.background.base.text,
                             p.primary.strong.color,
                         )
                     } else {
@@ -649,7 +675,7 @@ impl App {
             container(
                 row![
                     text("커맨드:").size(FS_LABEL).font(semibold_font()),
-                    button(text("/plan").size(11))
+                    button(text("/plan").size(FS_LABEL).font(semibold_font()))
                         .on_press(Message::SetAgentMode(AgentMode::Plan))
                         .padding([3, 10])
                         .style(if self.agent_mode == AgentMode::Plan {
@@ -657,7 +683,7 @@ impl App {
                         } else {
                             secondary_btn
                         }),
-                    button(text("/build").size(11))
+                    button(text("/build").size(FS_LABEL).font(semibold_font()))
                         .on_press(Message::SetAgentMode(AgentMode::Build))
                         .padding([3, 10])
                         .style(if self.agent_mode == AgentMode::Build {
@@ -686,7 +712,7 @@ impl App {
                 for (i, path) in filtered.iter().enumerate() {
                     let label = path.to_string_lossy().to_string();
                     let is_selected = i == self.mention_selected;
-                    let btn = button(text(label).size(12))
+                    let btn = button(text(label).size(FS_BODY))
                         .on_press(Message::MentionConfirm)
                         .padding([6, 10])
                         .width(Length::Fill)
@@ -723,8 +749,8 @@ impl App {
                 chips = chips.push(
                     container(
                         row![
-                            text(format!("📄 {name}")).size(11),
-                            button(text("✕").size(10))
+                            text(format!("📄 {name}")).size(FS_LABEL),
+                            button(text("✕").size(FS_MICRO))
                                 .on_press(Message::RemoveAttachment(i))
                                 .padding([1, 4])
                                 .style(secondary_btn),
@@ -749,7 +775,7 @@ impl App {
         };
 
         let action_btn: Element<Message> = if self.streaming_block_id.is_some() {
-            button(text("■ 중지").size(13))
+            button(text("■ 중지").size(FS_SUBTITLE).font(semibold_font()))
                 .on_press(Message::StopStream)
                 .padding([8, 18])
                 .style(danger_btn)
@@ -812,11 +838,11 @@ impl App {
     }
 
     fn view_command_palette(&self) -> Element<'_, Message> {
-        let header = text("명령 팔레트").size(18);
+        let header = text("명령 팔레트").size(18).font(bold_font());
         let hint = column![
-            text("탐색  Esc 닫기 · Ctrl+K 토글").size(11),
-            text("작업  Ctrl+N 새 채팅 · Ctrl+, 설정").size(11),
-            text("모드  Ctrl+Shift+P 계획 · Ctrl+Shift+B 빌드").size(11),
+            text("탐색  Esc 닫기 · Ctrl+K 토글").size(FS_LABEL),
+            text("작업  Ctrl+N 새 채팅 · Ctrl+, 설정").size(FS_LABEL),
+            text("모드  Ctrl+Shift+P 계획 · Ctrl+Shift+B 빌드").size(FS_LABEL),
         ]
         .spacing(2);
         let input = text_input("명령 검색…", &self.command_palette_input)
@@ -829,20 +855,21 @@ impl App {
         let filtered = self.filtered_palette_commands();
         let mut list = column![].spacing(4);
         if filtered.is_empty() {
-            list = list.push(text("(매칭 없음)").size(12));
+            list = list.push(text("(매칭 없음)").size(FS_BODY));
         } else {
             for (i, cmd) in filtered.iter().enumerate() {
                 list = list.push(
                     button(
                         column![
-                            text(cmd.label).size(13),
-                            text(cmd.hint).size(11),
+                            text(cmd.label).size(FS_SUBTITLE).font(semibold_font()),
+                            text(cmd.hint).size(FS_LABEL),
                         ]
                         .spacing(2),
                     )
                     .on_press(Message::ExecuteCommand(i))
                     .padding([6, 10])
-                    .width(Length::Fill),
+                    .width(Length::Fill)
+                    .style(secondary_btn),
                 );
             }
         }
@@ -861,9 +888,10 @@ impl App {
             Space::new().height(Length::Fixed(8.0)),
             row![
                 Space::new().width(Length::Fill),
-                button(text("닫기").size(12))
+                button(text("닫기").size(FS_BODY))
                     .on_press(Message::CloseCommandPalette)
-                    .padding([4, 12]),
+                    .padding([4, 12])
+                    .style(secondary_btn),
             ],
         ]
         .spacing(4);
@@ -871,6 +899,7 @@ impl App {
         container(body)
             .padding(20)
             .width(Length::Fixed(560.0))
+            .style(panel_style)
             .into()
     }
 
@@ -880,7 +909,8 @@ impl App {
             "⚠ AI가 {}개 도구 실행을 요청했습니다 (카드 클릭으로 미리보기)",
             n
         ))
-        .size(12);
+        .size(FS_BODY)
+        .font(semibold_font());
 
         let mut cards = column![].spacing(4);
         for (idx, tc) in self.pending_write_calls.iter().enumerate() {
@@ -925,7 +955,7 @@ impl App {
 
             let summary_btn: Element<Message> = button(
                 text(summary_text)
-                    .size(12)
+                    .size(FS_BODY)
                     .font(if tc.name == "run_command" {
                         Font::with_name("JetBrains Mono")
                     } else {
@@ -935,11 +965,13 @@ impl App {
             .on_press(Message::ToggleConfirmExpand(idx))
             .padding([2, 6])
             .width(Length::Fill)
+            .style(secondary_btn)
             .into();
 
-            let discard_btn: Element<Message> = button(text("✗").size(11))
+            let discard_btn: Element<Message> = button(text("✗").size(FS_LABEL))
                 .on_press(Message::DiscardWriteCall(idx))
                 .padding([2, 6])
+                .style(danger_btn)
                 .into();
 
             let row_widget = row![summary_btn, discard_btn].spacing(4);
@@ -951,13 +983,15 @@ impl App {
         }
 
         let actions = row![
-            button(text("거부").size(12))
+            button(text("거부").size(FS_BODY))
                 .on_press(Message::DenyWrites)
-                .padding([4, 14]),
+                .padding([4, 14])
+                .style(danger_btn),
             Space::new().width(Length::Fill),
-            button(text("✓ 모두 승인").size(12))
+            button(text("✓ 모두 승인").size(FS_BODY))
                 .on_press(Message::ApproveWrites)
-                .padding([4, 14]),
+                .padding([4, 14])
+                .style(primary_btn),
         ]
         .spacing(8)
         .align_y(Alignment::Center);
@@ -987,7 +1021,7 @@ impl App {
                 border: iced::Border {
                     color: p.danger.weak.color,
                     width: 1.0,
-                    radius: 6.0.into(),
+                    radius: 10.0.into(),
                 },
                 ..Default::default()
             }
@@ -998,12 +1032,12 @@ impl App {
     #[allow(dead_code)]
     fn view_write_confirm(&self) -> Element<'_, Message> {
         let mut col = column![
-            text("파일 쓰기 승인 대기").size(22),
+            text("파일 쓰기 승인 대기").size(22).font(bold_font()),
             text(format!(
                 "AI가 {}개의 파일을 변경하려고 합니다. 내용을 검토한 뒤 승인 또는 거부하세요.",
                 self.pending_write_calls.len()
             ))
-            .size(13),
+            .size(FS_SUBTITLE),
             Space::new().height(Length::Fixed(14.0)),
         ]
         .spacing(6);
@@ -1030,7 +1064,7 @@ impl App {
                             Some(old) => render_diff(&old, &args.content),
                             None => container(
                                 text(args.content.clone())
-                                    .size(12)
+                                    .size(FS_BODY)
                                     .font(Font::with_name("JetBrains Mono")),
                             )
                             .padding(10)
@@ -1038,7 +1072,7 @@ impl App {
                             .into(),
                         };
                         column![
-                            text(header).size(15),
+                            text(header).size(15).font(semibold_font()),
                             Space::new().height(Length::Fixed(6.0)),
                             diff_view,
                         ]
@@ -1046,19 +1080,19 @@ impl App {
                         .into()
                     }
                     Err(e) => column![
-                        text(format!("[arguments 파싱 실패] {}", e)).size(13),
-                        text(tc.arguments.clone()).size(11),
+                        text(format!("[arguments 파싱 실패] {}", e)).size(FS_SUBTITLE),
+                        text(tc.arguments.clone()).size(FS_LABEL),
                     ]
                     .spacing(4)
                     .into(),
                 },
                 "run_command" => match tools::RunCommandArgs::parse(&tc.arguments) {
                     Ok(args) => column![
-                        text("🖥 셸 명령 실행").size(15),
+                        text("🖥 셸 명령 실행").size(15).font(semibold_font()),
                         Space::new().height(Length::Fixed(6.0)),
                         container(
                             text(format!("$ {}", args.command))
-                                .size(13)
+                                .size(FS_SUBTITLE)
                                 .font(Font::with_name("JetBrains Mono")),
                         )
                         .padding(10)
@@ -1067,29 +1101,31 @@ impl App {
                     .spacing(4)
                     .into(),
                     Err(e) => column![
-                        text(format!("[arguments 파싱 실패] {}", e)).size(13),
-                        text(tc.arguments.clone()).size(11),
+                        text(format!("[arguments 파싱 실패] {}", e)).size(FS_SUBTITLE),
+                        text(tc.arguments.clone()).size(FS_LABEL),
                     ]
                     .spacing(4)
                     .into(),
                 },
                 other => column![
-                    text(format!("[알 수 없는 도구] {}", other)).size(13),
-                    text(tc.arguments.clone()).size(11),
+                    text(format!("[알 수 없는 도구] {}", other)).size(FS_SUBTITLE),
+                    text(tc.arguments.clone()).size(FS_LABEL),
                 ]
                 .spacing(4)
                 .into(),
             };
-            col = col.push(container(card).padding(12).width(Length::Fill));
+            col = col.push(container(card).padding(12).width(Length::Fill).style(panel_style));
         }
 
         let actions = row![
-            button(text("거부").size(13))
+            button(text("거부").size(FS_SUBTITLE))
                 .on_press(Message::DenyWrites)
-                .padding([6, 16]),
-            button(text("✓ 모두 승인").size(13))
+                .padding([6, 16])
+                .style(danger_btn),
+            button(text("✓ 모두 승인").size(FS_SUBTITLE))
                 .on_press(Message::ApproveWrites)
-                .padding([6, 16]),
+                .padding([6, 16])
+                .style(primary_btn),
         ]
         .spacing(8);
 
@@ -1106,6 +1142,7 @@ impl App {
         .padding(20)
         .width(Length::Fill)
         .height(Length::Fill)
+        .style(panel_style)
         .into()
     }
 
@@ -2155,13 +2192,13 @@ impl App {
     fn view_pty_panel(&self) -> Element<'_, Message> {
         // 헤더 행: 제목 + 버튼들
         let header = row![
-            text("터미널").size(13),
+            text("터미널").size(FS_SUBTITLE).font(semibold_font()),
             Space::new().width(Length::Fill),
-            button(text("✕ Clear").size(11))
+            button(text("✕ Clear").size(FS_LABEL))
                 .on_press(Message::PtyClear)
                 .padding([2, 8])
                 .style(secondary_btn),
-            button(text("✕").size(11))
+            button(text("✕").size(FS_LABEL))
                 .on_press(Message::PtyToggle)
                 .padding([2, 8])
                 .style(secondary_btn),
@@ -2175,7 +2212,7 @@ impl App {
         for line in &self.pty_output {
             out_col = out_col.push(
                 text(line)
-                    .size(12)
+                    .size(FS_BODY)
                     .font(Font::with_name("JetBrains Mono")),
             );
         }
@@ -2194,13 +2231,15 @@ impl App {
             .on_input(Message::PtyInputChanged)
             .on_submit(Message::PtySend)
             .padding(6)
+            .size(FS_LABEL)
+            .style(field_input)
             .font(Font::with_name("JetBrains Mono"))
             .width(Length::Fill),
-            button(text("전송").size(11))
+            button(text("전송").size(FS_LABEL))
                 .on_press_maybe(if session_active { Some(Message::PtySend) } else { None })
                 .padding([6, 10])
                 .style(primary_btn),
-            button(text("^C").size(11))
+            button(text("^C").size(FS_LABEL))
                 .on_press_maybe(if session_active { Some(Message::PtyCtrlC) } else { None })
                 .padding([6, 8])
                 .style(danger_btn),
@@ -2235,7 +2274,7 @@ impl App {
             _ => String::new(),
         };
         let busy_prefix: Element<Message> = if self.streaming_block_id.is_some() {
-            text("▶ ").size(11).style(|theme: &Theme| iced::widget::text::Style {
+            text("▶ ").size(FS_LABEL).style(|theme: &Theme| iced::widget::text::Style {
                 color: Some(theme.extended_palette().primary.base.color),
             }).into()
         } else {
@@ -2243,29 +2282,30 @@ impl App {
         };
         let mut bar = row![
             busy_prefix,
-            text(&self.status).size(11),
+            text(&self.status).size(FS_LABEL),
             Space::new().width(Length::Fill),
         ]
-        .spacing(4)
+        .spacing(8)
         .align_y(Alignment::Center);
         if !last_cost_label.is_empty() {
-            bar = bar.push(text(last_cost_label).size(11));
+            bar = bar.push(text(last_cost_label).size(FS_LABEL).font(Font::with_name("JetBrains Mono")));
         }
         bar = bar
-            .push(text(credit_label).size(11))
-            .push(text(format!("모델: {}", model_label)).size(11))
+            .push(text(credit_label).size(FS_LABEL))
+            .push(text(format!("모델: {}", model_label)).size(FS_LABEL))
             .push(
                 text(if self.has_key {
                     "키: 등록됨"
                 } else {
                     "키: 미등록"
                 })
-                .size(11),
+                .size(FS_LABEL),
             )
-            .push(self.endpoint_indicator(11.0));
+            .push(self.endpoint_indicator(FS_LABEL));
 
         container(bar)
             .padding([4, 14])
+            .style(topbar_style)
             .width(Length::Fill)
             .into()
     }

@@ -36,7 +36,7 @@ pub enum DownloadEvent {
         bytes_done: u64,
         bytes_total: Option<u64>,
     },
-    FileDone { idx: usize },
+    FileDone,
     AllDone,
     Error(String),
 }
@@ -170,7 +170,7 @@ pub fn download_repo(
                 bytes_done,
                 bytes_total: total_bytes,
             };
-            yield DownloadEvent::FileDone { idx };
+            yield DownloadEvent::FileDone;
         }
 
         yield DownloadEvent::AllDone;

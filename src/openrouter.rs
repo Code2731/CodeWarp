@@ -152,10 +152,8 @@ fn http_client() -> reqwest::Client {
 /// OpenRouter 키의 사용량/한도 정보 (`/api/v1/auth/key`).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AuthKeyData {
-    pub label: Option<String>,
     pub usage: Option<f64>,
     pub limit: Option<f64>,
-    pub is_free_tier: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -166,7 +164,6 @@ struct AuthKeyResponse {
 /// /api/v1/generation 응답 — 한 라운드의 실제 비용/토큰.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GenerationData {
-    pub id: String,
     pub model: Option<String>,
     pub total_cost: Option<f64>,
     pub native_tokens_prompt: Option<u64>,

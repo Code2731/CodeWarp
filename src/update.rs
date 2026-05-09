@@ -468,7 +468,7 @@ impl App {
                             dl.file_bytes_done = *bytes_done;
                             dl.file_bytes_total = *bytes_total;
                         }
-                        hf::DownloadEvent::FileDone { .. } => {}
+                        hf::DownloadEvent::FileDone => {}
                         hf::DownloadEvent::AllDone => {
                             self.status = format!(
                                 "다운로드 완료: {} — 이 경로를 inference 엔진(xLLM 등)에 지정해 띄운 뒤 Tabby URL 자리에 그 endpoint 입력",

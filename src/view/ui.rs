@@ -6,6 +6,9 @@ pub(crate) const FS_SUBTITLE: f32 = 13.0;
 pub(crate) const FS_BODY: f32 = 12.0;
 pub(crate) const FS_LABEL: f32 = 11.0;
 pub(crate) const FS_MICRO: f32 = 10.0;
+const BORDER_WIDTH: f32 = 1.0;
+const PANEL_RADIUS: f32 = 12.0;
+const CONTROL_RADIUS: f32 = 10.0;
 
 pub(crate) fn panel_style(theme: &Theme) -> container::Style {
     let p = theme.extended_palette();
@@ -13,8 +16,8 @@ pub(crate) fn panel_style(theme: &Theme) -> container::Style {
         background: Some(p.background.weak.color.into()),
         border: Border {
             color: p.background.strong.color,
-            width: 1.0,
-            radius: 12.0.into(),
+            width: BORDER_WIDTH,
+            radius: PANEL_RADIUS.into(),
         },
         ..Default::default()
     }
@@ -34,8 +37,8 @@ pub(crate) fn topbar_style(theme: &Theme) -> container::Style {
         ),
         border: Border {
             color: p.background.strong.color,
-            width: 1.0,
-            radius: 12.0.into(),
+            width: BORDER_WIDTH,
+            radius: PANEL_RADIUS.into(),
         },
         ..Default::default()
     }
@@ -48,8 +51,8 @@ pub(crate) fn primary_btn(theme: &Theme, status: button::Status) -> button::Styl
         text_color: p.primary.base.text,
         border: Border {
             color: p.primary.strong.color,
-            width: 1.0,
-            radius: 10.0.into(),
+            width: BORDER_WIDTH,
+            radius: CONTROL_RADIUS.into(),
         },
         ..Default::default()
     };
@@ -83,8 +86,8 @@ pub(crate) fn secondary_btn(theme: &Theme, status: button::Status) -> button::St
         text_color: p.background.base.text,
         border: Border {
             color: p.background.strong.color,
-            width: 1.0,
-            radius: 10.0.into(),
+            width: BORDER_WIDTH,
+            radius: CONTROL_RADIUS.into(),
         },
         ..Default::default()
     }
@@ -102,8 +105,8 @@ pub(crate) fn danger_btn(theme: &Theme, status: button::Status) -> button::Style
         text_color: p.danger.base.text,
         border: Border {
             color: p.danger.strong.color,
-            width: 1.0,
-            radius: 10.0.into(),
+            width: BORDER_WIDTH,
+            radius: CONTROL_RADIUS.into(),
         },
         ..Default::default()
     }
@@ -121,8 +124,8 @@ pub(crate) fn field_input(theme: &Theme, status: text_input::Status) -> text_inp
     .into();
     style.border = Border {
         color: p.background.strong.color,
-        width: 1.0,
-        radius: 10.0.into(),
+        width: BORDER_WIDTH,
+        radius: CONTROL_RADIUS.into(),
     };
     style.placeholder = Color::from_rgba(
         p.background.weak.text.r,

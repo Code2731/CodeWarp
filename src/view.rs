@@ -154,19 +154,7 @@ impl App {
         let mut col = column![].spacing(2);
         for (id, u) in entries.iter().take(5) {
             // model id가 너무 길면 끝부분만
-            let short_id: String = if id.chars().count() > 24 {
-                let tail: String = id
-                    .chars()
-                    .rev()
-                    .take(22)
-                    .collect::<Vec<char>>()
-                    .into_iter()
-                    .rev()
-                    .collect();
-                format!("…{}", tail)
-            } else {
-                (*id).clone()
-            };
+            let short_id = shorten_tail(id, 24);
             col = col.push(
                 row![
                     text(short_id).size(FS_LABEL),
@@ -192,19 +180,7 @@ impl App {
     fn view_sidebar(&self) -> Element<'_, Message> {
         let cwd_display = self.cwd.display().to_string();
         // 너무 긴 경로는 끝부분만 표시
-        let cwd_short = if cwd_display.chars().count() > 36 {
-            let tail: String = cwd_display
-                .chars()
-                .rev()
-                .take(34)
-                .collect::<Vec<char>>()
-                .into_iter()
-                .rev()
-                .collect();
-            format!("…{}", tail)
-        } else {
-            cwd_display.clone()
-        };
+        let cwd_short = shorten_tail(&cwd_display, 36);
 
         // 세션 목록 (활성 + 비활성)
         let active_label = if self.current_session_title.trim().is_empty() {

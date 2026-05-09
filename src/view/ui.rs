@@ -182,6 +182,12 @@ pub(crate) fn shorten_tail(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         return s.to_string();
     }
+    if max_chars == 0 {
+        return String::new();
+    }
+    if max_chars == 1 {
+        return "…".to_string();
+    }
     let tail: String = s
         .chars()
         .rev()
@@ -190,5 +196,5 @@ pub(crate) fn shorten_tail(s: &str, max_chars: usize) -> String {
         .into_iter()
         .rev()
         .collect();
-    format!("...{}", tail)
+    format!("…{}", tail)
 }

@@ -20,6 +20,10 @@ const INPUT_PLACEHOLDER_ALPHA: f32 = 0.82;
 const INPUT_SELECTION_ALPHA: f32 = 0.36;
 const INPUT_DISABLED_ALPHA: f32 = 0.72;
 
+fn with_alpha(color: Color, alpha: f32) -> Color {
+    Color::from_rgba(color.r, color.g, color.b, alpha)
+}
+
 pub(crate) fn panel_style(theme: &Theme) -> container::Style {
     let p = theme.extended_palette();
     container::Style {
@@ -36,15 +40,7 @@ pub(crate) fn panel_style(theme: &Theme) -> container::Style {
 pub(crate) fn topbar_style(theme: &Theme) -> container::Style {
     let p = theme.extended_palette();
     container::Style {
-        background: Some(
-            Color::from_rgba(
-                p.background.strong.color.r,
-                p.background.strong.color.g,
-                p.background.strong.color.b,
-                TOPBAR_BG_ALPHA,
-            )
-            .into(),
-        ),
+        background: Some(with_alpha(p.background.strong.color, TOPBAR_BG_ALPHA).into()),
         border: Border {
             color: p.background.strong.color,
             width: BORDER_WIDTH,
@@ -70,15 +66,7 @@ pub(crate) fn primary_btn(theme: &Theme, status: button::Status) -> button::Styl
         style.background = Some(p.primary.strong.color.into());
     }
     if matches!(status, button::Status::Disabled) {
-        style.background = Some(
-            Color::from_rgba(
-                p.primary.base.color.r,
-                p.primary.base.color.g,
-                p.primary.base.color.b,
-                DISABLED_BG_ALPHA,
-            )
-            .into(),
-        );
+        style.background = Some(with_alpha(p.primary.base.color, DISABLED_BG_ALPHA).into());
         style.text_color = Color::from_rgba(
             DISABLED_TEXT_R,
             DISABLED_TEXT_G,
@@ -130,30 +118,14 @@ pub(crate) fn danger_btn(theme: &Theme, status: button::Status) -> button::Style
 pub(crate) fn field_input(theme: &Theme, status: text_input::Status) -> text_input::Style {
     let p = theme.extended_palette();
     let mut style = text_input::default(theme, text_input::Status::Active);
-    style.background = Color::from_rgba(
-        p.background.base.color.r,
-        p.background.base.color.g,
-        p.background.base.color.b,
-        INPUT_BG_ALPHA,
-    )
-    .into();
+    style.background = with_alpha(p.background.base.color, INPUT_BG_ALPHA).into();
     style.border = Border {
         color: p.background.strong.color,
         width: BORDER_WIDTH,
         radius: CONTROL_RADIUS.into(),
     };
-    style.placeholder = Color::from_rgba(
-        p.background.weak.text.r,
-        p.background.weak.text.g,
-        p.background.weak.text.b,
-        INPUT_PLACEHOLDER_ALPHA,
-    );
-    style.selection = Color::from_rgba(
-        p.primary.strong.color.r,
-        p.primary.strong.color.g,
-        p.primary.strong.color.b,
-        INPUT_SELECTION_ALPHA,
-    );
+    style.placeholder = with_alpha(p.background.weak.text, INPUT_PLACEHOLDER_ALPHA);
+    style.selection = with_alpha(p.primary.strong.color, INPUT_SELECTION_ALPHA);
 
     match status {
         text_input::Status::Hovered => {
@@ -165,19 +137,8 @@ pub(crate) fn field_input(theme: &Theme, status: text_input::Status) -> text_inp
             style
         }
         text_input::Status::Disabled => {
-            style.background = Color::from_rgba(
-                p.background.weak.color.r,
-                p.background.weak.color.g,
-                p.background.weak.color.b,
-                INPUT_DISABLED_ALPHA,
-            )
-            .into();
-            style.value = Color::from_rgba(
-                p.background.strong.text.r,
-                p.background.strong.text.g,
-                p.background.strong.text.b,
-                INPUT_DISABLED_ALPHA,
-            );
+            style.background = with_alpha(p.background.weak.color, INPUT_DISABLED_ALPHA).into();
+            style.value = with_alpha(p.background.strong.text, INPUT_DISABLED_ALPHA);
             style
         }
         text_input::Status::Active => style,

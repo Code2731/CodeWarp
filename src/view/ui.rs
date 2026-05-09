@@ -9,6 +9,16 @@ pub(crate) const FS_MICRO: f32 = 10.0;
 const BORDER_WIDTH: f32 = 1.0;
 const PANEL_RADIUS: f32 = 12.0;
 const CONTROL_RADIUS: f32 = 10.0;
+const TOPBAR_BG_ALPHA: f32 = 0.45;
+const DISABLED_BG_ALPHA: f32 = 0.45;
+const DISABLED_TEXT_R: f32 = 0.92;
+const DISABLED_TEXT_G: f32 = 0.94;
+const DISABLED_TEXT_B: f32 = 0.98;
+const DISABLED_TEXT_A: f32 = 0.75;
+const INPUT_BG_ALPHA: f32 = 0.88;
+const INPUT_PLACEHOLDER_ALPHA: f32 = 0.82;
+const INPUT_SELECTION_ALPHA: f32 = 0.36;
+const INPUT_DISABLED_ALPHA: f32 = 0.72;
 
 pub(crate) fn panel_style(theme: &Theme) -> container::Style {
     let p = theme.extended_palette();
@@ -31,7 +41,7 @@ pub(crate) fn topbar_style(theme: &Theme) -> container::Style {
                 p.background.strong.color.r,
                 p.background.strong.color.g,
                 p.background.strong.color.b,
-                0.45,
+                TOPBAR_BG_ALPHA,
             )
             .into(),
         ),
@@ -65,11 +75,16 @@ pub(crate) fn primary_btn(theme: &Theme, status: button::Status) -> button::Styl
                 p.primary.base.color.r,
                 p.primary.base.color.g,
                 p.primary.base.color.b,
-                0.45,
+                DISABLED_BG_ALPHA,
             )
             .into(),
         );
-        style.text_color = Color::from_rgba(0.92, 0.94, 0.98, 0.75);
+        style.text_color = Color::from_rgba(
+            DISABLED_TEXT_R,
+            DISABLED_TEXT_G,
+            DISABLED_TEXT_B,
+            DISABLED_TEXT_A,
+        );
     }
     style
 }
@@ -119,7 +134,7 @@ pub(crate) fn field_input(theme: &Theme, status: text_input::Status) -> text_inp
         p.background.base.color.r,
         p.background.base.color.g,
         p.background.base.color.b,
-        0.88,
+        INPUT_BG_ALPHA,
     )
     .into();
     style.border = Border {
@@ -131,13 +146,13 @@ pub(crate) fn field_input(theme: &Theme, status: text_input::Status) -> text_inp
         p.background.weak.text.r,
         p.background.weak.text.g,
         p.background.weak.text.b,
-        0.82,
+        INPUT_PLACEHOLDER_ALPHA,
     );
     style.selection = Color::from_rgba(
         p.primary.strong.color.r,
         p.primary.strong.color.g,
         p.primary.strong.color.b,
-        0.36,
+        INPUT_SELECTION_ALPHA,
     );
 
     match status {
@@ -154,14 +169,14 @@ pub(crate) fn field_input(theme: &Theme, status: text_input::Status) -> text_inp
                 p.background.weak.color.r,
                 p.background.weak.color.g,
                 p.background.weak.color.b,
-                0.72,
+                INPUT_DISABLED_ALPHA,
             )
             .into();
             style.value = Color::from_rgba(
                 p.background.strong.text.r,
                 p.background.strong.text.g,
                 p.background.strong.text.b,
-                0.72,
+                INPUT_DISABLED_ALPHA,
             );
             style
         }

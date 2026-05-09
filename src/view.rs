@@ -416,7 +416,7 @@ impl App {
             "src/main.rs의 첫 30줄을 요약해줘",
             "examples/hello.rs 만들어줘",
         ];
-        let title = text("CodeWarp").size(30).font(bold_font());
+        let title = text("CodeWarp").size(FS_TITLE).font(bold_font());
         let subtitle = text("AI 코딩 데스크톱 — Plan으로 안전하게 둘러보고, Build로 변경 적용").size(FS_BODY);
 
         let mut examples_col = column![text("다음을 시도해보세요").size(FS_LABEL).font(semibold_font())].spacing(6);

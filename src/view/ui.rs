@@ -198,3 +198,26 @@ pub(crate) fn shorten_tail(s: &str, max_chars: usize) -> String {
         .collect();
     format!("…{}", tail)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::shorten_tail;
+
+    #[test]
+    fn shorten_tail_keeps_short_text() {
+        assert_eq!(shorten_tail("codewarp", 16), "codewarp");
+    }
+
+    #[test]
+    fn shorten_tail_truncates_to_max_chars() {
+        let out = shorten_tail("abcdefghijklmnopqrstuvwxyz", 8);
+        assert_eq!(out, "…tuvwxyz");
+        assert_eq!(out.chars().count(), 8);
+    }
+
+    #[test]
+    fn shorten_tail_handles_zero_and_one() {
+        assert_eq!(shorten_tail("abcdef", 0), "");
+        assert_eq!(shorten_tail("abcdef", 1), "…");
+    }
+}

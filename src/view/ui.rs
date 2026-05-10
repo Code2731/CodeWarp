@@ -220,6 +220,7 @@ mod tests {
     fn shorten_tail_counts_unicode_by_char_not_byte() {
         let src = format!("ab{}cd", '\u{1F600}');
         let out = shorten_tail(&src, 4);
+        assert_eq!(out, "…😀cd");
         assert_eq!(out.chars().count(), 4);
         assert!(out.ends_with("😀cd"));
     }

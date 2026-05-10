@@ -9,8 +9,7 @@ pub(crate) const FS_MICRO: f32 = 10.0;
 const BORDER_WIDTH: f32 = 1.0;
 const PANEL_RADIUS: f32 = 12.0;
 const CONTROL_RADIUS: f32 = 10.0;
-const TOPBAR_BG_ALPHA: f32 = 0.45;
-const DISABLED_BG_ALPHA: f32 = 0.45;
+const SOFT_BG_ALPHA: f32 = 0.45;
 const INPUT_BG_ALPHA: f32 = 0.88;
 const INPUT_PLACEHOLDER_ALPHA: f32 = 0.82;
 const INPUT_SELECTION_ALPHA: f32 = 0.36;
@@ -40,7 +39,7 @@ pub(crate) fn panel_style(theme: &Theme) -> container::Style {
 pub(crate) fn topbar_style(theme: &Theme) -> container::Style {
     let p = theme.extended_palette();
     container::Style {
-        background: Some(with_alpha(p.background.strong.color, TOPBAR_BG_ALPHA).into()),
+        background: Some(with_alpha(p.background.strong.color, SOFT_BG_ALPHA).into()),
         border: Border {
             color: p.background.strong.color,
             width: BORDER_WIDTH,
@@ -66,7 +65,7 @@ pub(crate) fn primary_btn(theme: &Theme, status: button::Status) -> button::Styl
         style.background = Some(p.primary.strong.color.into());
     }
     if matches!(status, button::Status::Disabled) {
-        style.background = Some(with_alpha(p.primary.base.color, DISABLED_BG_ALPHA).into());
+        style.background = Some(with_alpha(p.primary.base.color, SOFT_BG_ALPHA).into());
         style.text_color = disabled_text_color();
     }
     style

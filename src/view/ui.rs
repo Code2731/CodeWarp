@@ -224,6 +224,13 @@ mod tests {
         assert_eq!(out.chars().count(), 4);
         assert!(out.ends_with("😀cd"));
     }
+
+    #[test]
+    fn shorten_tail_keeps_unicode_when_exactly_max_chars() {
+        let src = format!("ab{}cd", '\u{1F600}');
+        assert_eq!(src.chars().count(), 5);
+        assert_eq!(shorten_tail(&src, 5), src);
+    }
 }
 
 #[cfg(test)]

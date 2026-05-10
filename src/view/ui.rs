@@ -195,3 +195,28 @@ mod tests {
         assert_eq!(shorten_tail("abcdef", 1), "…");
     }
 }
+
+#[cfg(test)]
+mod color_tests {
+    use super::{disabled_text_color, with_alpha};
+    use iced::Color;
+
+    #[test]
+    fn with_alpha_preserves_rgb_and_sets_alpha() {
+        let base = Color::from_rgb(0.1, 0.2, 0.3);
+        let out = with_alpha(base, 0.7);
+        assert_eq!(out.r, base.r);
+        assert_eq!(out.g, base.g);
+        assert_eq!(out.b, base.b);
+        assert_eq!(out.a, 0.7);
+    }
+
+    #[test]
+    fn disabled_text_color_matches_design_value() {
+        let c = disabled_text_color();
+        assert_eq!(c.r, 0.92);
+        assert_eq!(c.g, 0.94);
+        assert_eq!(c.b, 0.98);
+        assert_eq!(c.a, 0.75);
+    }
+}

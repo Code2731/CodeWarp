@@ -11,10 +11,6 @@ const PANEL_RADIUS: f32 = 12.0;
 const CONTROL_RADIUS: f32 = 10.0;
 const TOPBAR_BG_ALPHA: f32 = 0.45;
 const DISABLED_BG_ALPHA: f32 = 0.45;
-const DISABLED_TEXT_R: f32 = 0.92;
-const DISABLED_TEXT_G: f32 = 0.94;
-const DISABLED_TEXT_B: f32 = 0.98;
-const DISABLED_TEXT_A: f32 = 0.75;
 const INPUT_BG_ALPHA: f32 = 0.88;
 const INPUT_PLACEHOLDER_ALPHA: f32 = 0.82;
 const INPUT_SELECTION_ALPHA: f32 = 0.36;
@@ -22,6 +18,10 @@ const INPUT_DISABLED_ALPHA: f32 = 0.72;
 
 fn with_alpha(color: Color, alpha: f32) -> Color {
     Color::from_rgba(color.r, color.g, color.b, alpha)
+}
+
+fn disabled_text_color() -> Color {
+    Color::from_rgba(0.92, 0.94, 0.98, 0.75)
 }
 
 pub(crate) fn panel_style(theme: &Theme) -> container::Style {
@@ -67,12 +67,7 @@ pub(crate) fn primary_btn(theme: &Theme, status: button::Status) -> button::Styl
     }
     if matches!(status, button::Status::Disabled) {
         style.background = Some(with_alpha(p.primary.base.color, DISABLED_BG_ALPHA).into());
-        style.text_color = Color::from_rgba(
-            DISABLED_TEXT_R,
-            DISABLED_TEXT_G,
-            DISABLED_TEXT_B,
-            DISABLED_TEXT_A,
-        );
+        style.text_color = disabled_text_color();
     }
     style
 }

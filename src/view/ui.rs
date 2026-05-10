@@ -185,6 +185,11 @@ mod tests {
     }
 
     #[test]
+    fn shorten_tail_keeps_text_when_exactly_max_chars() {
+        assert_eq!(shorten_tail("codewarp", 8), "codewarp");
+    }
+
+    #[test]
     fn shorten_tail_truncates_to_max_chars() {
         let out = shorten_tail("abcdefghijklmnopqrstuvwxyz", 8);
         assert_eq!(out, "…tuvwxyz");

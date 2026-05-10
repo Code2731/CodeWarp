@@ -205,9 +205,15 @@ mod tests {
     #[test]
     fn shorten_tail_two_chars_keeps_last_char() {
         let out = shorten_tail("abcdef", 2);
+        assert_eq!(out, "…f");
         assert_eq!(out.chars().count(), 2);
-        assert!(out.ends_with('f'));
-        assert_ne!(out, "abcdef");
+    }
+
+    #[test]
+    fn shorten_tail_three_chars_keeps_last_two_chars() {
+        let out = shorten_tail("abcdef", 3);
+        assert_eq!(out, "…ef");
+        assert_eq!(out.chars().count(), 3);
     }
 }
 

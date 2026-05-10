@@ -218,4 +218,15 @@ mod color_tests {
         assert_eq!(c.b, 0.98);
         assert_eq!(c.a, 0.75);
     }
+
+    #[test]
+    fn with_alpha_handles_alpha_bounds() {
+        let base = Color::from_rgb(0.25, 0.5, 0.75);
+        let transparent = with_alpha(base, 0.0);
+        let opaque = with_alpha(base, 1.0);
+        assert_eq!(transparent.a, 0.0);
+        assert_eq!(opaque.a, 1.0);
+        assert_eq!(transparent.r, base.r);
+        assert_eq!(opaque.b, base.b);
+    }
 }

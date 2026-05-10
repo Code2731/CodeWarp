@@ -140,14 +140,16 @@ pub(crate) fn field_input(theme: &Theme, status: text_input::Status) -> text_inp
 }
 
 pub(crate) fn semibold_font() -> Font {
-    let mut f = Font::with_name("Pretendard");
-    f.weight = font::Weight::Semibold;
-    f
+    font_with_weight(font::Weight::Semibold)
 }
 
 pub(crate) fn bold_font() -> Font {
+    font_with_weight(font::Weight::Bold)
+}
+
+fn font_with_weight(weight: font::Weight) -> Font {
     let mut f = Font::with_name("Pretendard");
-    f.weight = font::Weight::Bold;
+    f.weight = weight;
     f
 }
 
@@ -228,5 +230,21 @@ mod color_tests {
         assert_eq!(opaque.a, 1.0);
         assert_eq!(transparent.r, base.r);
         assert_eq!(opaque.b, base.b);
+    }
+}
+
+#[cfg(test)]
+mod font_tests {
+    use super::{bold_font, semibold_font};
+    use iced::font::Weight;
+
+    #[test]
+    fn semibold_font_uses_semibold_weight() {
+        assert_eq!(semibold_font().weight, Weight::Semibold);
+    }
+
+    #[test]
+    fn bold_font_uses_bold_weight() {
+        assert_eq!(bold_font().weight, Weight::Bold);
     }
 }

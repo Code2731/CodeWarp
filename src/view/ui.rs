@@ -9,6 +9,7 @@ pub(crate) const FS_MICRO: f32 = 10.0;
 const BORDER_WIDTH: f32 = 1.0;
 const PANEL_RADIUS: f32 = 12.0;
 const CONTROL_RADIUS: f32 = 10.0;
+const UI_FONT_FAMILY: &str = "Pretendard";
 const SOFT_BG_ALPHA: f32 = 0.45;
 const INPUT_BG_ALPHA: f32 = 0.88;
 const INPUT_PLACEHOLDER_ALPHA: f32 = 0.82;
@@ -148,7 +149,7 @@ pub(crate) fn bold_font() -> Font {
 }
 
 fn font_with_weight(weight: font::Weight) -> Font {
-    let mut f = Font::with_name("Pretendard");
+    let mut f = Font::with_name(UI_FONT_FAMILY);
     f.weight = weight;
     f
 }
@@ -235,8 +236,9 @@ mod color_tests {
 
 #[cfg(test)]
 mod font_tests {
-    use super::{bold_font, semibold_font};
+    use super::{bold_font, semibold_font, UI_FONT_FAMILY};
     use iced::font::Weight;
+    use iced::Font;
 
     #[test]
     fn semibold_font_uses_semibold_weight() {
@@ -246,5 +248,12 @@ mod font_tests {
     #[test]
     fn bold_font_uses_bold_weight() {
         assert_eq!(bold_font().weight, Weight::Bold);
+    }
+
+    #[test]
+    fn font_helpers_use_pretendard_family() {
+        let expected_family = Font::with_name(UI_FONT_FAMILY).family;
+        assert_eq!(semibold_font().family, expected_family);
+        assert_eq!(bold_font().family, expected_family);
     }
 }

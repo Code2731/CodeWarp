@@ -460,7 +460,11 @@ mod tests {
     #[test]
     fn read_file_absolute_path_rejected() {
         let tmp = TempDir::new().unwrap();
-        let abs_path = if cfg!(windows) { "C:\\Windows\\system.ini" } else { "/etc/passwd" };
+        let abs_path = if cfg!(windows) {
+            "C:\\Windows\\system.ini"
+        } else {
+            "/etc/passwd"
+        };
         let result = dispatch(
             "read_file",
             &format!(r#"{{"path":"{}"}}"#, abs_path.replace('\\', "\\\\")),
@@ -478,14 +482,14 @@ mod tests {
         fs::create_dir_all(&cwd).unwrap();
         // tmp/outside.txt 생성 (cwd 밖)
         fs::write(tmp.path().join("outside.txt"), "secret").unwrap();
-        let result = dispatch(
-            "read_file",
-            r#"{"path":"../outside.txt"}"#,
-            &cwd,
-        );
+        let result = dispatch("read_file", r#"{"path":"../outside.txt"}"#, &cwd);
         assert!(result.contains("[error]"), "got: {}", result);
         // canonical 비교 실패 → "작업 디렉토리 밖" 메시지
-        assert!(result.contains("작업 디렉토리 밖") || result.contains("경로 해석 실패"), "got: {}", result);
+        assert!(
+            result.contains("작업 디렉토리 밖") || result.contains("경로 해석 실패"),
+            "got: {}",
+            result
+        );
     }
 
     #[test]
@@ -518,7 +522,11 @@ mod tests {
     #[test]
     fn write_file_absolute_path_rejected() {
         let tmp = TempDir::new().unwrap();
-        let abs_path = if cfg!(windows) { "C:\\evil.txt" } else { "/tmp/evil.txt" };
+        let abs_path = if cfg!(windows) {
+            "C:\\evil.txt"
+        } else {
+            "/tmp/evil.txt"
+        };
         let escaped = abs_path.replace('\\', "\\\\");
         let result = dispatch(
             "write_file",
@@ -539,7 +547,11 @@ mod tests {
             r#"{"path":"../escaped.txt","content":"bad"}"#,
             &cwd,
         );
-        assert!(result.contains("[error]") && result.contains("작업 디렉토리 밖"), "got: {}", result);
+        assert!(
+            result.contains("[error]") && result.contains("작업 디렉토리 밖"),
+            "got: {}",
+            result
+        );
     }
 
     #[test]
@@ -595,11 +607,7 @@ mod tests {
     #[test]
     fn grep_finds_pattern() {
         let tmp = TempDir::new().unwrap();
-        fs::write(
-            tmp.path().join("a.rs"),
-            "fn main() {}\nfn helper() {}\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join("a.rs"), "fn main() {}\nfn helper() {}\n").unwrap();
         let result = dispatch("grep", r#"{"pattern":"fn main"}"#, tmp.path());
         assert!(result.contains("a.rs"), "got: {}", result);
         assert!(result.contains("fn main"));

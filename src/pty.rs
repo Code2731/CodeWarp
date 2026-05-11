@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 /// PTY 이벤트 — Iced `Task::run`의 Item 타입.
 #[derive(Debug, Clone)]
@@ -45,13 +45,7 @@ impl PtySession {
 /// stream은 `Task::run`에 직접 전달 가능.
 pub fn spawn_pty(
     cwd: &Path,
-) -> Result<
-    (
-        PtySession,
-        impl futures_util::Stream<Item = PtyEvent>,
-    ),
-    String,
-> {
+) -> Result<(PtySession, impl futures_util::Stream<Item = PtyEvent>), String> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {

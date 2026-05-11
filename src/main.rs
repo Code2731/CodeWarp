@@ -4,8 +4,8 @@
 mod hf;
 mod keystore;
 mod mcp;
-mod pty;
 mod openrouter;
+mod pty;
 mod session;
 mod tabby;
 mod tools;
@@ -16,17 +16,14 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use iced::keyboard::key::Named;
+use iced::keyboard::{Key, Modifiers};
+use iced::task;
 use iced::widget::markdown::{self, HeadingLevel, Settings as MdSettings, Text as MdText, Viewer};
 use iced::widget::operation::snap_to_end;
 use iced::widget::scrollable::{Scrollbar, Viewport};
 use iced::widget::text_editor::{Action, Edit};
-use iced::widget::{
-    column, combo_box, container, text,
-    text_editor, Id as ScrollId,
-};
-use iced::keyboard::key::Named;
-use iced::keyboard::{Key, Modifiers};
-use iced::task;
+use iced::widget::{column, combo_box, container, text, text_editor, Id as ScrollId};
 use iced::{font, Color, Element, Font, Length, Size, Task, Theme};
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
@@ -114,7 +111,11 @@ impl std::fmt::Display for ModelOption {
                 write!(f, "{}{}{} {}{}  free", tag, ko, star, self.id, ctx)
             }
             (Some(p), Some(c)) => {
-                write!(f, "{}{}{} {}{}  ${:.2}/${:.2}", tag, ko, star, self.id, ctx, p, c)
+                write!(
+                    f,
+                    "{}{}{} {}{}  ${:.2}/${:.2}",
+                    tag, ko, star, self.id, ctx, p, c
+                )
             }
             _ => write!(f, "{}{}{} {}{}", tag, ko, star, self.id, ctx),
         }
@@ -200,12 +201,19 @@ async fn collect_mention_candidates(cwd: PathBuf) -> Vec<PathBuf> {
     tokio::task::spawn_blocking(move || {
         let mut results = Vec::new();
         for entry in ignore::WalkBuilder::new(&cwd).max_depth(Some(5)).build() {
-            let entry = match entry { Ok(e) => e, Err(_) => continue };
-            if !entry.file_type().is_some_and(|ft| ft.is_file()) { continue; }
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+                continue;
+            }
             if let Ok(rel) = entry.path().strip_prefix(&cwd) {
                 results.push(rel.to_path_buf());
             }
-            if results.len() >= 200 { break; }
+            if results.len() >= 200 {
+                break;
+            }
         }
         results
     })
@@ -256,17 +264,12 @@ fn build_window_icon() -> Option<iced::window::Icon> {
 }
 
 // 본문용 — 한국어/영문 동시 지원 (Pretendard, OFL)
-const PRETENDARD_REGULAR: &[u8] =
-    include_bytes!("../assets/fonts/Pretendard-Regular.otf");
-const PRETENDARD_SEMIBOLD: &[u8] =
-    include_bytes!("../assets/fonts/Pretendard-SemiBold.otf");
-const PRETENDARD_BOLD: &[u8] =
-    include_bytes!("../assets/fonts/Pretendard-Bold.otf");
+const PRETENDARD_REGULAR: &[u8] = include_bytes!("../assets/fonts/Pretendard-Regular.otf");
+const PRETENDARD_SEMIBOLD: &[u8] = include_bytes!("../assets/fonts/Pretendard-SemiBold.otf");
+const PRETENDARD_BOLD: &[u8] = include_bytes!("../assets/fonts/Pretendard-Bold.otf");
 // 코드용 monospace (JetBrains Mono, OFL)
-const JETBRAINS_MONO_REGULAR: &[u8] =
-    include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf");
-const JETBRAINS_MONO_BOLD: &[u8] =
-    include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf");
+const JETBRAINS_MONO_REGULAR: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf");
+const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf");
 
 fn handle_key(key: Key, modifiers: Modifiers) -> Option<Message> {
     // Esc — 열려있는 오버레이(팔레트/설정) 모두 닫기
@@ -310,12 +313,8 @@ fn on_event(
         iced::Event::Window(iced::window::Event::FileDropped(path)) => {
             Some(Message::FileDropped(path))
         }
-        iced::Event::Window(iced::window::Event::FileHovered(_)) => {
-            Some(Message::FileDragHover)
-        }
-        iced::Event::Window(iced::window::Event::FilesHoveredLeft) => {
-            Some(Message::FileDragHover)
-        }
+        iced::Event::Window(iced::window::Event::FileHovered(_)) => Some(Message::FileDragHover),
+        iced::Event::Window(iced::window::Event::FilesHoveredLeft) => Some(Message::FileDragHover),
         _ => None,
     }
 }
@@ -734,9 +733,8 @@ fn persisted_to_block(pb: session::PersistedBlock) -> Block {
 /// 도구 호출 결과를 ToolResult 칩에 표시할 한 줄 요약 + 성공 여부로 변환.
 fn summarize_tool_result(name: &str, args_json: &str, result: &str) -> (String, bool) {
     let lower = result.to_ascii_lowercase();
-    let success = !(result.starts_with("Error")
-        || lower.contains("[err]")
-        || lower.starts_with("error"));
+    let success =
+        !(result.starts_with("Error") || lower.contains("[err]") || lower.starts_with("error"));
     let summary = match name {
         "write_file" => tools::WriteFileArgs::parse(args_json)
             .map(|a| format!("{} ({} bytes)", a.path, a.content.len()))
@@ -744,7 +742,13 @@ fn summarize_tool_result(name: &str, args_json: &str, result: &str) -> (String, 
         "run_command" => tools::RunCommandArgs::parse(args_json)
             .map(|a| format!("$ {}", a.command.chars().take(60).collect::<String>()))
             .unwrap_or_else(|_| "?".into()),
-        _ => result.lines().next().unwrap_or("").chars().take(80).collect(),
+        _ => result
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(80)
+            .collect(),
     };
     (summary, success)
 }
@@ -849,11 +853,7 @@ impl<'a> Viewer<'a, Message> for CodewarpViewer {
         markdown::heading(settings, level, text, index, Self::on_link_click)
     }
 
-    fn paragraph(
-        &self,
-        settings: MdSettings,
-        text: &MdText,
-    ) -> Element<'a, Message> {
+    fn paragraph(&self, settings: MdSettings, text: &MdText) -> Element<'a, Message> {
         let spans_arc = text.spans(settings.style);
         let normalized: Vec<iced::advanced::text::Span<'static, markdown::Uri>> = spans_arc
             .iter()
@@ -926,7 +926,7 @@ const MODEL_PRESETS: &[ModelPreset] = &[
 /// EXL2 프리셋 — TabbyAPI용. 클릭하면 해당 branch를 바로 다운로드.
 struct Exl2Preset {
     repo_id: &'static str,
-    revision: &'static str, // HF branch (bpw 수치)
+    revision: &'static str,    // HF branch (bpw 수치)
     folder_name: &'static str, // models 폴더 아래 저장될 이름
     label: &'static str,
     note: &'static str,
@@ -1271,11 +1271,27 @@ fn categorize_model(model_id: &str) -> Vec<ModelCategory> {
     let id = model_id.to_lowercase();
     // 코딩 전용 모델만 (이름에 'code', 'coder' 등이 명시된 것)
     let coding_keywords = [
-        "coder", "codex", "codestral", "codellama", "starcoder", "codegen", "code-",
+        "coder",
+        "codex",
+        "codestral",
+        "codellama",
+        "starcoder",
+        "codegen",
+        "code-",
     ];
     // 추론 전용 모델 (chain-of-thought / thinking 모드)
     let reasoning_keywords = [
-        "o1-", "o3-", "o4-", "/o1", "/o3", "/o4", "thinking", "-reasoning", "-r1", "-qwq", "/qwq",
+        "o1-",
+        "o3-",
+        "o4-",
+        "/o1",
+        "/o3",
+        "/o4",
+        "thinking",
+        "-reasoning",
+        "-r1",
+        "-qwq",
+        "/qwq",
     ];
     let is_coding = coding_keywords.iter().any(|k| id.contains(k));
     let is_reasoning = reasoning_keywords.iter().any(|k| id.contains(k));
@@ -1447,10 +1463,10 @@ impl App {
             iced::theme::Palette {
                 background: Color::from_rgb(0.047, 0.063, 0.090), // deep midnight blue
                 text: Color::from_rgb(0.93, 0.95, 0.98),
-                primary: Color::from_rgb(0.17, 0.63, 0.95),       // electric blue
-                success: Color::from_rgb(0.20, 0.79, 0.61),       // mint green
-                warning: Color::from_rgb(0.96, 0.74, 0.30),       // amber
-                danger: Color::from_rgb(0.95, 0.42, 0.38),        // warm red
+                primary: Color::from_rgb(0.17, 0.63, 0.95), // electric blue
+                success: Color::from_rgb(0.20, 0.79, 0.61), // mint green
+                warning: Color::from_rgb(0.96, 0.74, 0.30), // amber
+                danger: Color::from_rgb(0.95, 0.42, 0.38),  // warm red
             },
         )
     }
@@ -1556,7 +1572,9 @@ impl App {
         if persisted.sessions.is_empty() {
             persisted = session::load_all(); // 빈 → default 채워짐
         }
-        let active_idx = persisted.active_idx.min(persisted.sessions.len().saturating_sub(1));
+        let active_idx = persisted
+            .active_idx
+            .min(persisted.sessions.len().saturating_sub(1));
         let active = persisted.sessions[active_idx].clone();
         let inactive: Vec<InactiveSession> = persisted
             .sessions
@@ -1577,20 +1595,10 @@ impl App {
         app.current_session_title = active.title;
         app.conversation = active.conversation;
         app.next_block_id = active.next_block_id;
-        app.blocks = active
-            .blocks
-            .into_iter()
-            .map(persisted_to_block)
-            .collect();
+        app.blocks = active.blocks.into_iter().map(persisted_to_block).collect();
         app.current_scroll_y = active.scroll_y;
         app.inactive_sessions = inactive;
-        app.next_session_id = persisted
-            .sessions
-            .iter()
-            .map(|s| s.id)
-            .max()
-            .unwrap_or(0)
-            + 1;
+        app.next_session_id = persisted.sessions.iter().map(|s| s.id).max().unwrap_or(0) + 1;
         // 활성 세션의 마지막 scroll 위치 복원 task
         let restore_scroll = if app.current_scroll_y > 0.0 {
             Some(iced::widget::operation::scroll_to(
@@ -1620,7 +1628,12 @@ impl App {
         for server in app.mcp_servers.clone() {
             let name = server.name.clone();
             tasks.push(Task::perform(
-                async move { mcp::list_tools(&server).await.map(|tools| (name.clone(), tools)).map_err(|e| format!("[{name}] {e}")) },
+                async move {
+                    mcp::list_tools(&server)
+                        .await
+                        .map(|tools| (name.clone(), tools))
+                        .map_err(|e| format!("[{name}] {e}"))
+                },
                 |r| match r {
                     Ok((name, tools)) => Message::McpToolsLoaded(name, tools),
                     Err(msg) => Message::McpToolsFailed(msg),
@@ -2136,13 +2149,17 @@ mod tests {
     #[test]
     fn engine_ollama_no_spawn() {
         // Ollama는 daemon — 이미 떠있다고 가정, spawn 안 함
-        assert!(InferenceEngine::Ollama.compose_command("any", 11434).is_none());
+        assert!(InferenceEngine::Ollama
+            .compose_command("any", 11434)
+            .is_none());
     }
 
     #[test]
     fn engine_custom_no_compose() {
         // Custom은 사용자가 직접 명령 입력
-        assert!(InferenceEngine::Custom.compose_command("any", 9000).is_none());
+        assert!(InferenceEngine::Custom
+            .compose_command("any", 9000)
+            .is_none());
     }
 
     // ── list_downloaded_models ──────────────────────────────────────
@@ -2194,7 +2211,7 @@ mod tests {
     fn mention_query_last_at_wins() {
         // 마지막 '@' 기준으로 query 추출
         assert_eq!(extract_mention_query("@foo @bar"), Some("bar")); // 마지막 '@bar' 뒤 공백 없음
-        assert_eq!(extract_mention_query("@foo @bar "), None);       // 마지막 '@bar' 뒤 공백 있음
+        assert_eq!(extract_mention_query("@foo @bar "), None); // 마지막 '@bar' 뒤 공백 있음
         assert_eq!(extract_mention_query("email@ex.com @file"), Some("file")); // 마지막 '@file'
     }
 
@@ -2202,10 +2219,7 @@ mod tests {
 
     #[test]
     fn fuzzy_match_empty_query_returns_all() {
-        let paths: Vec<PathBuf> = vec![
-            PathBuf::from("src/main.rs"),
-            PathBuf::from("src/tools.rs"),
-        ];
+        let paths: Vec<PathBuf> = vec![PathBuf::from("src/main.rs"), PathBuf::from("src/tools.rs")];
         let result = fuzzy_match_paths(&paths, "", 10);
         assert_eq!(result.len(), 2);
     }
@@ -2224,7 +2238,9 @@ mod tests {
 
     #[test]
     fn fuzzy_match_respects_max_results() {
-        let paths: Vec<PathBuf> = (0..20).map(|i| PathBuf::from(format!("file{i}.rs"))).collect();
+        let paths: Vec<PathBuf> = (0..20)
+            .map(|i| PathBuf::from(format!("file{i}.rs")))
+            .collect();
         let result = fuzzy_match_paths(&paths, "file", 5);
         assert_eq!(result.len(), 5);
     }

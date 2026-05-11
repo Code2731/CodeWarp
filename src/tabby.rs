@@ -130,17 +130,32 @@ mod tests {
 
     #[test]
     fn chat_base_appends_v1() {
-        assert_eq!(chat_base("http://localhost:8080"), "http://localhost:8080/v1");
-        assert_eq!(chat_base("http://localhost:8080/"), "http://localhost:8080/v1");
+        assert_eq!(
+            chat_base("http://localhost:8080"),
+            "http://localhost:8080/v1"
+        );
+        assert_eq!(
+            chat_base("http://localhost:8080/"),
+            "http://localhost:8080/v1"
+        );
         assert_eq!(chat_base(""), "http://localhost:8080/v1");
     }
 
     #[test]
     fn chat_base_no_double_v1() {
         // 사용자가 /v1까지 입력했으면 중복 추가하지 않음
-        assert_eq!(chat_base("http://localhost:9000/v1"), "http://localhost:9000/v1");
-        assert_eq!(chat_base("http://localhost:9000/v1/"), "http://localhost:9000/v1");
-        assert_eq!(chat_base("  http://x.com:8080/v1  "), "http://x.com:8080/v1");
+        assert_eq!(
+            chat_base("http://localhost:9000/v1"),
+            "http://localhost:9000/v1"
+        );
+        assert_eq!(
+            chat_base("http://localhost:9000/v1/"),
+            "http://localhost:9000/v1"
+        );
+        assert_eq!(
+            chat_base("  http://x.com:8080/v1  "),
+            "http://x.com:8080/v1"
+        );
     }
 
     // ── humanize_error: KEEP IN SYNC with list_models error format ──

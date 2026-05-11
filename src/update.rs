@@ -1,7 +1,7 @@
 // update.rs — App update + 헬퍼 메서드 (main.rs child module)
 use super::*;
 use iced::widget::text_editor::{self, Action};
-use iced::{Task, Subscription};
+use iced::{Subscription, Task};
 
 impl App {
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
@@ -102,18 +102,16 @@ impl App {
                 let _ = keystore::write_inference_binary(&v);
                 Task::none()
             }
-            Message::PickInferenceBinary => {
-                Task::perform(
-                    async {
-                        rfd::AsyncFileDialog::new()
-                            .set_title("inference 엔진 바이너리 선택 (xllm.exe / python.exe 등)")
-                            .pick_file()
-                            .await
-                            .map(|h| h.path().to_path_buf())
-                    },
-                    Message::InferenceBinaryPicked,
-                )
-            }
+            Message::PickInferenceBinary => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("inference 엔진 바이너리 선택 (xllm.exe / python.exe 등)")
+                        .pick_file()
+                        .await
+                        .map(|h| h.path().to_path_buf())
+                },
+                Message::InferenceBinaryPicked,
+            ),
             Message::InferenceBinaryPicked(maybe) => {
                 if let Some(path) = maybe {
                     let s = path.display().to_string();
@@ -129,9 +127,11 @@ impl App {
                     return Task::none();
                 }
                 // 포트 parse
-                let port: u16 = self.inference_port_input.trim().parse().unwrap_or_else(|_| {
-                    self.inference_engine.default_port()
-                });
+                let port: u16 = self
+                    .inference_port_input
+                    .trim()
+                    .parse()
+                    .unwrap_or_else(|_| self.inference_engine.default_port());
                 // 엔진별 명령 합성 + URL 자동 등록
                 let (program, args) = match self.inference_engine {
                     InferenceEngine::Custom => {
@@ -187,8 +187,13 @@ impl App {
                 self.tabby_url_input = format!("http://localhost:{}", port);
                 let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
                 if self.openai_compat_label.trim().is_empty() {
-                    let label = self.inference_engine.label().split_whitespace().next()
-                        .unwrap_or("Local").to_string();
+                    let label = self
+                        .inference_engine
+                        .label()
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("Local")
+                        .to_string();
                     self.openai_compat_label = label.clone();
                     let _ = keystore::write_openai_compat_label(&label);
                 }
@@ -238,7 +243,8 @@ impl App {
                 self.status = format!("inference 서버 종료 (exit {})", code);
                 // endpoint 끊김 표시
                 self.tabby_status = Some(Err("inference 서버 종료됨".into()));
-                self.model_options.retain(|o| o.provider != LlmProvider::OpenAICompat);
+                self.model_options
+                    .retain(|o| o.provider != LlmProvider::OpenAICompat);
                 self.refresh_model_combo();
                 Task::none()
             }
@@ -291,7 +297,8 @@ impl App {
                 self.tabby_status = None;
                 self.status = "Tabby 설정 삭제됨".into();
                 // 모델 리스트에서 Tabby 항목 제거
-                self.model_options.retain(|o| o.provider != LlmProvider::OpenAICompat);
+                self.model_options
+                    .retain(|o| o.provider != LlmProvider::OpenAICompat);
                 self.refresh_model_combo();
                 // 선택된 모델이 Tabby였다면 해제
                 if let Some(sel) = self.selected_model.clone() {
@@ -320,7 +327,8 @@ impl App {
             }
             Message::TabbyModelsLoaded(r) => {
                 // 기존 Tabby 항목 제거 후 새로 채움 (성공/실패 모두 동일하게 비움)
-                self.model_options.retain(|o| o.provider != LlmProvider::OpenAICompat);
+                self.model_options
+                    .retain(|o| o.provider != LlmProvider::OpenAICompat);
                 match r {
                     Ok(ids) => {
                         let label = if ids.is_empty() {
@@ -356,7 +364,10 @@ impl App {
                 Task::none()
             }
             // ── HF 모델 매니저 ────────────────────────────────────
-            Message::HfTokenChanged(v) => { self.hf_token_input = v; Task::none() }
+            Message::HfTokenChanged(v) => {
+                self.hf_token_input = v;
+                Task::none()
+            }
             Message::ToggleHfTokenVisible => {
                 self.show_hf_token = !self.show_hf_token;
                 Task::none()
@@ -375,18 +386,19 @@ impl App {
                 }
                 Task::none()
             }
-            Message::ModelDirChanged(v) => { self.model_dir_input = v; Task::none() }
-            Message::PickModelDir => {
-                Task::perform(
-                    async {
-                        rfd::AsyncFileDialog::new()
-                            .pick_folder()
-                            .await
-                            .map(|h| h.path().to_path_buf())
-                    },
-                    Message::ModelDirPicked,
-                )
+            Message::ModelDirChanged(v) => {
+                self.model_dir_input = v;
+                Task::none()
             }
+            Message::PickModelDir => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .pick_folder()
+                        .await
+                        .map(|h| h.path().to_path_buf())
+                },
+                Message::ModelDirPicked,
+            ),
             Message::ModelDirPicked(maybe) => {
                 if let Some(path) = maybe {
                     let s = path.display().to_string();
@@ -396,7 +408,10 @@ impl App {
                 }
                 Task::none()
             }
-            Message::HfRepoChanged(v) => { self.hf_repo_input = v; Task::none() }
+            Message::HfRepoChanged(v) => {
+                self.hf_repo_input = v;
+                Task::none()
+            }
             Message::UsePreset(idx) => {
                 if let Some(p) = MODEL_PRESETS.get(idx) {
                     self.hf_repo_input = p.repo_id.into();
@@ -438,7 +453,13 @@ impl App {
                 });
                 self.status = format!("다운로드 시작: {}", repo);
                 let (task, handle) = Task::run(
-                    hf::download_repo(repo, std::path::PathBuf::from(dir), token, self.hf_revision.take(), self.hf_folder_name.take()),
+                    hf::download_repo(
+                        repo,
+                        std::path::PathBuf::from(dir),
+                        token,
+                        self.hf_revision.take(),
+                        self.hf_folder_name.take(),
+                    ),
                     Message::HfDownloadEvent,
                 )
                 .abortable();
@@ -616,7 +637,8 @@ impl App {
                 }
                 Task::perform(
                     async move {
-                        let content = tokio::fs::read_to_string(&path).await
+                        let content = tokio::fs::read_to_string(&path)
+                            .await
                             .map_err(|e| format!("읽기 실패: {e}"))?;
                         if content.len() > MAX_ATTACH_BYTES as usize {
                             return Err(format!("첨부 거부 (512KB 초과): {}", path.display()));
@@ -643,8 +665,14 @@ impl App {
             }
 
             // ── MCP ───────────────────────────────────────────────────
-            Message::McpNameChanged(v) => { self.mcp_name_input = v; Task::none() }
-            Message::McpCommandChanged(v) => { self.mcp_command_input = v; Task::none() }
+            Message::McpNameChanged(v) => {
+                self.mcp_name_input = v;
+                Task::none()
+            }
+            Message::McpCommandChanged(v) => {
+                self.mcp_command_input = v;
+                Task::none()
+            }
             Message::AddMcpServer => {
                 let name = self.mcp_name_input.trim().to_string();
                 let command = self.mcp_command_input.trim().to_string();
@@ -652,7 +680,10 @@ impl App {
                     self.status = "MCP 서버 이름과 명령을 모두 입력하세요.".into();
                     return Task::none();
                 }
-                let server = mcp::McpServer { name: name.clone(), command };
+                let server = mcp::McpServer {
+                    name: name.clone(),
+                    command,
+                };
                 self.mcp_servers.push(server.clone());
                 self.mcp_name_input.clear();
                 self.mcp_command_input.clear();
@@ -663,7 +694,8 @@ impl App {
                 self.status = format!("MCP 서버 추가됨: {name} — tool 목록 로드 중…");
                 Task::perform(
                     async move {
-                        mcp::list_tools(&server).await
+                        mcp::list_tools(&server)
+                            .await
                             .map(|tools| (name.clone(), tools))
                             .map_err(|e| format!("[{name}] {e}"))
                     },
@@ -694,7 +726,8 @@ impl App {
                 Task::none()
             }
             Message::McpToolResult(tool_call_id, result) => {
-                self.conversation.push(ChatMessage::tool_result(&tool_call_id, result));
+                self.conversation
+                    .push(ChatMessage::tool_result(&tool_call_id, result));
                 self.tool_round += 1;
                 self.kick_chat_stream()
             }
@@ -707,23 +740,21 @@ impl App {
                 }
                 Task::none()
             }
-            Message::PtyStart => {
-                match pty::spawn_pty(&self.cwd) {
-                    Ok((session, stream)) => {
-                        self.pty_session = Some(session);
-                        self.pty_output.clear();
-                        self.status = "터미널 시작됨".into();
-                        Task::run(stream, |event| match event {
-                            pty::PtyEvent::Line(l) => Message::PtyLine(l),
-                            pty::PtyEvent::Exited => Message::PtyExited,
-                        })
-                    }
-                    Err(e) => {
-                        self.status = format!("터미널 시작 실패: {e}");
-                        Task::none()
-                    }
+            Message::PtyStart => match pty::spawn_pty(&self.cwd) {
+                Ok((session, stream)) => {
+                    self.pty_session = Some(session);
+                    self.pty_output.clear();
+                    self.status = "터미널 시작됨".into();
+                    Task::run(stream, |event| match event {
+                        pty::PtyEvent::Line(l) => Message::PtyLine(l),
+                        pty::PtyEvent::Exited => Message::PtyExited,
+                    })
                 }
-            }
+                Err(e) => {
+                    self.status = format!("터미널 시작 실패: {e}");
+                    Task::none()
+                }
+            },
             Message::PtyLine(line) => {
                 let clean = pty::strip_ansi(&line);
                 if !clean.trim().is_empty() {
@@ -774,13 +805,17 @@ impl App {
                 }
                 let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
                 let n = filtered.len();
-                if n == 0 { return Task::none(); }
-                self.mention_selected = (self.mention_selected as i64 + delta as i64)
-                    .rem_euclid(n as i64) as usize;
+                if n == 0 {
+                    return Task::none();
+                }
+                self.mention_selected =
+                    (self.mention_selected as i64 + delta as i64).rem_euclid(n as i64) as usize;
                 Task::none()
             }
             Message::MentionConfirm => {
-                if !self.show_mention { return Task::none(); }
+                if !self.show_mention {
+                    return Task::none();
+                }
                 let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
                 let Some(chosen) = filtered.into_iter().nth(self.mention_selected) else {
                     return Task::none();
@@ -796,7 +831,8 @@ impl App {
                 let full_path = self.cwd.join(&chosen);
                 Task::perform(
                     async move {
-                        let content = tokio::fs::read_to_string(&full_path).await
+                        let content = tokio::fs::read_to_string(&full_path)
+                            .await
                             .map_err(|e| format!("읽기 실패: {e}"))?;
                         if content.len() > MAX_ATTACH_BYTES as usize {
                             return Err(format!("첨부 거부 (512KB 초과): {}", chosen.display()));
@@ -833,7 +869,8 @@ impl App {
                         let n = models.len();
                         self.model_ids = models.iter().map(|m| m.id.clone()).collect();
                         // OpenRouter 항목만 교체, Tabby 항목 보존
-                        self.model_options.retain(|o| o.provider != LlmProvider::OpenRouter);
+                        self.model_options
+                            .retain(|o| o.provider != LlmProvider::OpenRouter);
                         self.model_options.extend(models.iter().map(|m| {
                             let id = m.id.clone();
                             let ko_friendly = is_korean_friendly(&id);
@@ -868,7 +905,9 @@ impl App {
                         self.models = models;
                         self.status = format!("모델 {} 로드됨", n);
                     }
-                    Err(e) => self.status = format!("페치 실패: {}", openrouter::humanize_error(&e)),
+                    Err(e) => {
+                        self.status = format!("페치 실패: {}", openrouter::humanize_error(&e))
+                    }
                 }
                 Task::none()
             }
@@ -882,10 +921,7 @@ impl App {
                     Ok(k) => k,
                     Err(_) => return Task::none(),
                 };
-                Task::perform(
-                    openrouter::get_account_info(key),
-                    Message::AccountLoaded,
-                )
+                Task::perform(openrouter::get_account_info(key), Message::AccountLoaded)
             }
             Message::AccountLoaded(r) => {
                 if let Ok(data) = r {
@@ -910,7 +946,9 @@ impl App {
                         }
                     }
                     None => {
-                        if self.show_mention { self.close_mention(); }
+                        if self.show_mention {
+                            self.close_mention();
+                        }
                     }
                 }
                 Task::none()
@@ -1090,9 +1128,9 @@ impl App {
                         }
 
                         // 정상 종료 (또는 라운드 한도 초과)
-                        if self.tool_round >= MAX_TOOL_ROUNDS && !self.pending_tool_calls.is_empty() {
-                            self.status =
-                                format!("최대 도구 라운드 {} 초과", MAX_TOOL_ROUNDS);
+                        if self.tool_round >= MAX_TOOL_ROUNDS && !self.pending_tool_calls.is_empty()
+                        {
+                            self.status = format!("최대 도구 라운드 {} 초과", MAX_TOOL_ROUNDS);
                         } else {
                             self.status = "준비됨".into();
                         }
@@ -1125,8 +1163,11 @@ impl App {
                     ChatEvent::Error(e) => {
                         if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
                             if let BlockBody::Assistant(content) = &mut b.body {
-                                let prefix =
-                                    if content.text().is_empty() { "" } else { "\n\n" };
+                                let prefix = if content.text().is_empty() {
+                                    ""
+                                } else {
+                                    "\n\n"
+                                };
                                 let msg = format!("{}[에러] {}", prefix, e);
                                 content.perform(Action::Edit(Edit::Paste(Arc::new(msg))));
                                 let raw = content.text();
@@ -1376,11 +1417,7 @@ impl App {
                     self.last_response_cost = Some(cost);
                     let model_id = data.model.clone().unwrap_or_default();
                     if !model_id.is_empty() {
-                        let entry = self
-                            .usage
-                            .by_model
-                            .entry(model_id)
-                            .or_default();
+                        let entry = self.usage.by_model.entry(model_id).or_default();
                         entry.total_cost += cost;
                         entry.prompt_tokens += data.native_tokens_prompt.unwrap_or(0);
                         entry.completion_tokens += data.native_tokens_completion.unwrap_or(0);
@@ -1591,11 +1628,7 @@ impl App {
             next_block_id: self.next_block_id,
             scroll_y: self.current_scroll_y,
         };
-        if let Some(idx) = self
-            .inactive_sessions
-            .iter()
-            .position(|s| s.id == snap.id)
-        {
+        if let Some(idx) = self.inactive_sessions.iter().position(|s| s.id == snap.id) {
             self.inactive_sessions[idx] = snap;
         } else {
             self.inactive_sessions.push(snap);
@@ -1719,7 +1752,8 @@ impl App {
                 .partition(|tc| tools::tool_kind(&tc.name) == tools::ToolKind::ReadOnly);
             for tc in &local_read {
                 let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
-                self.conversation.push(ChatMessage::tool_result(&tc.id, result));
+                self.conversation
+                    .push(ChatMessage::tool_result(&tc.id, result));
             }
             if !local_write.is_empty() {
                 self.pending_write_calls = local_write;
@@ -1742,7 +1776,8 @@ impl App {
                 tasks.push(Task::perform(
                     async move {
                         match server {
-                            Some(s) => mcp::call_tool(&s, &tool_name, args).await
+                            Some(s) => mcp::call_tool(&s, &tool_name, args)
+                                .await
                                 .unwrap_or_else(|e| format!("[MCP 오류] {e}")),
                             None => "[MCP 오류] 서버 찾을 수 없음".into(),
                         }
@@ -1900,13 +1935,7 @@ impl App {
             }
         }
         let (task, handle) = Task::run(
-            openrouter::chat_stream(
-                base_url,
-                api_key,
-                model,
-                messages,
-                Some(tool_defs),
-            ),
+            openrouter::chat_stream(base_url, api_key, model, messages, Some(tool_defs)),
             Message::ChatChunk,
         )
         .abortable();
@@ -1926,8 +1955,7 @@ impl App {
             PALETTE_COMMANDS
                 .iter()
                 .filter(|c| {
-                    c.label.to_lowercase().contains(&q)
-                        || c.hint.to_lowercase().contains(&q)
+                    c.label.to_lowercase().contains(&q) || c.hint.to_lowercase().contains(&q)
                 })
                 .collect()
         }
@@ -1938,5 +1966,4 @@ impl App {
         self.next_block_id += 1;
         id
     }
-
 }

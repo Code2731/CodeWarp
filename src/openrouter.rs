@@ -180,10 +180,7 @@ pub async fn get_generation(api_key: String, id: String) -> Result<GenerationDat
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     let client = http_client();
     let resp = client
-        .get(format!(
-            "https://openrouter.ai/api/v1/generation?id={}",
-            id
-        ))
+        .get(format!("https://openrouter.ai/api/v1/generation?id={}", id))
         .bearer_auth(&api_key)
         .header("HTTP-Referer", "https://codewarp.app")
         .header("X-Title", "CodeWarp")

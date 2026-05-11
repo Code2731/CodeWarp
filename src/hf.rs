@@ -23,7 +23,9 @@ struct Sibling {
 #[derive(Debug, Clone)]
 pub enum DownloadEvent {
     /// 메타 fetched, 곧 파일 다운로드 시작.
-    Started { total_files: usize },
+    Started {
+        total_files: usize,
+    },
     /// 새 파일 시작.
     FileStart {
         idx: usize,

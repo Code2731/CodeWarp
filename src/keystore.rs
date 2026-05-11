@@ -70,7 +70,9 @@ pub fn write_selected_model(model: &str) -> Result<(), String> {
     if model.trim().is_empty() {
         return Ok(());
     }
-    model_entry()?.set_password(model).map_err(|e| e.to_string())
+    model_entry()?
+        .set_password(model)
+        .map_err(|e| e.to_string())
 }
 
 pub fn clear_selected_model() -> Result<(), String> {
@@ -236,7 +238,9 @@ pub fn write_hf_token(token: &str) -> Result<(), String> {
     if trimmed.is_empty() {
         return clear_hf_token();
     }
-    hf_token_entry()?.set_password(trimmed).map_err(|e| e.to_string())
+    hf_token_entry()?
+        .set_password(trimmed)
+        .map_err(|e| e.to_string())
 }
 
 pub fn clear_hf_token() -> Result<(), String> {
@@ -256,5 +260,7 @@ pub fn write_model_dir(path: &str) -> Result<(), String> {
     if trimmed.is_empty() {
         return Ok(());
     }
-    model_dir_entry()?.set_password(trimmed).map_err(|e| e.to_string())
+    model_dir_entry()?
+        .set_password(trimmed)
+        .map_err(|e| e.to_string())
 }

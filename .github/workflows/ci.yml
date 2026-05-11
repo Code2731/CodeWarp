@@ -9,8 +9,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: cargo test (${{ matrix.os }})
+  harness:
+    name: harness (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,11 +29,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: cargo test
-        run: cargo test --verbose
+      - name: Run harness (fmt + check + test)
+        shell: bash
+        run: bash scripts/harness.sh --skip-clippy
 
   clippy:
-    name: cargo clippy
+    name: harness clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,5 +46,6 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: cargo clippy (warn only — 기존 warning 정리는 별도 PR)
-        run: cargo clippy --all-targets
+      - name: Run harness clippy
+        shell: bash
+        run: bash scripts/harness.sh --skip-fmt --skip-check --skip-tests --strict-clippy

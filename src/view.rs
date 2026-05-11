@@ -1666,24 +1666,29 @@ impl App {
                 }
             });
 
-        let scroll_body = column![
-            Space::new().height(Length::Fixed(8.0)),
-            tabs,
-            summary,
-            Space::new().height(Length::Fixed(8.0)),
-            active_header,
-            active_action_hint,
-            active_section,
-        ]
-        .spacing(10)
-        .max_width(560);
+        // 스크롤바가 콘텐츠를 덮지 않도록 우측 gutter를 확보한다.
+        let scroll_body = container(
+            column![
+                Space::new().height(Length::Fixed(8.0)),
+                tabs,
+                summary,
+                Space::new().height(Length::Fixed(8.0)),
+                active_header,
+                active_action_hint,
+                active_section,
+            ]
+            .spacing(10)
+            .max_width(560),
+        )
+        .padding([0, 14])
+        .width(Length::Fill);
 
         let body = column![
             header,
             scrollable(scroll_body)
                 .direction(Direction::Vertical(vscrollbar()))
                 .height(Length::Fill)
-                .width(Length::Fixed(620.0)),
+                .width(Length::Fill),
         ]
         .height(Length::Fill)
         .width(Length::Fixed(620.0))

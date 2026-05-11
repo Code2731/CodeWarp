@@ -1261,8 +1261,8 @@ impl App {
                 .spacing(2),
             )
                 .on_press(Message::SetSettingsTab(tab))
-                .padding([8, 14])
-                .width(Length::Fixed(138.0));
+                .padding([8, 8])
+                .width(Length::FillPortion(1));
             if self.settings_tab == tab {
                 btn.style(primary_btn)
             } else {

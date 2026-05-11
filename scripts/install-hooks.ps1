@@ -17,4 +17,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Installed git hooks path: .githooks"
-Write-Host "pre-push will now run the harness by default."
+Write-Host "Enabled hooks: pre-commit (fmt check), pre-push (harness)."

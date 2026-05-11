@@ -11,4 +11,4 @@ fi
 
 git config core.hooksPath ".githooks"
 echo "Installed git hooks path: .githooks"
-echo "pre-push will now run the harness by default."
+echo "Enabled hooks: pre-commit (fmt check), pre-push (harness)."

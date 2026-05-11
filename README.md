@@ -131,3 +131,25 @@ cargo build --release
 
 - 본 코드: MIT OR Apache-2.0
 - Pretendard 폰트: SIL Open Font License 1.1 (`assets/fonts/LICENSE.txt`)
+
+## Harness
+
+Quality harness is now part of the default workflow.
+
+- Local checks: `scripts/harness.ps1` (Windows), `scripts/harness.sh` (Linux/macOS)
+- CI uses the same harness entry path
+- Recommended hooks:
+  - `pre-commit`: `cargo fmt -- --check`
+  - `pre-push`: harness (`fmt + check + test`)
+
+Hook installation:
+
+```powershell
+pwsh -File scripts/install-hooks.ps1
+```
+
+```bash
+bash scripts/install-hooks.sh
+```
+
+More details: `docs/HARNESS.md`

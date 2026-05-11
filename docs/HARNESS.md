@@ -94,10 +94,17 @@ Linux/macOS:
 bash scripts/install-hooks.sh
 ```
 
-This enables `.githooks/pre-push`, which runs harness (`fmt + check + test`, clippy skipped).
+This enables:
+
+- `.githooks/pre-commit`: `cargo fmt -- --check`
+- `.githooks/pre-push`: harness (`fmt + check + test`, clippy skipped)
 
 Temporary bypass:
 
 ```bash
 CODEWARP_SKIP_HOOK_HARNESS=1 git push
+```
+
+```bash
+CODEWARP_SKIP_HOOK_FMT=1 git commit -m "..."
 ```

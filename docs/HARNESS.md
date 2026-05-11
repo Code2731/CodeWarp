@@ -77,3 +77,27 @@ The GitHub Actions workflow now uses this harness:
 - Separate strict clippy job on `ubuntu`
 
 This keeps local and CI behavior aligned through a shared execution path.
+
+## Git Hooks (Recommended)
+
+To enforce harness checks before push, install the local hooks path:
+
+Windows:
+
+```powershell
+pwsh -File scripts/install-hooks.ps1
+```
+
+Linux/macOS:
+
+```bash
+bash scripts/install-hooks.sh
+```
+
+This enables `.githooks/pre-push`, which runs harness (`fmt + check + test`, clippy skipped).
+
+Temporary bypass:
+
+```bash
+CODEWARP_SKIP_HOOK_HARNESS=1 git push
+```

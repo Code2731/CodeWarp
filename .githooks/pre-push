@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+set -eu
+
+# Allow emergency bypass:
+#   CODEWARP_SKIP_HOOK_HARNESS=1 git push
+if [ "${CODEWARP_SKIP_HOOK_HARNESS:-}" = "1" ]; then
+  echo "[pre-push] Skipping harness because CODEWARP_SKIP_HOOK_HARNESS=1"
+  exit 0
+fi
+
+echo "[pre-push] Running CodeWarp harness (fmt/check/test, clippy skipped)..."
+
+if command -v pwsh >/dev/null 2>&1; then
+  pwsh -File scripts/harness.ps1 -SkipClippy
+elif command -v powershell >/dev/null 2>&1; then
+  powershell -ExecutionPolicy Bypass -File scripts/harness.ps1 -SkipClippy
+elif command -v bash >/dev/null 2>&1; then
+  bash scripts/harness.sh --skip-clippy
+else
+  echo "[pre-push] No supported shell found (pwsh/powershell/bash)." >&2
+  exit 1
+fi
+
+echo "[pre-push] Harness passed."

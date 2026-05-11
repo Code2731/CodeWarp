@@ -252,6 +252,65 @@ impl App {
             sessions_col = sessions_col.push(row_widget);
         }
 
+        let context_body = if self.attached_files.is_empty() {
+            column![
+                text("컨텍스트").size(FS_LABEL).font(semibold_font()),
+                text("선택 안 됨").size(FS_SUBTITLE),
+            ]
+            .spacing(6)
+        } else {
+            let mut context_list = column![].spacing(4);
+            for (i, (path, _)) in self.attached_files.iter().enumerate() {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.display().to_string());
+                let short_name = shorten_tail(&name, 28);
+                context_list = context_list.push(
+                    container(
+                        row![
+                            text(format!("📄 {short_name}")).size(FS_BODY),
+                            Space::new().width(Length::Fill),
+                            button(text("✕").size(FS_MICRO))
+                                .on_press(Message::RemoveAttachment(i))
+                                .padding([1, 4])
+                                .style(danger_btn),
+                        ]
+                        .spacing(4)
+                        .align_y(Alignment::Center),
+                    )
+                    .padding([3, 6])
+                    .style(|theme: &Theme| {
+                        let p = theme.extended_palette();
+                        container::Style {
+                            background: Some(p.background.strong.color.into()),
+                            border: iced::Border {
+                                color: p.primary.weak.color,
+                                width: 1.0,
+                                radius: 10.0.into(),
+                            },
+                            ..Default::default()
+                        }
+                    }),
+                );
+            }
+            let context_header = row![
+                text(format!("컨텍스트 ({})", self.attached_files.len()))
+                    .size(FS_LABEL)
+                    .font(semibold_font()),
+                Space::new().width(Length::Fill),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center);
+            column![
+                context_header,
+                scrollable(context_list)
+                    .direction(Direction::Vertical(vscrollbar()))
+                    .height(Length::Fixed(140.0)),
+            ]
+            .spacing(6)
+        };
+
         let body = column![
             button(text("＋ 새 채팅").size(FS_SUBTITLE).font(semibold_font()))
                 .on_press(Message::NewChat)
@@ -279,8 +338,7 @@ impl App {
             text("프로젝트").size(FS_LABEL).font(semibold_font()),
             text("CodeWarp").size(FS_SUBTITLE).font(semibold_font()),
             Space::new().height(Length::Fixed(14.0)),
-            text("컨텍스트").size(FS_LABEL).font(semibold_font()),
-            text("선택 안 됨").size(FS_SUBTITLE),
+            context_body,
         ]
         .spacing(6);
 

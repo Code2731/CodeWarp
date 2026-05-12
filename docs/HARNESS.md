@@ -96,7 +96,7 @@ bash scripts/install-hooks.sh
 
 This enables:
 
-- `.githooks/pre-commit`: `cargo fmt -- --check`
+- `.githooks/pre-commit`: `cargo fmt -- --check` (only when Rust-related files are staged)
 - `.githooks/pre-push`: harness (`fmt + check + test`, clippy skipped)
 
 Temporary bypass:

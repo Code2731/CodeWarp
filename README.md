@@ -139,7 +139,7 @@ Quality harness is now part of the default workflow.
 - Local checks: `scripts/harness.ps1` (Windows), `scripts/harness.sh` (Linux/macOS)
 - CI uses the same harness entry path
 - Recommended hooks:
-  - `pre-commit`: `cargo fmt -- --check`
+  - `pre-commit`: `cargo fmt -- --check` (only when Rust-related files are staged)
   - `pre-push`: harness (`fmt + check + test`)
 
 Hook installation:

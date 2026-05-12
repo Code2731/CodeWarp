@@ -8,6 +8,28 @@ if [ "${CODEWARP_SKIP_HOOK_FMT:-}" = "1" ]; then
   exit 0
 fi
 
+# Only run when Rust-related files are staged.
+staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"
+if [ -z "$staged_files" ]; then
+  echo "[pre-commit] No staged files. Skipping fmt check."
+  exit 0
+fi
+
+needs_fmt_check=0
+for path in $staged_files; do
+  case "$path" in
+    *.rs|Cargo.toml|Cargo.lock|rustfmt.toml)
+      needs_fmt_check=1
+      break
+      ;;
+  esac
+done
+
+if [ "$needs_fmt_check" -ne 1 ]; then
+  echo "[pre-commit] No Rust-related staged files. Skipping fmt check."
+  exit 0
+fi
+
 echo "[pre-commit] Running cargo fmt -- --check..."
 cargo fmt -- --check
 echo "[pre-commit] fmt check passed."

@@ -160,18 +160,24 @@ bash scripts/install-hooks.sh
 
 More details: `docs/HARNESS.md`
 
-## Run Helper (Windows)
+## Run Helpers
 
-For Windows users who prefer a single launcher command:
+For a single launcher command by platform:
 
-```bat
-scripts\run.bat
+```powershell
+pwsh -File scripts/run.ps1 -- <args>
 ```
 
-The helper script moves to project root, checks whether `cargo` is available in `PATH`, then runs:
-
-```bat
-cargo run -- %*
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run.ps1 -- <args>
 ```
 
-So extra CLI args are forwarded to the app process unchanged.
+```bat
+scripts\run.bat <args>
+```
+
+```bash
+bash scripts/run.sh <args>
+```
+
+All helpers move to project root, check `cargo` availability in `PATH`, and forward args to `cargo run`.

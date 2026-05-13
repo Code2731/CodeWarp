@@ -5,6 +5,7 @@ param(
     [switch]$SkipTests,
     [switch]$SkipClippy,
     [switch]$StrictClippy,
+    [string]$CargoTargetDir = "",
     [string]$Endpoint = "",
     [string]$Token = "",
     [int]$TimeoutSec = 5
@@ -12,6 +13,12 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if (-not [string]::IsNullOrWhiteSpace($CargoTargetDir)) {
+    $resolvedTargetDir = $CargoTargetDir.Trim()
+    $env:CARGO_TARGET_DIR = $resolvedTargetDir
+    Write-Host "Using CARGO_TARGET_DIR=$resolvedTargetDir"
+}
 
 function Invoke-Step {
     param(

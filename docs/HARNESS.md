@@ -32,10 +32,22 @@ When no skip flags are provided, the harness runs:
 pwsh -File scripts/harness.ps1
 ```
 
+If `pwsh` is unavailable, use Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/harness.ps1
+```
+
 Strict clippy:
 
 ```powershell
 pwsh -File scripts/harness.ps1 -StrictClippy
+```
+
+Use an alternate cargo target directory:
+
+```powershell
+pwsh -File scripts/harness.ps1 -CargoTargetDir C:\tmp\codewarp-target
 ```
 
 Run endpoint health check:
@@ -54,6 +66,12 @@ Strict clippy:
 
 ```bash
 bash scripts/harness.sh --strict-clippy
+```
+
+Use an alternate cargo target directory:
+
+```bash
+bash scripts/harness.sh --target-dir /tmp/codewarp-target
 ```
 
 Run endpoint health check:

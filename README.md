@@ -148,8 +148,30 @@ Hook installation:
 pwsh -File scripts/install-hooks.ps1
 ```
 
+If `pwsh` is not installed:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-hooks.ps1
+```
+
 ```bash
 bash scripts/install-hooks.sh
 ```
 
 More details: `docs/HARNESS.md`
+
+## Run Helper (Windows)
+
+For Windows users who prefer a single launcher command:
+
+```bat
+scripts\run.bat
+```
+
+The helper script moves to project root, checks whether `cargo` is available in `PATH`, then runs:
+
+```bat
+cargo run -- %*
+```
+
+So extra CLI args are forwarded to the app process unchanged.

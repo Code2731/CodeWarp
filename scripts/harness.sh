@@ -6,6 +6,7 @@ skip_check=0
 skip_tests=0
 skip_clippy=0
 strict_clippy=0
+target_dir=""
 endpoint=""
 token=""
 timeout_sec=5
@@ -20,6 +21,7 @@ Options:
   --skip-tests         Skip cargo test --all-targets
   --skip-clippy        Skip cargo clippy --all-targets
   --strict-clippy      Fail when clippy reports issues
+  --target-dir DIR     Set CARGO_TARGET_DIR for this harness run
   --endpoint URL       Run endpoint check against URL (/v1/models)
   --token TOKEN        Bearer token for endpoint check
   --timeout-sec N      Endpoint timeout in seconds (default: 5)
@@ -56,6 +58,10 @@ while [[ $# -gt 0 ]]; do
     --skip-tests) skip_tests=1 ;;
     --skip-clippy) skip_clippy=1 ;;
     --strict-clippy) strict_clippy=1 ;;
+    --target-dir)
+      target_dir="${2:-}"
+      shift
+      ;;
     --endpoint)
       endpoint="${2:-}"
       shift
@@ -80,6 +86,11 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+if [[ -n "${target_dir// }" ]]; then
+  export CARGO_TARGET_DIR="$target_dir"
+  echo "Using CARGO_TARGET_DIR=$CARGO_TARGET_DIR"
+fi
 
 if [[ $skip_fmt -eq 0 ]]; then
   run_step "cargo fmt -- --check" cargo fmt -- --check

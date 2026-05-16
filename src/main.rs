@@ -1897,6 +1897,89 @@ mod tests {
         }
     }
 
+    fn assistant_block_with_text(id: u64, text: &str) -> Block {
+        Block {
+            id,
+            body: BlockBody::Assistant(text_editor::Content::with_text(text)),
+            view_mode: ViewMode::Rendered,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn abort_stream_keeps_partial_assistant_when_requested() {
+        let (mut app, _) = App::new();
+        app.conversation.clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.tool_round = 3;
+        app.pending_tool_calls = vec![PendingToolCall {
+            id: "tc-1".into(),
+            name: "read_file".into(),
+            arguments: "{}".into(),
+        }];
+        app.blocks
+            .push(assistant_block_with_text(42, "partial response"));
+
+        app.abort_active_chat_stream(true);
+
+        assert!(app.streaming_block_id.is_none());
+        assert!(app.pending_tool_calls.is_empty());
+        assert_eq!(app.tool_round, 0);
+        assert_eq!(app.conversation.len(), 1);
+        assert_eq!(app.conversation[0].role, "assistant");
+        assert_eq!(
+            app.conversation[0].content.as_deref(),
+            Some("partial response")
+        );
+    }
+
+    #[test]
+    fn abort_stream_drops_partial_assistant_when_not_requested() {
+        let (mut app, _) = App::new();
+        app.conversation.clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(7);
+        app.tool_round = 2;
+        app.pending_tool_calls = vec![PendingToolCall {
+            id: "tc-2".into(),
+            name: "glob".into(),
+            arguments: "{}".into(),
+        }];
+        app.blocks
+            .push(assistant_block_with_text(7, "to be discarded"));
+
+        app.abort_active_chat_stream(false);
+
+        assert!(app.streaming_block_id.is_none());
+        assert!(app.pending_tool_calls.is_empty());
+        assert_eq!(app.tool_round, 0);
+        assert!(app.conversation.is_empty());
+    }
+
+    #[test]
+    fn abort_stream_handles_missing_assistant_block() {
+        let (mut app, _) = App::new();
+        app.conversation.clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(999);
+        app.tool_round = 1;
+        app.pending_tool_calls = vec![PendingToolCall {
+            id: "tc-3".into(),
+            name: "grep".into(),
+            arguments: "{}".into(),
+        }];
+
+        app.abort_active_chat_stream(true);
+
+        assert!(app.streaming_block_id.is_none());
+        assert!(app.pending_tool_calls.is_empty());
+        assert_eq!(app.tool_round, 0);
+        assert!(app.conversation.is_empty());
+    }
+
     #[test]
     fn last_user_idx_empty() {
         assert_eq!(last_user_block_idx(&[]), None);

@@ -1711,7 +1711,7 @@ impl App {
     }
 
     // Abort active assistant stream and optionally keep partial assistant text.
-    fn abort_active_chat_stream(&mut self, keep_partial_assistant: bool) {
+    pub(crate) fn abort_active_chat_stream(&mut self, keep_partial_assistant: bool) {
         if let Some(h) = self.abort_handle.take() {
             h.abort();
         }

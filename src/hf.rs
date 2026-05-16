@@ -43,11 +43,11 @@ pub enum DownloadEvent {
     Error(String),
 }
 
-fn http_client() -> reqwest::Client {
+fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent("CodeWarp/0.2.0")
         .build()
-        .expect("reqwest client 빌드 실패")
+        .map_err(|e| format!("HTTP client 생성 실패: {e}"))
 }
 
 /// `repo_id` 예: "turboderp/Llama-3.2-1B-Instruct-exl2". siblings를
@@ -60,7 +60,10 @@ pub fn download_repo(
     folder_name: Option<String>,
 ) -> impl Stream<Item = DownloadEvent> {
     async_stream::stream! {
-        let client = http_client();
+        let client = match http_client() {
+            Ok(c) => c,
+            Err(e) => { yield DownloadEvent::Error(e); return; }
+        };
         let rev = revision.as_deref().unwrap_or("main");
 
         // 1) siblings 메타 (revision 쿼리 파라미터로 branch 지정)

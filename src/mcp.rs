@@ -1,30 +1,31 @@
-// MCP (Model Context Protocol) stdio 클라이언트.
-// 서버를 child process로 spawn해 JSON-RPC 2.0 over stdin/stdout으로 통신.
+// MCP (Model Context Protocol) stdio client.
+// Spawns a server process and communicates over JSON-RPC 2.0 via stdin/stdout.
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-/// 사용자가 등록한 MCP 서버 설정.
+/// User-configured MCP server entry.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct McpServer {
-    /// 모델 셀렉터/로그에 표시할 이름
+    /// Display label used in UI logs/tool list.
     pub name: String,
-    /// spawn할 명령 (공백 구분, 예: "npx -y @modelcontextprotocol/server-filesystem /tmp")
+    /// Spawn command. Quote arguments that include spaces.
+    /// Example: `npx -y @modelcontextprotocol/server-filesystem "/tmp/work dir"`
     pub command: String,
 }
 
-/// MCP 서버에서 가져온 tool 하나.
+/// Tool metadata discovered from an MCP server.
 #[derive(Debug, Clone)]
 pub struct McpTool {
     pub server_name: String,
     pub name: String,
     pub description: String,
-    /// JSON Schema (MCP `inputSchema` 필드)
+    /// JSON Schema from MCP `inputSchema`.
     pub input_schema: serde_json::Value,
 }
 
 impl McpTool {
-    /// OpenAI tool_definitions 형식으로 변환 (chat_stream 요청에 포함).
+    /// Convert to OpenAI-compatible tool definition.
     pub fn to_openai_tool(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "function",
@@ -37,13 +38,49 @@ impl McpTool {
     }
 }
 
-/// spawn, initialize, method 호출, 결과 반환. 호출 후 서버 종료.
+/// Parse a command string into executable + args.
+/// Supports single/double quoted segments so paths with spaces survive parsing.
+fn parse_command(command: &str) -> Result<Vec<String>, String> {
+    let mut args: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut in_single = false;
+    let mut in_double = false;
+
+    for ch in command.chars() {
+        match ch {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            c if c.is_whitespace() && !in_single && !in_double => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if in_single || in_double {
+        return Err("MCP 명령 파싱 실패: 따옴표가 닫히지 않았습니다.".into());
+    }
+
+    if !current.is_empty() {
+        args.push(current);
+    }
+
+    if args.is_empty() {
+        return Err("빈 명령".into());
+    }
+
+    Ok(args)
+}
+
+/// Spawn server, initialize session, call method, return result, and then exit.
 async fn rpc_call(
     command: &str,
     method: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let parts: Vec<&str> = command.split_whitespace().collect();
+    let parts = parse_command(command)?;
     let (program, args) = parts.split_first().ok_or("빈 명령")?;
 
     let mut child = Command::new(program)
@@ -54,8 +91,14 @@ async fn rpc_call(
         .spawn()
         .map_err(|e| format!("MCP 서버 시작 실패: {e}"))?;
 
-    let mut stdin = child.stdin.take().unwrap();
-    let stdout = child.stdout.take().unwrap();
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "MCP stdin pipe 열기 실패".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "MCP stdout pipe 열기 실패".to_string())?;
     let mut lines = BufReader::new(stdout).lines();
 
     // initialize
@@ -73,17 +116,17 @@ async fn rpc_call(
     )
     .await?;
 
-    // initialize 응답 읽기 (id=0)
+    // wait initialize response (id=0)
     read_response(&mut lines, 0).await?;
 
-    // initialized 알림
+    // initialized notification
     send_json(
         &mut stdin,
         &serde_json::json!({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}),
     )
     .await?;
 
-    // 실제 요청 (id=1)
+    // request (id=1)
     send_json(
         &mut stdin,
         &serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}),
@@ -92,7 +135,7 @@ async fn rpc_call(
 
     let result = read_response(&mut lines, 1).await?;
 
-    // stdin 닫으면 대부분 서버가 종료됨
+    // Close stdin and wait for child shutdown.
     drop(stdin);
     let _ = child.wait().await;
 
@@ -103,7 +146,7 @@ async fn send_json(
     stdin: &mut tokio::process::ChildStdin,
     val: &serde_json::Value,
 ) -> Result<(), String> {
-    let mut line = serde_json::to_string(val).unwrap();
+    let mut line = serde_json::to_string(val).map_err(|e| format!("JSON 직렬화 실패: {e}"))?;
     line.push('\n');
     stdin
         .write_all(line.as_bytes())
@@ -115,7 +158,7 @@ async fn read_response(
     lines: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
     expected_id: u64,
 ) -> Result<serde_json::Value, String> {
-    // 최대 50줄 읽어서 id가 맞는 응답 탐색 (알림/로그 건너뜀)
+    // Read up to 50 lines while skipping notifications/log lines.
     for _ in 0..50 {
         let line = lines
             .next_line()
@@ -125,7 +168,7 @@ async fn read_response(
 
         let val: serde_json::Value = match serde_json::from_str(&line) {
             Ok(v) => v,
-            Err(_) => continue, // 비-JSON 줄 무시
+            Err(_) => continue, // Ignore non-JSON lines.
         };
 
         if val.get("id").and_then(|v| v.as_u64()) != Some(expected_id) {
@@ -144,7 +187,7 @@ async fn read_response(
     Err("MCP 응답 타임아웃 (50줄 초과)".into())
 }
 
-/// MCP 서버를 spawn해 `tools/list`를 호출하고 tool 목록을 반환.
+/// Spawn MCP server, call `tools/list`, return tool metadata.
 pub async fn list_tools(server: &McpServer) -> Result<Vec<McpTool>, String> {
     let result = rpc_call(&server.command, "tools/list", serde_json::json!({})).await?;
 
@@ -176,7 +219,7 @@ pub async fn list_tools(server: &McpServer) -> Result<Vec<McpTool>, String> {
         .collect())
 }
 
-/// MCP 서버를 spawn해 `tools/call`을 실행하고 결과 문자열을 반환.
+/// Spawn MCP server, call `tools/call`, return textual content.
 pub async fn call_tool(
     server: &McpServer,
     tool_name: &str,
@@ -192,7 +235,7 @@ pub async fn call_tool(
     Ok(extract_text_content(&result))
 }
 
-/// `{content: [{type:"text", text:"..."}]}` 형식에서 텍스트를 추출.
+/// Extract text from `{content:[{type:"text",text:"..."}]}` response shape.
 pub fn extract_text_content(result: &serde_json::Value) -> String {
     let content = result
         .get("content")
@@ -218,7 +261,7 @@ pub fn extract_text_content(result: &serde_json::Value) -> String {
     }
 }
 
-/// MCP 서버 목록을 JSON 파일로 저장.
+/// Persist MCP server list.
 pub fn save_servers(servers: &[McpServer]) -> Result<(), String> {
     let path = servers_path();
     if let Some(parent) = path.parent() {
@@ -228,7 +271,7 @@ pub fn save_servers(servers: &[McpServer]) -> Result<(), String> {
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
 
-/// 저장된 MCP 서버 목록 로드.
+/// Load persisted MCP server list.
 pub fn load_servers() -> Vec<McpServer> {
     let path = servers_path();
     let Ok(data) = std::fs::read_to_string(&path) else {
@@ -253,7 +296,7 @@ mod tests {
         let tool = McpTool {
             server_name: "test".into(),
             name: "list_files".into(),
-            description: "파일 목록 반환".into(),
+            description: "returns file list".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -265,7 +308,7 @@ mod tests {
         let v = tool.to_openai_tool();
         assert_eq!(v["type"], "function");
         assert_eq!(v["function"]["name"], "list_files");
-        assert_eq!(v["function"]["description"], "파일 목록 반환");
+        assert_eq!(v["function"]["description"], "returns file list");
         assert!(v["function"]["parameters"]["properties"]["path"].is_object());
     }
 
@@ -318,5 +361,40 @@ mod tests {
         // 파일이 없으면 빈 Vec 반환 (panic 없음)
         let result = std::panic::catch_unwind(load_servers);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn parse_command_splits_basic_tokens() {
+        let parsed = parse_command("npx -y @modelcontextprotocol/server-filesystem /tmp").unwrap();
+        assert_eq!(
+            parsed,
+            vec![
+                "npx".to_string(),
+                "-y".to_string(),
+                "@modelcontextprotocol/server-filesystem".to_string(),
+                "/tmp".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_command_preserves_quoted_segments() {
+        let parsed =
+            parse_command(r#"npx -y server-filesystem "C:\Work Dir\project root""#).unwrap();
+        assert_eq!(
+            parsed,
+            vec![
+                "npx".to_string(),
+                "-y".to_string(),
+                "server-filesystem".to_string(),
+                r#"C:\Work Dir\project root"#.to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_command_rejects_unclosed_quote() {
+        let err = parse_command(r#"npx -y "server-filesystem"#).unwrap_err();
+        assert!(err.contains("따옴표"));
     }
 }

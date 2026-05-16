@@ -1033,6 +1033,7 @@ struct App {
     streaming_block_id: Option<u64>,
     /// 진행 중인 chat_stream task의 abort handle (Stop 버튼이 사용).
     abort_handle: Option<task::Handle>,
+    hf_abort_handle: Option<task::Handle>,
     /// 사이드바에서 삭제 확인 대기 중인 세션 ID (✕ → ✓/✗ 토글).
     pending_delete_session: Option<u64>,
     /// 인라인 confirm에서 펼친 카드 인덱스 (한 번에 하나만 펼침).
@@ -1506,6 +1507,7 @@ impl App {
             input: String::new(),
             streaming_block_id: None,
             abort_handle: None,
+            hf_abort_handle: None,
             pending_delete_session: None,
             expanded_confirm_idx: None,
             hf_token_input: keystore::read_hf_token().unwrap_or_default(),

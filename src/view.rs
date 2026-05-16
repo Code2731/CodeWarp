@@ -649,7 +649,7 @@ impl App {
                         markdown::view_with(b.md_items.iter(), settings, &CodewarpViewer)
                     }
                     (BlockBody::ToolResult { .. }, _) => {
-                        unreachable!("ToolResult is handled above")
+                        text("도구 결과 렌더링 경로 오류").size(FS_SUBTITLE).into()
                     }
                 };
 
@@ -1957,12 +1957,17 @@ impl App {
         };
 
         let actions: Element<Message> = if running {
+            let running_label = if let Some(pid) = self.inference_pid {
+                format!("● 실행 중 (pid {})", pid)
+            } else {
+                "● 실행 중".to_string()
+            };
             row![
-                text(format!("● 실행 중 (pid {})", self.inference_pid.unwrap()))
-                    .size(FS_LABEL)
-                    .style(|theme: &Theme| iced::widget::text::Style {
+                text(running_label).size(FS_LABEL).style(|theme: &Theme| {
+                    iced::widget::text::Style {
                         color: Some(theme.extended_palette().success.base.color),
-                    }),
+                    }
+                }),
                 Space::new().width(Length::Fill),
                 button(text("중지").size(FS_LABEL))
                     .on_press(Message::StopInference)

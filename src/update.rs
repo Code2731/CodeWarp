@@ -430,6 +430,14 @@ impl App {
                 Task::none()
             }
             Message::StartHfDownload => {
+                if self.hf_dl.is_some() {
+                    self.status = "이미 다운로드가 진행 중입니다.".into();
+                    return Task::none();
+                }
+                // 방어적으로 이전 handle이 남아 있으면 정리.
+                if let Some(h) = self.hf_abort_handle.take() {
+                    h.abort();
+                }
                 let repo = self.hf_repo_input.trim().to_string();
                 if repo.is_empty() {
                     self.status = "HF repo ID 비어있음".into();
@@ -463,9 +471,7 @@ impl App {
                     Message::HfDownloadEvent,
                 )
                 .abortable();
-                // 기존 abort_handle은 chat 전용이라 별도 보관 X — Cancel 시 hf_dl=None만 set
-                // 단순함 우선: 다운로드 abort handle을 abort_handle에 저장 (chat과 공용)
-                self.abort_handle = Some(handle);
+                self.hf_abort_handle = Some(handle);
                 task
             }
             Message::HfDownloadEvent(ev) => {
@@ -496,19 +502,19 @@ impl App {
                                 dl.repo_id
                             );
                             self.hf_dl = None;
-                            self.abort_handle = None;
+                            self.hf_abort_handle = None;
                         }
                         hf::DownloadEvent::Error(e) => {
                             self.status = format!("다운로드 실패: {}", e);
                             self.hf_dl = None;
-                            self.abort_handle = None;
+                            self.hf_abort_handle = None;
                         }
                     }
                 }
                 Task::none()
             }
             Message::CancelHfDownload => {
-                if let Some(h) = self.abort_handle.take() {
+                if let Some(h) = self.hf_abort_handle.take() {
                     h.abort();
                 }
                 self.hf_dl = None;
@@ -978,7 +984,7 @@ impl App {
                     }
                     _ => {}
                 }
-                if self.selected_model.is_none() || self.streaming_block_id.is_some() {
+                if self.streaming_block_id.is_some() {
                     return Task::none();
                 }
                 let (base_url, api_key) = match self.resolve_provider() {
@@ -988,7 +994,10 @@ impl App {
                         return Task::none();
                     }
                 };
-                let model = self.selected_model.clone().unwrap();
+                let Some(model) = self.selected_model.clone() else {
+                    self.status = "모델을 먼저 선택해주세요.".into();
+                    return Task::none();
+                };
 
                 // 새 turn 시작: system 메시지(cwd 안내) 보장 → user 메시지 push.
                 self.ensure_system_message();
@@ -1318,6 +1327,11 @@ impl App {
                 Task::none()
             }
             Message::NewChat => {
+                if self.streaming_block_id.is_some() {
+                    if let Some(h) = self.abort_handle.take() {
+                        h.abort();
+                    }
+                }
                 // 현재 세션 보존 + 새 빈 세션 시작
                 self.snapshot_current_to_inactive();
                 self.blocks.clear();
@@ -1329,6 +1343,7 @@ impl App {
                 self.tool_round = 0;
                 self.next_block_id = 0;
                 self.input.clear();
+                self.pending_delete_session = None;
                 self.current_session_id = self.allocate_session_id();
                 self.current_session_title = "새 채팅".into();
                 self.status = "새 채팅".into();
@@ -1346,6 +1361,11 @@ impl App {
                 else {
                     return Task::none();
                 };
+                if self.streaming_block_id.is_some() {
+                    if let Some(h) = self.abort_handle.take() {
+                        h.abort();
+                    }
+                }
                 // 현재 활성을 inactive로 보관
                 self.snapshot_current_to_inactive();
                 // target 활성화
@@ -1362,6 +1382,7 @@ impl App {
                 self.streaming_block_id = None;
                 self.tool_round = 0;
                 self.input.clear();
+                self.pending_delete_session = None;
                 self.status = "세션 전환됨".into();
                 self.save_session();
                 // 새 세션의 마지막 scroll 위치로 복원
@@ -1536,10 +1557,10 @@ impl App {
             .filter_map(|b| match &b.body {
                 BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
                     id: b.id,
-                    role: match &b.body {
-                        BlockBody::User(_) => "user".into(),
-                        BlockBody::Assistant(_) => "assistant".into(),
-                        _ => unreachable!(),
+                    role: if matches!(&b.body, BlockBody::User(_)) {
+                        "user".into()
+                    } else {
+                        "assistant".into()
                     },
                     content: b.body.to_text(),
                     model: b.model.clone().unwrap_or_default(),
@@ -1609,10 +1630,10 @@ impl App {
             .filter_map(|b| match &b.body {
                 BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
                     id: b.id,
-                    role: match &b.body {
-                        BlockBody::User(_) => "user".into(),
-                        BlockBody::Assistant(_) => "assistant".into(),
-                        _ => unreachable!(),
+                    role: if matches!(&b.body, BlockBody::User(_)) {
+                        "user".into()
+                    } else {
+                        "assistant".into()
                     },
                     content: b.body.to_text(),
                     model: b.model.clone().unwrap_or_default(),

@@ -3,12 +3,12 @@
 
 use serde::Deserialize;
 
-fn http_client() -> reqwest::Client {
+fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent("CodeWarp/0.2.0")
         .timeout(std::time::Duration::from_secs(5))
         .build()
-        .expect("reqwest client 빌드 실패")
+        .map_err(|e| format!("HTTP client 생성 실패: {e}"))
 }
 
 fn normalize_base(url: &str) -> String {
@@ -71,7 +71,7 @@ pub async fn list_models(base_url: String, token: Option<String>) -> Result<Vec<
     // chat_base와 동일하게 /v1 중복 방지
     let v1 = chat_base(&base_url);
     let url = format!("{}/models", v1);
-    let client = http_client();
+    let client = http_client()?;
     let mut req = client.get(&url);
     if let Some(t) = token.as_ref().filter(|s| !s.trim().is_empty()) {
         req = req.bearer_auth(t.trim());

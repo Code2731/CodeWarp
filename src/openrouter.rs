@@ -142,11 +142,11 @@ struct ToolCallFunctionDelta {
     arguments: Option<String>,
 }
 
-fn http_client() -> reqwest::Client {
+fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent("CodeWarp/0.2.0")
         .build()
-        .expect("reqwest client 빌드 실패")
+        .map_err(|e| format!("HTTP client 생성 실패: {e}"))
 }
 
 /// OpenRouter 키의 사용량/한도 정보 (`/api/v1/auth/key`).
@@ -178,7 +178,7 @@ struct GenerationResponse {
 pub async fn get_generation(api_key: String, id: String) -> Result<GenerationData, String> {
     // OpenRouter는 generation 직후 약간의 지연이 있어 200~500ms 대기 후 조회.
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-    let client = http_client();
+    let client = http_client()?;
     let resp = client
         .get(format!("https://openrouter.ai/api/v1/generation?id={}", id))
         .bearer_auth(&api_key)
@@ -197,7 +197,7 @@ pub async fn get_generation(api_key: String, id: String) -> Result<GenerationDat
 }
 
 pub async fn get_account_info(api_key: String) -> Result<AuthKeyData, String> {
-    let client = http_client();
+    let client = http_client()?;
     let resp = client
         .get("https://openrouter.ai/api/v1/auth/key")
         .bearer_auth(&api_key)
@@ -216,7 +216,7 @@ pub async fn get_account_info(api_key: String) -> Result<AuthKeyData, String> {
 }
 
 pub async fn list_models(api_key: String) -> Result<Vec<OpenRouterModel>, String> {
-    let client = http_client();
+    let client = http_client()?;
     let resp = client
         .get("https://openrouter.ai/api/v1/models")
         .bearer_auth(&api_key)
@@ -347,7 +347,13 @@ pub fn chat_stream(
     tools: Option<serde_json::Value>,
 ) -> impl Stream<Item = ChatEvent> {
     async_stream::stream! {
-        let client = http_client();
+        let client = match http_client() {
+            Ok(c) => c,
+            Err(e) => {
+                yield ChatEvent::Error(e);
+                return;
+            }
+        };
         let body = ChatRequest {
             model: &model,
             messages: &messages,

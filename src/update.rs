@@ -803,6 +803,13 @@ impl App {
                 }
                 Task::none()
             }
+            Message::ClearAttachments => {
+                if !self.attached_files.is_empty() {
+                    self.attached_files.clear();
+                    self.status = "而⑦뀓?ㅽ듃瑜?鍮꿋뒿?덈떎.".into();
+                }
+                Task::none()
+            }
 
             // ── @-mention ─────────────────────────────────────────
             Message::MentionMove(delta) => {
@@ -1237,6 +1244,44 @@ impl App {
                 },
                 Message::CwdPicked,
             ),
+            Message::PickAttachment => Task::perform(
+                {
+                    let cwd = self.cwd.clone();
+                    async move {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("而⑦뀓?ㅽ듃 ?뚯씪 ?좏깮")
+                            .set_directory(cwd)
+                            .pick_file()
+                            .await
+                            .map(|h| h.path().to_path_buf())
+                    }
+                },
+                Message::AttachmentPicked,
+            ),
+            Message::AttachmentPicked(maybe_path) => {
+                let Some(path) = maybe_path else {
+                    return Task::none();
+                };
+                if self.is_already_attached(&path) {
+                    self.status = format!("?대? 泥⑤???뚯씪: {}", path.display());
+                    return Task::none();
+                }
+                Task::perform(
+                    async move {
+                        let content = tokio::fs::read_to_string(&path)
+                            .await
+                            .map_err(|e| format!("?쎄린 ?ㅽ뙣: {e}"))?;
+                        if content.len() > MAX_ATTACH_BYTES as usize {
+                            return Err(format!("泥⑤? 嫄곕? (512KB 珥덇낵): {}", path.display()));
+                        }
+                        Ok((path, content))
+                    },
+                    |r| match r {
+                        Ok((p, s)) => Message::FileReadDone(p, s),
+                        Err(msg) => Message::FileAttachError(msg),
+                    },
+                )
+            }
             Message::ApproveWrites => {
                 self.expanded_confirm_idx = None;
                 self.continue_after_writes(true)

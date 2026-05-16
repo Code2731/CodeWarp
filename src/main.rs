@@ -1411,8 +1411,14 @@ enum Message {
     FileDragHover,
     /// 파일 읽기 완료 → attached_files에 추가
     FileReadDone(PathBuf, String),
+    /// 파일 선택기로 컨텍스트 파일 하나를 첨부
+    PickAttachment,
+    /// 파일 선택기 결과
+    AttachmentPicked(Option<PathBuf>),
     /// 첨부 파일 제거 (인덱스)
     RemoveAttachment(usize),
+    /// 첨부 파일 전체 제거
+    ClearAttachments,
     /// mention 팝업 ↑(-1) ↓(+1)
     MentionMove(i32),
     /// mention 팝업에서 선택 확정 (Enter)

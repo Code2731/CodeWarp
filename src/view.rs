@@ -259,26 +259,55 @@ impl App {
             sessions_col = sessions_col.push(row_widget);
         }
 
+        let context_total_bytes: u64 = self
+            .attached_files
+            .iter()
+            .map(|(_, content)| content.len() as u64)
+            .sum();
+        let context_actions = |has_files: bool| {
+            row![
+                button(text("+ Add file").size(FS_MICRO))
+                    .on_press(Message::PickAttachment)
+                    .padding([2, 8])
+                    .style(secondary_btn),
+                button(text("Clear").size(FS_MICRO))
+                    .on_press_maybe(if has_files {
+                        Some(Message::ClearAttachments)
+                    } else {
+                        None
+                    })
+                    .padding([2, 8])
+                    .style(danger_btn),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center)
+        };
+
         let context_body = if self.attached_files.is_empty() {
             column![
-                text("컨텍스트").size(FS_LABEL).font(semibold_font()),
-                text("선택 안 됨").size(FS_SUBTITLE),
+                text("Context").size(FS_LABEL).font(semibold_font()),
+                context_actions(false),
+                text("No files selected").size(FS_SUBTITLE),
             ]
             .spacing(6)
         } else {
             let mut context_list = column![].spacing(4);
-            for (i, (path, _)) in self.attached_files.iter().enumerate() {
+            for (i, (path, content)) in self.attached_files.iter().enumerate() {
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| path.display().to_string());
-                let short_name = shorten_tail(&name, 28);
+                let short_name = shorten_tail(&name, 24);
+                let size_label = fmt_bytes(content.len() as u64);
                 context_list = context_list.push(
                     container(
                         row![
-                            text(format!("📄 {short_name}")).size(FS_BODY),
+                            text(format!("* {short_name}")).size(FS_BODY),
                             Space::new().width(Length::Fill),
-                            button(text("✕").size(FS_MICRO))
+                            text(size_label)
+                                .size(FS_MICRO)
+                                .font(Font::with_name("JetBrains Mono")),
+                            button(text("x").size(FS_MICRO))
                                 .on_press(Message::RemoveAttachment(i))
                                 .padding([1, 4])
                                 .style(danger_btn),
@@ -302,18 +331,22 @@ impl App {
                 );
             }
             let context_header = row![
-                text(format!("컨텍스트 ({})", self.attached_files.len()))
+                text(format!("Context ({})", self.attached_files.len()))
                     .size(FS_LABEL)
                     .font(semibold_font()),
                 Space::new().width(Length::Fill),
+                text(fmt_bytes(context_total_bytes))
+                    .size(FS_MICRO)
+                    .font(Font::with_name("JetBrains Mono")),
             ]
             .spacing(4)
             .align_y(Alignment::Center);
             column![
                 context_header,
+                context_actions(true),
                 scrollable(context_list)
                     .direction(Direction::Vertical(vscrollbar()))
-                    .height(Length::Fixed(140.0)),
+                    .height(Length::Fixed(170.0)),
             ]
             .spacing(6)
         };
@@ -354,7 +387,7 @@ impl App {
                 .direction(Direction::Vertical(vscrollbar()))
                 .height(Length::Fill),
         )
-        .width(Length::Fixed(220.0))
+        .width(Length::Fixed(260.0))
         .height(Length::Fill)
         .padding(14)
         .style(panel_style)

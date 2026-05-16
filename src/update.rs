@@ -1053,20 +1053,7 @@ impl App {
                 Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
             }
             Message::StopStream => {
-                if let Some(h) = self.abort_handle.take() {
-                    h.abort();
-                }
-                if let Some(ai_id) = self.streaming_block_id {
-                    if let Some(b) = self.blocks.iter().find(|b| b.id == ai_id) {
-                        let txt = b.body.to_text();
-                        if !txt.is_empty() {
-                            self.conversation.push(ChatMessage::assistant(txt));
-                        }
-                    }
-                }
-                self.streaming_block_id = None;
-                self.pending_tool_calls.clear();
-                self.tool_round = 0;
+                self.abort_active_chat_stream(true);
                 self.status = "중지됨".into();
                 self.maybe_update_title();
                 self.save_session();
@@ -1327,11 +1314,7 @@ impl App {
                 Task::none()
             }
             Message::NewChat => {
-                if self.streaming_block_id.is_some() {
-                    if let Some(h) = self.abort_handle.take() {
-                        h.abort();
-                    }
-                }
+                self.abort_active_chat_stream(true);
                 // 현재 세션 보존 + 새 빈 세션 시작
                 self.snapshot_current_to_inactive();
                 self.blocks.clear();
@@ -1361,11 +1344,7 @@ impl App {
                 else {
                     return Task::none();
                 };
-                if self.streaming_block_id.is_some() {
-                    if let Some(h) = self.abort_handle.take() {
-                        h.abort();
-                    }
-                }
+                self.abort_active_chat_stream(true);
                 // 현재 활성을 inactive로 보관
                 self.snapshot_current_to_inactive();
                 // target 활성화
@@ -1729,6 +1708,26 @@ impl App {
                 ..Default::default()
             },
         );
+    }
+
+    // Abort active assistant stream and optionally keep partial assistant text.
+    fn abort_active_chat_stream(&mut self, keep_partial_assistant: bool) {
+        if let Some(h) = self.abort_handle.take() {
+            h.abort();
+        }
+        if keep_partial_assistant {
+            if let Some(ai_id) = self.streaming_block_id {
+                if let Some(b) = self.blocks.iter().find(|b| b.id == ai_id) {
+                    let txt = b.body.to_text();
+                    if !txt.is_empty() {
+                        self.conversation.push(ChatMessage::assistant(txt));
+                    }
+                }
+            }
+        }
+        self.streaming_block_id = None;
+        self.pending_tool_calls.clear();
+        self.tool_round = 0;
     }
 
     /// pending_tool_calls를 conversation에 반영, 안전한 도구는 즉시 실행하고

@@ -45,8 +45,22 @@ fn parse_command(command: &str) -> Result<Vec<String>, String> {
     let mut current = String::new();
     let mut in_single = false;
     let mut in_double = false;
+    let mut chars = command.chars().peekable();
 
-    for ch in command.chars() {
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && !in_single {
+            if let Some(next) = chars.peek().copied() {
+                let escapable = next == '"' || next == '\'' || next == '\\' || next.is_whitespace();
+                if escapable {
+                    current.push(next);
+                    let _ = chars.next();
+                    continue;
+                }
+            }
+            current.push(ch);
+            continue;
+        }
+
         match ch {
             '\'' if !in_double => in_single = !in_single,
             '"' if !in_single => in_double = !in_double,
@@ -389,6 +403,41 @@ mod tests {
                 "server-filesystem".to_string(),
                 r#"C:\Work Dir\project root"#.to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn parse_command_unescapes_escaped_quote_in_double_quotes() {
+        let parsed = parse_command("python -c \"print(\\\"hi\\\")\"").unwrap();
+        assert_eq!(
+            parsed,
+            vec![
+                "python".to_string(),
+                "-c".to_string(),
+                "print(\"hi\")".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_command_preserves_windows_backslashes() {
+        let parsed = parse_command(r#"cmd /c "C:\Tools\server.exe --port 8080""#).unwrap();
+        assert_eq!(
+            parsed,
+            vec![
+                "cmd".to_string(),
+                "/c".to_string(),
+                r#"C:\Tools\server.exe --port 8080"#.to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_command_supports_escaped_space_outside_quotes() {
+        let parsed = parse_command(r#"tool C:\Work\My\ Folder"#).unwrap();
+        assert_eq!(
+            parsed,
+            vec!["tool".to_string(), r#"C:\Work\My Folder"#.to_string()]
         );
     }
 

@@ -2507,9 +2507,27 @@ impl App {
         } else {
             text(&self.status).size(FS_LABEL).into()
         };
-        let mut bar = row![busy_prefix, status_text, Space::new().width(Length::Fill),]
-            .spacing(8)
-            .align_y(Alignment::Center);
+        let streaming_hint: Element<Message> = if self.streaming_block_id.is_some() {
+            text("STREAMING")
+                .size(FS_MICRO)
+                .style(|theme: &Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().primary.base.color),
+                })
+                .into()
+        } else {
+            Space::new()
+                .width(Length::Shrink)
+                .height(Length::Shrink)
+                .into()
+        };
+        let mut bar = row![
+            busy_prefix,
+            streaming_hint,
+            status_text,
+            Space::new().width(Length::Fill),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
         if !last_cost_label.is_empty() {
             bar = bar.push(
                 text(last_cost_label)

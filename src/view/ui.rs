@@ -6,9 +6,19 @@ pub(crate) const FS_SUBTITLE: f32 = 13.0;
 pub(crate) const FS_BODY: f32 = 12.0;
 pub(crate) const FS_LABEL: f32 = 11.0;
 pub(crate) const FS_MICRO: f32 = 10.0;
+pub(crate) const SPACE_XXS: f32 = 2.0;
+pub(crate) const SPACE_XS: f32 = 4.0;
+pub(crate) const SPACE_SM: f32 = 6.0;
+pub(crate) const PAD_XXS: u16 = 2;
+pub(crate) const PAD_XS: u16 = 4;
+pub(crate) const PAD_SM: u16 = 6;
+pub(crate) const PAD_MD: u16 = 8;
+pub(crate) const PAD_LG: u16 = 14;
+pub(crate) const CONTEXT_LIST_HEIGHT: f32 = 176.0;
 const BORDER_WIDTH: f32 = 1.0;
 const PANEL_RADIUS: f32 = 12.0;
 const CONTROL_RADIUS: f32 = 10.0;
+const CONTEXT_ITEM_RADIUS: f32 = 10.0;
 const UI_FONT_FAMILY: &str = "Pretendard";
 const SOFT_BG_ALPHA: f32 = 0.45;
 const INPUT_BG_ALPHA: f32 = 0.88;
@@ -86,6 +96,19 @@ pub(crate) fn secondary_btn(theme: &Theme, status: button::Status) -> button::St
             color: p.background.strong.color,
             width: BORDER_WIDTH,
             radius: CONTROL_RADIUS.into(),
+        },
+        ..Default::default()
+    }
+}
+
+pub(crate) fn context_item_style(theme: &Theme) -> container::Style {
+    let p = theme.extended_palette();
+    container::Style {
+        background: Some(with_alpha(p.background.strong.color, 0.85).into()),
+        border: Border {
+            color: p.background.base.text.scale_alpha(0.30),
+            width: BORDER_WIDTH,
+            radius: CONTEXT_ITEM_RADIUS.into(),
         },
         ..Default::default()
     }

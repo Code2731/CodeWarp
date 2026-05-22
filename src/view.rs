@@ -279,7 +279,7 @@ impl App {
             row![
                 button(text("+ Add file").size(FS_MICRO))
                     .on_press(Message::PickAttachment)
-                    .padding([2, 8])
+                    .padding([PAD_XXS, PAD_MD])
                     .style(secondary_btn),
                 button(text(clear_label).size(FS_MICRO))
                     .on_press_maybe(if has_files {
@@ -287,10 +287,10 @@ impl App {
                     } else {
                         None
                     })
-                    .padding([2, 8])
+                    .padding([PAD_XXS, PAD_MD])
                     .style(danger_btn),
             ]
-            .spacing(4)
+            .spacing(SPACE_XS)
             .align_y(Alignment::Center)
         };
 
@@ -302,16 +302,16 @@ impl App {
                     .size(FS_MICRO)
                     .font(Font::with_name("JetBrains Mono")),
             ]
-            .spacing(4)
+            .spacing(SPACE_XS)
             .align_y(Alignment::Center);
             column![
                 context_header,
                 context_actions(0),
                 text("No files selected").size(FS_SUBTITLE),
             ]
-            .spacing(6)
+            .spacing(SPACE_SM)
         } else {
-            let mut context_list = column![].spacing(4);
+            let mut context_list = column![].spacing(SPACE_XS);
             for (i, (path, content)) in self.attached_files.iter().enumerate() {
                 let name = path
                     .file_name()
@@ -325,35 +325,24 @@ impl App {
                     container(
                         row![
                             column![
-                                text(format!("* {short_name}")).size(FS_BODY),
+                                text(short_name).size(FS_BODY).font(semibold_font()),
                                 text(short_path).size(FS_MICRO),
                             ]
-                            .spacing(1),
+                            .spacing(SPACE_XXS),
                             Space::new().width(Length::Fill),
                             text(size_label)
                                 .size(FS_MICRO)
                                 .font(Font::with_name("JetBrains Mono")),
                             button(text("x").size(FS_MICRO))
                                 .on_press(Message::RemoveAttachment(i))
-                                .padding([1, 4])
+                                .padding([PAD_XXS, PAD_XS])
                                 .style(danger_btn),
                         ]
-                        .spacing(4)
+                        .spacing(SPACE_XS)
                         .align_y(Alignment::Center),
                     )
-                    .padding([3, 6])
-                    .style(|theme: &Theme| {
-                        let p = theme.extended_palette();
-                        container::Style {
-                            background: Some(p.background.strong.color.into()),
-                            border: iced::Border {
-                                color: p.primary.weak.color,
-                                width: 1.0,
-                                radius: 10.0.into(),
-                            },
-                            ..Default::default()
-                        }
-                    }),
+                    .padding([PAD_XXS, PAD_SM])
+                    .style(context_item_style),
                 );
             }
             let context_header = row![
@@ -365,16 +354,16 @@ impl App {
                     .size(FS_MICRO)
                     .font(Font::with_name("JetBrains Mono")),
             ]
-            .spacing(4)
+            .spacing(SPACE_XS)
             .align_y(Alignment::Center);
             column![
                 context_header,
                 context_actions(self.attached_files.len()),
                 scrollable(context_list)
                     .direction(Direction::Vertical(vscrollbar()))
-                    .height(Length::Fixed(170.0)),
+                    .height(Length::Fixed(CONTEXT_LIST_HEIGHT)),
             ]
-            .spacing(6)
+            .spacing(SPACE_SM)
         };
 
         let body = column![
@@ -406,7 +395,7 @@ impl App {
             Space::new().height(Length::Fixed(14.0)),
             context_body,
         ]
-        .spacing(6);
+        .spacing(SPACE_SM);
 
         container(
             scrollable(body)
@@ -415,7 +404,7 @@ impl App {
         )
         .width(Length::Fixed(260.0))
         .height(Length::Fill)
-        .padding(14)
+        .padding(PAD_LG)
         .style(panel_style)
         .into()
     }

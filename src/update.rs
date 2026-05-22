@@ -818,8 +818,18 @@ impl App {
             }
             Message::ClearAttachments => {
                 if !self.attached_files.is_empty() {
+                    let removed_count = self.attached_files.len();
+                    let removed_bytes: u64 = self
+                        .attached_files
+                        .iter()
+                        .map(|(_, content)| content.len() as u64)
+                        .sum();
                     self.attached_files.clear();
-                    self.status = "而⑦뀓?ㅽ듃瑜?鍮꿋뒿?덈떎.".into();
+                    self.status = format!(
+                        "Cleared attachments: {} files ({})",
+                        removed_count,
+                        fmt_bytes(removed_bytes)
+                    );
                 }
                 Task::none()
             }

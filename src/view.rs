@@ -264,6 +264,11 @@ impl App {
             .iter()
             .map(|(_, content)| content.len() as u64)
             .sum();
+        let context_quota_label = format!(
+            "{}/{}",
+            fmt_bytes(context_total_bytes),
+            fmt_bytes(MAX_ATTACH_BYTES)
+        );
         let context_actions = |has_files: bool| {
             row![
                 button(text("+ Add file").size(FS_MICRO))
@@ -284,8 +289,17 @@ impl App {
         };
 
         let context_body = if self.attached_files.is_empty() {
+            let context_header = row![
+                text("Context (0)").size(FS_LABEL).font(semibold_font()),
+                Space::new().width(Length::Fill),
+                text(context_quota_label.clone())
+                    .size(FS_MICRO)
+                    .font(Font::with_name("JetBrains Mono")),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center);
             column![
-                text("Context").size(FS_LABEL).font(semibold_font()),
+                context_header,
                 context_actions(false),
                 text("No files selected").size(FS_SUBTITLE),
             ]
@@ -341,7 +355,7 @@ impl App {
                     .size(FS_LABEL)
                     .font(semibold_font()),
                 Space::new().width(Length::Fill),
-                text(fmt_bytes(context_total_bytes))
+                text(context_quota_label)
                     .size(FS_MICRO)
                     .font(Font::with_name("JetBrains Mono")),
             ]

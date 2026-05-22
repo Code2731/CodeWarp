@@ -639,6 +639,7 @@ impl App {
             // ── 파일 컨텍스트 첨부 ────────────────────────────────
             Message::FileDropped(path) => {
                 if self.is_already_attached(&path) {
+                    self.status = format!("Already attached: {}", path.display());
                     return Task::none();
                 }
                 Task::perform(
@@ -662,6 +663,8 @@ impl App {
                 if !self.is_already_attached(&path) {
                     self.status = format!("첨부됨: {}", path.display());
                     self.attached_files.push((path, content));
+                } else {
+                    self.status = format!("Already attached: {}", path.display());
                 }
                 Task::none()
             }
@@ -839,6 +842,7 @@ impl App {
                 }
                 self.close_mention();
                 if self.is_already_attached(&chosen) {
+                    self.status = format!("Already attached: {}", chosen.display());
                     return Task::none();
                 }
                 let full_path = self.cwd.join(&chosen);
@@ -1701,8 +1705,19 @@ impl App {
         self.mention_selected = 0;
     }
 
+    fn normalized_attachment_path(&self, path: &std::path::Path) -> std::path::PathBuf {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.cwd.join(path)
+        }
+    }
+
     fn is_already_attached(&self, path: &std::path::Path) -> bool {
-        self.attached_files.iter().any(|(p, _)| p == path)
+        let needle = self.normalized_attachment_path(path);
+        self.attached_files
+            .iter()
+            .any(|(p, _)| self.normalized_attachment_path(p) == needle)
     }
 
     fn ensure_system_message(&mut self) {

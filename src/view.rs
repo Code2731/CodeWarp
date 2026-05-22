@@ -269,13 +269,19 @@ impl App {
             fmt_bytes(context_total_bytes),
             fmt_bytes(MAX_ATTACH_BYTES)
         );
-        let context_actions = |has_files: bool| {
+        let context_actions = |attached_count: usize| {
+            let has_files = attached_count > 0;
+            let clear_label = if has_files {
+                format!("Clear ({attached_count})")
+            } else {
+                "Clear".to_string()
+            };
             row![
                 button(text("+ Add file").size(FS_MICRO))
                     .on_press(Message::PickAttachment)
                     .padding([2, 8])
                     .style(secondary_btn),
-                button(text("Clear").size(FS_MICRO))
+                button(text(clear_label).size(FS_MICRO))
                     .on_press_maybe(if has_files {
                         Some(Message::ClearAttachments)
                     } else {
@@ -300,7 +306,7 @@ impl App {
             .align_y(Alignment::Center);
             column![
                 context_header,
-                context_actions(false),
+                context_actions(0),
                 text("No files selected").size(FS_SUBTITLE),
             ]
             .spacing(6)
@@ -363,7 +369,7 @@ impl App {
             .align_y(Alignment::Center);
             column![
                 context_header,
-                context_actions(true),
+                context_actions(self.attached_files.len()),
                 scrollable(context_list)
                     .direction(Direction::Vertical(vscrollbar()))
                     .height(Length::Fixed(170.0)),

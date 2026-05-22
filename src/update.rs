@@ -642,13 +642,26 @@ impl App {
                     self.status = format!("Already attached: {}", path.display());
                     return Task::none();
                 }
+                let existing_total = self.total_attached_bytes();
                 Task::perform(
                     async move {
                         let content = tokio::fs::read_to_string(&path)
                             .await
-                            .map_err(|e| format!("읽기 실패: {e}"))?;
+                            .map_err(|e| format!("File read failed: {e}"))?;
                         if content.len() > MAX_ATTACH_BYTES as usize {
-                            return Err(format!("첨부 거부 (512KB 초과): {}", path.display()));
+                            return Err(format!(
+                                "Attachment too large (max {}): {}",
+                                fmt_bytes(MAX_ATTACH_BYTES),
+                                path.display()
+                            ));
+                        }
+                        let next_total = existing_total + content.len() as u64;
+                        if next_total > MAX_ATTACH_BYTES {
+                            return Err(format!(
+                                "Attachment limit exceeded: {} / {}",
+                                fmt_bytes(next_total),
+                                fmt_bytes(MAX_ATTACH_BYTES)
+                            ));
                         }
                         Ok((path, content))
                     },
@@ -661,8 +674,14 @@ impl App {
             Message::FileDragHover => Task::none(),
             Message::FileReadDone(path, content) => {
                 if !self.is_already_attached(&path) {
-                    self.status = format!("첨부됨: {}", path.display());
                     self.attached_files.push((path, content));
+                    let current_total = self.total_attached_bytes();
+                    self.status = format!(
+                        "Attached ({} files): {}/{}",
+                        self.attached_files.len(),
+                        fmt_bytes(current_total),
+                        fmt_bytes(MAX_ATTACH_BYTES)
+                    );
                 } else {
                     self.status = format!("Already attached: {}", path.display());
                 }
@@ -866,13 +885,26 @@ impl App {
                     return Task::none();
                 }
                 let full_path = self.cwd.join(&chosen);
+                let existing_total = self.total_attached_bytes();
                 Task::perform(
                     async move {
                         let content = tokio::fs::read_to_string(&full_path)
                             .await
-                            .map_err(|e| format!("읽기 실패: {e}"))?;
+                            .map_err(|e| format!("File read failed: {e}"))?;
                         if content.len() > MAX_ATTACH_BYTES as usize {
-                            return Err(format!("첨부 거부 (512KB 초과): {}", chosen.display()));
+                            return Err(format!(
+                                "Attachment too large (max {}): {}",
+                                fmt_bytes(MAX_ATTACH_BYTES),
+                                chosen.display()
+                            ));
+                        }
+                        let next_total = existing_total + content.len() as u64;
+                        if next_total > MAX_ATTACH_BYTES {
+                            return Err(format!(
+                                "Attachment limit exceeded: {} / {}",
+                                fmt_bytes(next_total),
+                                fmt_bytes(MAX_ATTACH_BYTES)
+                            ));
                         }
                         Ok((chosen, content))
                     },
@@ -1295,16 +1327,29 @@ impl App {
                     return Task::none();
                 };
                 if self.is_already_attached(&path) {
-                    self.status = format!("?대? 泥⑤???뚯씪: {}", path.display());
+                    self.status = format!("Already attached: {}", path.display());
                     return Task::none();
                 }
+                let existing_total = self.total_attached_bytes();
                 Task::perform(
                     async move {
                         let content = tokio::fs::read_to_string(&path)
                             .await
-                            .map_err(|e| format!("?쎄린 ?ㅽ뙣: {e}"))?;
+                            .map_err(|e| format!("File read failed: {e}"))?;
                         if content.len() > MAX_ATTACH_BYTES as usize {
-                            return Err(format!("泥⑤? 嫄곕? (512KB 珥덇낵): {}", path.display()));
+                            return Err(format!(
+                                "Attachment too large (max {}): {}",
+                                fmt_bytes(MAX_ATTACH_BYTES),
+                                path.display()
+                            ));
+                        }
+                        let next_total = existing_total + content.len() as u64;
+                        if next_total > MAX_ATTACH_BYTES {
+                            return Err(format!(
+                                "Attachment limit exceeded: {} / {}",
+                                fmt_bytes(next_total),
+                                fmt_bytes(MAX_ATTACH_BYTES)
+                            ));
                         }
                         Ok((path, content))
                     },
@@ -1738,6 +1783,13 @@ impl App {
         self.attached_files
             .iter()
             .any(|(p, _)| self.normalized_attachment_path(p) == needle)
+    }
+
+    fn total_attached_bytes(&self) -> u64 {
+        self.attached_files
+            .iter()
+            .map(|(_, content)| content.len() as u64)
+            .sum()
     }
 
     fn ensure_system_message(&mut self) {

@@ -61,6 +61,10 @@ fn vscrollbar() -> Scrollbar {
     Scrollbar::new().width(10).scroller_width(10).margin(2)
 }
 
+fn hscrollbar() -> Scrollbar {
+    Scrollbar::new().width(10).scroller_width(10).margin(2)
+}
+
 /// 바이트 수를 KB/MB/GB 단위로 표시 (1024 진법).
 fn fmt_bytes(n: u64) -> String {
     const KB: u64 = 1024;

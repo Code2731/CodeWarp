@@ -905,7 +905,13 @@ impl App {
                     }),
                 );
             }
-            container(chips).padding([4, 0]).into()
+            container(
+                scrollable(chips)
+                    .direction(Direction::Horizontal(hscrollbar()))
+                    .width(Length::Fill),
+            )
+            .padding([4, 0])
+            .into()
         } else {
             Space::new().height(Length::Shrink).into()
         };

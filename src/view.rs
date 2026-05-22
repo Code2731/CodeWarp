@@ -298,11 +298,17 @@ impl App {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| path.display().to_string());
                 let short_name = shorten_tail(&name, 24);
+                let rel_path = path.strip_prefix(&self.cwd).unwrap_or(path.as_path());
+                let short_path = shorten_tail(&rel_path.display().to_string(), 42);
                 let size_label = fmt_bytes(content.len() as u64);
                 context_list = context_list.push(
                     container(
                         row![
-                            text(format!("* {short_name}")).size(FS_BODY),
+                            column![
+                                text(format!("* {short_name}")).size(FS_BODY),
+                                text(short_path).size(FS_MICRO),
+                            ]
+                            .spacing(1),
                             Space::new().width(Length::Fill),
                             text(size_label)
                                 .size(FS_MICRO)
@@ -870,10 +876,8 @@ impl App {
         let attach_row: Element<Message> = if !self.attached_files.is_empty() {
             let mut chips = row![].spacing(6).align_y(Alignment::Center);
             for (i, (path, _)) in self.attached_files.iter().enumerate() {
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+                let rel_path = path.strip_prefix(&self.cwd).unwrap_or(path.as_path());
+                let name = shorten_tail(&rel_path.display().to_string(), 36);
                 chips = chips.push(
                     container(
                         row![

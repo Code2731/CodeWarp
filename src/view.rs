@@ -725,6 +725,8 @@ impl App {
                 };
 
                 let is_user = matches!(&b.body, BlockBody::User(_));
+                let is_error_assistant = matches!(&b.body, BlockBody::Assistant(_))
+                    && b.body.to_text().contains("[ERROR]");
                 let block_view = container(column![header, body_view, apply_section].spacing(6))
                     .padding(12)
                     .width(Length::Fill)
@@ -735,6 +737,17 @@ impl App {
                                 p.primary.weak.color,
                                 p.background.base.text,
                                 p.primary.strong.color,
+                            )
+                        } else if is_error_assistant {
+                            (
+                                iced::Color::from_rgba(
+                                    p.danger.weak.color.r,
+                                    p.danger.weak.color.g,
+                                    p.danger.weak.color.b,
+                                    0.22,
+                                ),
+                                p.background.base.text,
+                                p.danger.strong.color,
                             )
                         } else {
                             (

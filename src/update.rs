@@ -1171,7 +1171,7 @@ impl App {
                                 } else {
                                     "\n\n"
                                 };
-                                let msg = format!("{}[에러] {}", prefix, e);
+                                let msg = format!("{}[ERROR] {}", prefix, e);
                                 content.perform(Action::Edit(Edit::Paste(Arc::new(msg))));
                                 let raw = content.text();
                                 b.md_items = markdown::parse(&raw).collect();

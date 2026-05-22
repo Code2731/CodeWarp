@@ -802,7 +802,17 @@ impl App {
 
             Message::RemoveAttachment(idx) => {
                 if idx < self.attached_files.len() {
-                    self.attached_files.remove(idx);
+                    let removed = self.attached_files.remove(idx);
+                    let removed_name = removed
+                        .0
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| removed.0.display().to_string());
+                    self.status = format!(
+                        "Removed attachment: {} ({} left)",
+                        removed_name,
+                        self.attached_files.len()
+                    );
                 }
                 Task::none()
             }

@@ -934,6 +934,12 @@ impl App {
         .spacing(8)
         .align_y(Alignment::Center);
 
+        let input_hint = text("Enter: send | Ctrl+K: commands | Ctrl+N: new chat")
+            .size(FS_MICRO)
+            .style(|theme: &Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().background.strong.color),
+            });
+
         let confirm_panel: Element<Message> = if self.show_write_confirm {
             self.view_inline_confirm()
         } else {
@@ -949,6 +955,7 @@ impl App {
             container(slash_hint).padding([0, 14]),
             container(mention_popup).padding([0, 14]),
             container(attach_row).padding([0, 14]),
+            container(input_hint).padding([0, 14]),
             container(input_row)
                 .padding([10, 14])
                 .style(panel_style)

@@ -1180,7 +1180,15 @@ impl App {
                         self.streaming_block_id = None;
                         self.abort_handle = None;
                         self.pending_tool_calls.clear();
-                        self.status = format!("에러: {}", openrouter::humanize_error(&e));
+                        let humanized = openrouter::humanize_error(&e);
+                        if e.contains("OpenRouter 401") || e.contains("OpenRouter 402") {
+                            self.status = format!(
+                                "[WARN] {} | Open Settings and check API key / credits",
+                                humanized
+                            );
+                        } else {
+                            self.status = format!("[ERROR] {}", humanized);
+                        }
                     }
                 }
                 if self.follow_bottom {

@@ -2477,13 +2477,26 @@ impl App {
                 .height(Length::Shrink)
                 .into()
         };
-        let mut bar = row![
-            busy_prefix,
-            text(&self.status).size(FS_LABEL),
-            Space::new().width(Length::Fill),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
+        let status_text: Element<Message> = if self.status.starts_with("[WARN]") {
+            text(&self.status)
+                .size(FS_LABEL)
+                .style(|theme: &Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().warning.base.color),
+                })
+                .into()
+        } else if self.status.starts_with("[ERROR]") {
+            text(&self.status)
+                .size(FS_LABEL)
+                .style(|theme: &Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().danger.base.color),
+                })
+                .into()
+        } else {
+            text(&self.status).size(FS_LABEL).into()
+        };
+        let mut bar = row![busy_prefix, status_text, Space::new().width(Length::Fill),]
+            .spacing(8)
+            .align_y(Alignment::Center);
         if !last_cost_label.is_empty() {
             bar = bar.push(
                 text(last_cost_label)

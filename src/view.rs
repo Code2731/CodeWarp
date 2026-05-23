@@ -22,8 +22,8 @@ impl App {
                 .style(panel_style),
             self.view_rightpanel(),
         ]
-        .spacing(10)
-        .padding([8, 10])
+        .spacing(MAIN_ROW_SPACING)
+        .padding([MAIN_PAD_Y, MAIN_PAD_X])
         .height(Length::Fill)
         .into();
 
@@ -83,7 +83,7 @@ impl App {
             .unwrap_or(false);
         let fav_btn = button(text(if is_fav { "★" } else { "☆" }).size(16))
             .on_press(Message::ToggleFavorite)
-            .padding([7, 12])
+            .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
             .style(secondary_btn);
 
         let filters = row![
@@ -108,12 +108,12 @@ impl App {
                 .size(16)
                 .text_size(FS_BODY),
         ]
-        .spacing(10)
+        .spacing(TOPBAR_ROW_SPACING)
         .align_y(Alignment::Center);
 
         let sort_btn = button(text(self.sort_mode.label()).size(FS_BODY))
             .on_press(Message::CycleSortMode)
-            .padding([7, 12])
+            .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
             .style(secondary_btn);
 
         let bar = row![
@@ -124,14 +124,14 @@ impl App {
             fav_btn,
             button(text("⚙").size(16).align_y(Alignment::Center))
                 .on_press(Message::OpenSettings)
-                .padding([7, 12])
+                .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
                 .style(secondary_btn),
         ]
-        .spacing(10)
+        .spacing(TOPBAR_ROW_SPACING)
         .align_y(Alignment::Center);
 
         container(bar)
-            .padding([10, 16])
+            .padding([TOPBAR_PAD_Y, TOPBAR_PAD_X])
             .style(topbar_style)
             .width(Length::Fill)
             .into()
@@ -402,7 +402,7 @@ impl App {
                 .direction(Direction::Vertical(vscrollbar()))
                 .height(Length::Fill),
         )
-        .width(Length::Fixed(260.0))
+        .width(Length::Fixed(SIDEBAR_WIDTH))
         .height(Length::Fill)
         .padding(PAD_LG)
         .style(panel_style)

@@ -1128,6 +1128,7 @@ impl App {
                 }
                 Task::none()
             }
+            Message::CopyText(text) => iced::clipboard::write(text),
             Message::ChatChunk(event) => {
                 let Some(ai_id) = self.streaming_block_id else {
                     return Task::none();

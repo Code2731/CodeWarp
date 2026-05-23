@@ -21,9 +21,11 @@ use iced::keyboard::{Key, Modifiers};
 use iced::task;
 use iced::widget::markdown::{self, HeadingLevel, Settings as MdSettings, Text as MdText, Viewer};
 use iced::widget::operation::snap_to_end;
-use iced::widget::scrollable::{Scrollbar, Viewport};
+use iced::widget::scrollable::{Direction, Scrollbar, Viewport};
 use iced::widget::text_editor::{Action, Edit};
-use iced::widget::{column, combo_box, container, text, text_editor, Id as ScrollId};
+use iced::widget::{
+    button, column, combo_box, container, row, scrollable, text, text_editor, Id as ScrollId, Space,
+};
 use iced::{font, Color, Element, Font, Length, Size, Task, Theme};
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
@@ -878,6 +880,69 @@ impl<'a> Viewer<'a, Message> for CodewarpViewer {
             .on_link_click(Self::on_link_click)
             .into()
     }
+
+    fn code_block(
+        &self,
+        _settings: MdSettings,
+        language: Option<&'a str>,
+        code: &'a str,
+        _lines: &'a [MdText],
+    ) -> Element<'a, Message> {
+        let language_label = language.unwrap_or("text").to_ascii_lowercase();
+
+        let header = row![
+            container(
+                text(language_label)
+                    .size(11)
+                    .font(Font::with_name("JetBrains Mono"))
+            )
+            .padding([2, 8])
+            .style(|_theme: &Theme| container::Style {
+                background: Some(Color::from_rgba8(0x30, 0x36, 0x3d, 0.95).into()),
+                border: iced::Border {
+                    color: Color::from_rgba8(0x58, 0x6e, 0x75, 0.65),
+                    width: 1.0,
+                    radius: 999.0.into(),
+                },
+                ..Default::default()
+            }),
+            Space::new().width(Length::Fill),
+            button(
+                text("Copy")
+                    .size(11)
+                    .font(Font::with_name("JetBrains Mono"))
+            )
+            .on_press(Message::CopyText(code.to_string()))
+            .padding([3, 10]),
+        ]
+        .spacing(8);
+
+        let code_text = container(
+            text(code)
+                .size(12)
+                .line_height(1.35)
+                .font(Font::with_name("JetBrains Mono")),
+        )
+        .padding([12, 14]);
+
+        let code_body = scrollable(code_text)
+            .direction(Direction::Horizontal(hscrollbar()))
+            .width(Length::Fill);
+
+        container(column![header, code_body].spacing(0))
+            .padding(10)
+            .width(Length::Fill)
+            .style(|_theme: &Theme| container::Style {
+                background: Some(Color::from_rgb8(0x0d, 0x11, 0x17).into()),
+                border: iced::Border {
+                    color: Color::from_rgba8(0x30, 0x36, 0x3d, 0.95),
+                    width: 1.0,
+                    radius: 12.0.into(),
+                },
+                ..Default::default()
+            })
+            .into()
+    }
 }
 
 /// 진행 중 HF 다운로드의 UI state.
@@ -1334,6 +1399,7 @@ enum Message {
     StopStream,
     ChatChunk(ChatEvent),
     CopyBlock(u64),
+    CopyText(String),
     StreamScrolled(Viewport),
     EditorAction(u64, Action),
     ToggleBlockView(u64),
@@ -1472,12 +1538,12 @@ impl App {
         Theme::custom(
             "CodeWarp Dark".to_string(),
             iced::theme::Palette {
-                background: Color::from_rgb(0.047, 0.063, 0.090), // deep midnight blue
-                text: Color::from_rgb(0.93, 0.95, 0.98),
-                primary: Color::from_rgb(0.17, 0.63, 0.95), // electric blue
-                success: Color::from_rgb(0.20, 0.79, 0.61), // mint green
-                warning: Color::from_rgb(0.96, 0.74, 0.30), // amber
-                danger: Color::from_rgb(0.95, 0.42, 0.38),  // warm red
+                background: Color::from_rgb8(0x03, 0x07, 0x12), // obsidian deep navy
+                text: Color::from_rgb8(0xe6, 0xec, 0xf8),
+                primary: Color::from_rgb8(0x0e, 0xa5, 0xe9), // electric blue
+                success: Color::from_rgb8(0x10, 0xb9, 0x81), // mint green
+                warning: Color::from_rgb8(0xf5, 0x9e, 0x0b), // amber
+                danger: Color::from_rgb8(0xf4, 0x71, 0x74),  // warm red
             },
         )
     }

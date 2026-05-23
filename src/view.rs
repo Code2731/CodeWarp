@@ -1505,6 +1505,25 @@ impl App {
         ]
         .spacing(8);
         let tabby_status_label: Element<Message> = self.endpoint_indicator(FS_LABEL);
+        let mut tabby_presets = column![text("Tabby 추천 프리셋 (클릭 시 즉시 다운로드)")
+            .size(FS_LABEL)
+            .font(semibold_font())]
+        .spacing(4);
+        for (i, p) in EXL2_PRESETS.iter().take(4).enumerate() {
+            tabby_presets = tabby_presets.push(
+                button(text(format!("{} · {}", p.label, p.vram)).size(FS_LABEL))
+                    .on_press_maybe(if self.hf_dl.is_none() {
+                        Some(Message::DownloadExl2Preset(i))
+                    } else {
+                        None
+                    })
+                    .padding([4, 10])
+                    .width(Length::Fill)
+                    .style(secondary_btn),
+            );
+        }
+        tabby_presets = tabby_presets
+            .push(text("저장 위치는 Models 탭의 다운로드 경로를 사용합니다.").size(FS_MICRO));
 
         let provider_section = column![
             container(
@@ -1529,6 +1548,8 @@ impl App {
                     tabby_token,
                     tabby_actions,
                     tabby_status_label,
+                    Space::new().height(Length::Fixed(6.0)),
+                    tabby_presets,
                 ]
                 .spacing(8),
             )

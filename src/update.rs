@@ -443,14 +443,25 @@ impl App {
                     self.status = "HF repo ID 비어있음".into();
                     return Task::none();
                 }
-                let dir = self.model_dir_input.trim().to_string();
+                let mut dir = self.model_dir_input.trim().to_string();
                 if dir.is_empty() {
-                    self.status = "다운로드 경로 미설정".into();
+                    dir = dirs::data_local_dir()
+                        .map(|d| d.join("codewarp").join("models").display().to_string())
+                        .unwrap_or_else(|| "models".to_string());
+                    self.model_dir_input = dir.clone();
+                    self.status = format!("다운로드 경로 자동 설정: {}", dir);
+                }
+                if let Err(e) = std::fs::create_dir_all(&dir) {
+                    self.status = format!("다운로드 경로 생성 실패: {}", e);
                     return Task::none();
                 }
                 // 경로 keystore에도 반영
                 let _ = keystore::write_model_dir(&dir);
-                let token = keystore::read_hf_token();
+                let token = if self.hf_token_input.trim().is_empty() {
+                    keystore::read_hf_token()
+                } else {
+                    Some(self.hf_token_input.trim().to_string())
+                };
                 self.hf_dl = Some(HfDownload {
                     repo_id: repo.clone(),
                     total_files: 0,
@@ -505,7 +516,7 @@ impl App {
                             self.hf_abort_handle = None;
                         }
                         hf::DownloadEvent::Error(e) => {
-                            self.status = format!("다운로드 실패: {}", e);
+                            self.status = format!("다운로드 실패: {}", hf::humanize_error(e));
                             self.hf_dl = None;
                             self.hf_abort_handle = None;
                         }

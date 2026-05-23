@@ -481,21 +481,21 @@ impl App {
 
         let body = column![
             stats,
-            Space::new().height(Length::Fixed(14.0)),
+            Space::new().height(Length::Fixed(PANEL_SECTION_GAP_LG)),
             round_indicator,
-            Space::new().height(Length::Fixed(6.0)),
+            Space::new().height(Length::Fixed(SPACE_SM)),
             log_col,
         ]
-        .spacing(6);
+        .spacing(SPACE_SM);
 
         container(
             scrollable(body)
                 .direction(Direction::Vertical(vscrollbar()))
                 .height(Length::Fill),
         )
-        .width(Length::Fixed(280.0))
+        .width(Length::Fixed(RIGHT_PANEL_WIDTH))
         .height(Length::Fill)
-        .padding(14)
+        .padding(PAD_LG)
         .style(panel_style)
         .into()
     }
@@ -2545,7 +2545,7 @@ impl App {
             status_text,
             Space::new().width(Length::Fill),
         ]
-        .spacing(8)
+        .spacing(STATUSBAR_ROW_SPACING)
         .align_y(Alignment::Center);
         if !last_cost_label.is_empty() {
             bar = bar.push(
@@ -2568,7 +2568,7 @@ impl App {
             .push(self.endpoint_indicator(FS_LABEL));
 
         container(bar)
-            .padding([4, 14])
+            .padding([STATUSBAR_PAD_Y, STATUSBAR_PAD_X])
             .style(topbar_style)
             .width(Length::Fill)
             .into()

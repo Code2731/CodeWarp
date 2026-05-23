@@ -58,11 +58,11 @@ struct ModelOption {
 }
 
 fn vscrollbar() -> Scrollbar {
-    Scrollbar::new().width(10).scroller_width(10).margin(2)
+    Scrollbar::new().width(8).scroller_width(8).margin(2)
 }
 
 fn hscrollbar() -> Scrollbar {
-    Scrollbar::new().width(10).scroller_width(10).margin(2)
+    Scrollbar::new().width(8).scroller_width(8).margin(2)
 }
 
 /// 바이트 수를 KB/MB/GB 단위로 표시 (1024 진법).

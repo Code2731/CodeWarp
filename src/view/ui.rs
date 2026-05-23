@@ -29,6 +29,7 @@ pub(crate) const PANEL_SECTION_GAP_LG: f32 = 14.0;
 pub(crate) const STATUSBAR_ROW_SPACING: f32 = 8.0;
 pub(crate) const STATUSBAR_PAD_Y: u16 = 4;
 pub(crate) const STATUSBAR_PAD_X: u16 = 14;
+pub(crate) const SCROLL_GUTTER_PAD_X: u16 = 12;
 const BORDER_WIDTH: f32 = 1.0;
 const PANEL_RADIUS: f32 = 12.0;
 const CONTROL_RADIUS: f32 = 10.0;

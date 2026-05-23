@@ -398,7 +398,7 @@ impl App {
         .spacing(SPACE_SM);
 
         container(
-            scrollable(body)
+            scrollable(container(body).padding([0, SCROLL_GUTTER_PAD_X]))
                 .direction(Direction::Vertical(vscrollbar()))
                 .height(Length::Fill),
         )
@@ -489,7 +489,7 @@ impl App {
         .spacing(SPACE_SM);
 
         container(
-            scrollable(body)
+            scrollable(container(body).padding([0, SCROLL_GUTTER_PAD_X]))
                 .direction(Direction::Vertical(vscrollbar()))
                 .height(Length::Fill),
         )
@@ -784,7 +784,7 @@ impl App {
                     });
                 col = col.push(block_view);
             }
-            scrollable(col)
+            scrollable(container(col).padding([0, SCROLL_GUTTER_PAD_X]))
                 .id(self.stream_id.clone())
                 .on_scroll(Message::StreamScrolled)
                 .direction(Direction::Vertical(vscrollbar()))
@@ -2430,7 +2430,7 @@ impl App {
                     .font(Font::with_name("JetBrains Mono")),
             );
         }
-        let output_area = scrollable(out_col)
+        let output_area = scrollable(container(out_col).padding([0, SCROLL_GUTTER_PAD_X]))
             .direction(Direction::Vertical(vscrollbar()))
             .height(Length::Fixed(200.0))
             .width(Length::Fill);

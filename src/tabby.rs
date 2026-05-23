@@ -15,6 +15,8 @@ fn normalize_base(url: &str) -> String {
     let trimmed = url.trim().trim_end_matches('/');
     if trimmed.is_empty() {
         "http://localhost:8080".into()
+    } else if !trimmed.contains("://") {
+        format!("http://{}", trimmed)
     } else {
         trimmed.to_string()
     }
@@ -37,6 +39,10 @@ pub fn chat_base(url: &str) -> String {
 ///                 포맷 변경 시 둘이 같이 움직여야 함 (KEEP IN SYNC with `list_models`).
 pub fn humanize_error(raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
+    if lower.contains("relative url without a base") || lower.contains("builder error") {
+        return "URL 형식 오류 — http://localhost:8080 처럼 스킴(http:// 또는 https://) 포함"
+            .into();
+    }
     if lower.contains("refused") || lower.contains("os error 10061") {
         return "서버 응답 없음 — `tabby serve` 실행 중인지 확인 (기본 8080)".into();
     }
@@ -129,6 +135,12 @@ mod tests {
     }
 
     #[test]
+    fn normalize_base_adds_http_when_scheme_missing() {
+        assert_eq!(normalize_base("localhost:8080"), "http://localhost:8080");
+        assert_eq!(normalize_base("127.0.0.1:9000"), "http://127.0.0.1:9000");
+    }
+
+    #[test]
     fn chat_base_appends_v1() {
         assert_eq!(
             chat_base("http://localhost:8080"),
@@ -177,6 +189,13 @@ mod tests {
     fn humanize_dns_failure() {
         let msg = humanize_error("dns error: nodename nor servname provided");
         assert!(msg.contains("도메인"));
+    }
+
+    #[test]
+    fn humanize_invalid_url() {
+        let msg = humanize_error("builder error: relative URL without a base");
+        assert!(msg.contains("URL 형식 오류"), "got: {}", msg);
+        assert!(msg.contains("http://"), "got: {}", msg);
     }
 
     #[test]

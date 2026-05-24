@@ -524,16 +524,14 @@ mod tests {
             "c".to_string(),
             "d".to_string(),
         ];
-        assert_eq!(
-            format_branch_suggestions(&branches, 2),
-            "a, b ... +2 more"
-        );
+        assert_eq!(format_branch_suggestions(&branches, 2), "a, b ... +2 more");
     }
 
     #[test]
     fn annotate_revision_not_found_error_appends_requested_and_candidates() {
         let branches = vec!["main".to_string(), "4.0bpw".to_string()];
-        let text = annotate_revision_not_found_error("HF 404: revision not found", "4bpw", &branches);
+        let text =
+            annotate_revision_not_found_error("HF 404: revision not found", "4bpw", &branches);
         assert!(text.contains("requested revision: '4bpw'"));
         assert!(text.contains("available branches: main, 4.0bpw"));
     }

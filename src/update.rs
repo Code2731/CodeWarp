@@ -3,30 +3,42 @@ use super::*;
 use iced::widget::text_editor::{self, Action};
 use iced::{Subscription, Task};
 
-fn extract_revision_hint(raw: &str) -> Option<String> {
-    let marker = "requested revision:";
+fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
     let idx = raw.find(marker)?;
-    let mut tail = raw[idx..].trim();
-    while let Some(stripped) = tail.strip_suffix(')') {
-        tail = stripped.trim_end();
-    }
-    if tail.is_empty() {
+    let tail = &raw[idx..];
+    let head = tail
+        .split_once(')')
+        .map(|(left, _)| left)
+        .unwrap_or(tail)
+        .trim();
+    if head.is_empty() {
         None
     } else {
-        Some(tail.to_string())
+        Some(head.to_string())
     }
 }
 
 fn compose_hf_download_error(raw: &str) -> String {
     let humanized = hf::humanize_error(raw);
-    if let Some(detail) = extract_revision_hint(raw) {
-        if humanized.contains(&detail) {
-            humanized
-        } else {
-            format!("{humanized} ({detail})")
+    let mut hints: Vec<String> = Vec::new();
+    for marker in ["fallback retry from", "requested revision:"] {
+        if let Some(h) = extract_hf_error_hint(raw, marker) {
+            if !hints.iter().any(|existing| existing == &h) {
+                hints.push(h);
+            }
         }
-    } else {
+    }
+    if hints.is_empty() {
+        return humanized;
+    }
+    let missing: Vec<String> = hints
+        .into_iter()
+        .filter(|h| !humanized.contains(h))
+        .collect();
+    if missing.is_empty() {
         humanized
+    } else {
+        format!("{humanized} ({})", missing.join(" | "))
     }
 }
 
@@ -2228,15 +2240,24 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_hf_download_error, extract_revision_hint};
+    use super::{compose_hf_download_error, extract_hf_error_hint};
 
     #[test]
-    fn extract_revision_hint_parses_requested_revision_tail() {
+    fn extract_hf_error_hint_parses_requested_revision_tail() {
         let raw =
             "HF 404: revision not found (requested revision: '4bpw'; available branches: main, 4.0bpw)";
         assert_eq!(
-            extract_revision_hint(raw).as_deref(),
+            extract_hf_error_hint(raw, "requested revision:").as_deref(),
             Some("requested revision: '4bpw'; available branches: main, 4.0bpw")
+        );
+    }
+
+    #[test]
+    fn extract_hf_error_hint_parses_fallback_retry() {
+        let raw = "HF 404: revision not found (fallback retry from '4bpw' to '4.0bpw') (requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "fallback retry from").as_deref(),
+            Some("fallback retry from '4bpw' to '4.0bpw'")
         );
     }
 
@@ -2247,5 +2268,13 @@ mod tests {
         let msg = compose_hf_download_error(raw);
         assert!(msg.contains("requested revision: '4bpw'"));
         assert!(msg.contains("available branches: main, 4.0bpw"));
+    }
+
+    #[test]
+    fn compose_hf_download_error_appends_fallback_and_revision_hints() {
+        let raw = "HF 404: revision not found (fallback retry from '4bpw' to '4.0bpw') (requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        let msg = compose_hf_download_error(raw);
+        assert!(msg.contains("fallback retry from '4bpw' to '4.0bpw'"));
+        assert!(msg.contains("requested revision: '4bpw'"));
     }
 }

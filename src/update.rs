@@ -85,8 +85,12 @@ impl App {
                 Task::none()
             }
             Message::SelectInferenceEngine(e) => {
+                let prev = self.inference_engine;
                 self.inference_engine = e;
                 self.inference_port_input = e.default_port().to_string();
+                if !prev.shares_model_namespace(e) {
+                    self.inference_selected_model.clear();
+                }
                 Task::none()
             }
             Message::SelectInferenceModel(m) => {

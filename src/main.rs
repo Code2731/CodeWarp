@@ -549,6 +549,18 @@ impl InferenceEngine {
         }
     }
 
+    fn shares_model_namespace(&self, other: InferenceEngine) -> bool {
+        match (self, other) {
+            (Self::XLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
+            | (Self::VLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
+            | (Self::LlamaServer, Self::XLlm | Self::VLlm | Self::LlamaServer)
+            | (Self::Tabby, Self::Tabby)
+            | (Self::Ollama, Self::Ollama)
+            | (Self::Custom, Self::Custom) => true,
+            _ => false,
+        }
+    }
+
     /// 모델 path/ID + port를 받아 spawn할 Command 인자 리스트 반환.
     /// `None`이면 spawn 안 함 (Ollama는 외부 daemon, Custom은 사용자 정의).
     fn compose_command(&self, model: &str, port: u16) -> Option<Vec<String>> {
@@ -2287,6 +2299,14 @@ mod tests {
         assert_eq!(InferenceEngine::XLlm.default_port(), 9000);
         assert_eq!(InferenceEngine::VLlm.default_port(), 9000);
         assert_eq!(InferenceEngine::LlamaServer.default_port(), 9000);
+    }
+
+    #[test]
+    fn engine_model_namespace_rules() {
+        assert!(InferenceEngine::XLlm.shares_model_namespace(InferenceEngine::VLlm));
+        assert!(InferenceEngine::VLlm.shares_model_namespace(InferenceEngine::LlamaServer));
+        assert!(!InferenceEngine::Tabby.shares_model_namespace(InferenceEngine::XLlm));
+        assert!(!InferenceEngine::Custom.shares_model_namespace(InferenceEngine::Tabby));
     }
 
     #[test]

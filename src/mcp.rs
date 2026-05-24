@@ -40,7 +40,7 @@ impl McpTool {
 
 /// Parse a command string into executable + args.
 /// Supports single/double quoted segments so paths with spaces survive parsing.
-fn parse_command(command: &str) -> Result<Vec<String>, String> {
+pub(crate) fn parse_command(command: &str) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = Vec::new();
     let mut current = String::new();
     let mut in_single = false;

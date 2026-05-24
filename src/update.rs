@@ -140,8 +140,13 @@ impl App {
                             self.status = "시작 명령 비어있음".into();
                             return Task::none();
                         }
-                        let parts: Vec<String> =
-                            cmd_str.split_whitespace().map(|s| s.to_string()).collect();
+                        let parts = match mcp::parse_command(cmd_str) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                self.status = format!("시작 명령 파싱 실패: {}", e);
+                                return Task::none();
+                            }
+                        };
                         let Some(p) = parts.first().cloned() else {
                             return Task::none();
                         };

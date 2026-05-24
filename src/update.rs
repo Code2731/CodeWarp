@@ -169,7 +169,7 @@ impl App {
                             // Tabby는 카탈로그 ID 그대로
                             model.to_string()
                         } else {
-                            std::path::PathBuf::from(&self.model_dir_input)
+                            resolve_user_path(&self.model_dir_input)
                                 .join(model)
                                 .display()
                                 .to_string()
@@ -449,10 +449,12 @@ impl App {
                     dir = dirs::data_local_dir()
                         .map(|d| d.join("codewarp").join("models").display().to_string())
                         .unwrap_or_else(|| "models".to_string());
-                    self.model_dir_input = dir.clone();
                     self.status = format!("다운로드 경로 자동 설정: {}", dir);
                 }
-                if let Err(e) = std::fs::create_dir_all(&dir) {
+                let resolved_dir = resolve_user_path(&dir);
+                dir = resolved_dir.display().to_string();
+                self.model_dir_input = dir.clone();
+                if let Err(e) = std::fs::create_dir_all(&resolved_dir) {
                     self.status = format!("다운로드 경로 생성 실패: {}", e);
                     return Task::none();
                 }
@@ -475,7 +477,7 @@ impl App {
                 let (task, handle) = Task::run(
                     hf::download_repo(
                         repo,
-                        std::path::PathBuf::from(dir),
+                        resolved_dir,
                         token,
                         self.hf_revision.take(),
                         self.hf_folder_name.take(),

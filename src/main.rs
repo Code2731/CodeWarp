@@ -93,6 +93,26 @@ fn fmt_context_length(n: u64) -> String {
     }
 }
 
+/// `~`, `~/...`, `~\...` 경로를 사용자 홈 기준 절대 경로로 확장.
+/// 그 외 입력은 그대로 반환.
+fn resolve_user_path(path: &str) -> PathBuf {
+    let trimmed = path.trim();
+    if trimmed == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return home;
+        }
+    }
+    if let Some(rest) = trimmed
+        .strip_prefix("~/")
+        .or_else(|| trimmed.strip_prefix("~\\"))
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(trimmed)
+}
+
 impl std::fmt::Display for ModelOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let tag: String = match self.provider {
@@ -576,10 +596,11 @@ impl std::fmt::Display for InferenceEngine {
 /// 모델 매니저 다운로드 폴더 안의 받은 모델(서브폴더) 리스트.
 /// 빈 폴더는 모델 아님 — skip.
 fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
-    if dir.as_os_str().is_empty() {
+    let resolved_dir = resolve_user_path(&dir.to_string_lossy());
+    if resolved_dir.as_os_str().is_empty() {
         return Vec::new();
     }
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Ok(entries) = std::fs::read_dir(&resolved_dir) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -2337,6 +2358,15 @@ mod tests {
     #[test]
     fn list_models_empty_path_returns_empty() {
         assert!(list_downloaded_models(std::path::Path::new("")).is_empty());
+    }
+
+    #[test]
+    fn resolve_user_path_expands_tilde() {
+        if let Some(home) = dirs::home_dir() {
+            assert_eq!(resolve_user_path("~"), home);
+            assert_eq!(resolve_user_path("~/models"), home.join("models"));
+            assert_eq!(resolve_user_path("~\\models"), home.join("models"));
+        }
     }
 
     #[test]

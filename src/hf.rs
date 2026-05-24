@@ -340,7 +340,10 @@ pub fn download_repo(
                             return;
                         }
                     } else {
-                        yield DownloadEvent::Error(e);
+                        yield DownloadEvent::Error(format!(
+                            "{} (fallback lookup failed: branch refs unavailable; requested revision: '{}')",
+                            e, requested_rev
+                        ));
                         return;
                     }
                 } else {

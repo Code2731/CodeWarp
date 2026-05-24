@@ -21,7 +21,11 @@ fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
 fn compose_hf_download_error(raw: &str) -> String {
     let humanized = hf::humanize_error(raw);
     let mut hints: Vec<String> = Vec::new();
-    for marker in ["fallback retry from", "requested revision:"] {
+    for marker in [
+        "fallback retry from",
+        "fallback lookup failed:",
+        "requested revision:",
+    ] {
         if let Some(h) = extract_hf_error_hint(raw, marker) {
             if !hints.iter().any(|existing| existing == &h) {
                 hints.push(h);
@@ -2275,6 +2279,14 @@ mod tests {
         let raw = "HF 404: revision not found (fallback retry from '4bpw' to '4.0bpw') (requested revision: '4bpw'; available branches: main, 4.0bpw)";
         let msg = compose_hf_download_error(raw);
         assert!(msg.contains("fallback retry from '4bpw' to '4.0bpw'"));
+        assert!(msg.contains("requested revision: '4bpw'"));
+    }
+
+    #[test]
+    fn compose_hf_download_error_appends_fallback_lookup_failure_hint() {
+        let raw = "HF 404: revision not found (fallback lookup failed: branch refs unavailable; requested revision: '4bpw')";
+        let msg = compose_hf_download_error(raw);
+        assert!(msg.contains("fallback lookup failed: branch refs unavailable"));
         assert!(msg.contains("requested revision: '4bpw'"));
     }
 }

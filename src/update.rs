@@ -4,7 +4,9 @@ use iced::widget::text_editor::{self, Action};
 use iced::{Subscription, Task};
 
 fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
-    let idx = raw.find(marker)?;
+    let raw_lc = raw.to_ascii_lowercase();
+    let marker_lc = marker.to_ascii_lowercase();
+    let idx = raw_lc.find(&marker_lc)?;
     let tail = &raw[idx..];
     let cut = tail.find(") (").or_else(|| tail.find(")("));
     let head = cut.map(|i| &tail[..i]).unwrap_or(tail);
@@ -2332,5 +2334,14 @@ mod tests {
         let raw = "HF 404: revision not found (fallback lookup failed: branch refs unavailable; requested revision: '4bpw')";
         let msg = compose_hf_download_error(raw);
         assert_eq!(msg.matches("requested revision: '4bpw'").count(), 1);
+    }
+
+    #[test]
+    fn extract_hf_error_hint_is_case_insensitive_for_marker() {
+        let raw = "HF 404: revision not found (Requested Revision: '4bpw'; available branches: main, 4.0bpw)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "requested revision:").as_deref(),
+            Some("Requested Revision: '4bpw'; available branches: main, 4.0bpw")
+        );
     }
 }

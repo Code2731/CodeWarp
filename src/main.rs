@@ -2369,6 +2369,26 @@ mod tests {
     }
 
     #[test]
+    fn select_inference_engine_keeps_selection_within_local_namespace() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::XLlm;
+        app.inference_selected_model = "Qwen--7B".into();
+
+        let _ = app.update(Message::SelectInferenceEngine(InferenceEngine::VLlm));
+        assert_eq!(app.inference_selected_model, "Qwen--7B");
+    }
+
+    #[test]
+    fn select_inference_engine_clears_selection_across_namespaces() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::XLlm;
+        app.inference_selected_model = "Qwen--7B".into();
+
+        let _ = app.update(Message::SelectInferenceEngine(InferenceEngine::Tabby));
+        assert!(app.inference_selected_model.is_empty());
+    }
+
+    #[test]
     fn can_start_inference_local_engine_requires_existing_model() {
         let tmp = tempfile::TempDir::new().unwrap();
         let model = tmp.path().join("Qwen--7B");

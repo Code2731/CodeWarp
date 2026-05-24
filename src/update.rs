@@ -3,6 +3,33 @@ use super::*;
 use iced::widget::text_editor::{self, Action};
 use iced::{Subscription, Task};
 
+fn extract_revision_hint(raw: &str) -> Option<String> {
+    let marker = "requested revision:";
+    let idx = raw.find(marker)?;
+    let mut tail = raw[idx..].trim();
+    while let Some(stripped) = tail.strip_suffix(')') {
+        tail = stripped.trim_end();
+    }
+    if tail.is_empty() {
+        None
+    } else {
+        Some(tail.to_string())
+    }
+}
+
+fn compose_hf_download_error(raw: &str) -> String {
+    let humanized = hf::humanize_error(raw);
+    if let Some(detail) = extract_revision_hint(raw) {
+        if humanized.contains(&detail) {
+            humanized
+        } else {
+            format!("{humanized} ({detail})")
+        }
+    } else {
+        humanized
+    }
+}
+
 impl App {
     fn has_selected_local_model_available(&self) -> bool {
         let selected = self.inference_selected_model.trim();
@@ -574,7 +601,8 @@ impl App {
                             self.hf_abort_handle = None;
                         }
                         hf::DownloadEvent::Error(e) => {
-                            self.status = format!("다운로드 실패: {}", hf::humanize_error(e));
+                            self.status =
+                                format!("다운로드 실패: {}", compose_hf_download_error(e));
                             self.hf_dl = None;
                             self.hf_abort_handle = None;
                         }
@@ -2195,5 +2223,29 @@ impl App {
         let id = self.next_block_id;
         self.next_block_id += 1;
         id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compose_hf_download_error, extract_revision_hint};
+
+    #[test]
+    fn extract_revision_hint_parses_requested_revision_tail() {
+        let raw =
+            "HF 404: revision not found (requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        assert_eq!(
+            extract_revision_hint(raw).as_deref(),
+            Some("requested revision: '4bpw'; available branches: main, 4.0bpw")
+        );
+    }
+
+    #[test]
+    fn compose_hf_download_error_appends_revision_hint() {
+        let raw =
+            "HF 404: revision not found (requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        let msg = compose_hf_download_error(raw);
+        assert!(msg.contains("requested revision: '4bpw'"));
+        assert!(msg.contains("available branches: main, 4.0bpw"));
     }
 }

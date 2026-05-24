@@ -15,6 +15,17 @@ fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
     }
 }
 
+fn merge_hint(hints: &mut Vec<String>, candidate: String) {
+    if hints
+        .iter()
+        .any(|existing| existing == &candidate || existing.contains(&candidate))
+    {
+        return;
+    }
+    hints.retain(|existing| !candidate.contains(existing));
+    hints.push(candidate);
+}
+
 fn compose_hf_download_error(raw: &str) -> String {
     let humanized = hf::humanize_error(raw);
     let mut hints: Vec<String> = Vec::new();
@@ -24,9 +35,7 @@ fn compose_hf_download_error(raw: &str) -> String {
         "requested revision:",
     ] {
         if let Some(h) = extract_hf_error_hint(raw, marker) {
-            if !hints.iter().any(|existing| existing == &h) {
-                hints.push(h);
-            }
+            merge_hint(&mut hints, h);
         }
     }
     if hints.is_empty() {
@@ -2241,7 +2250,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_hf_download_error, extract_hf_error_hint};
+    use super::{compose_hf_download_error, extract_hf_error_hint, merge_hint};
 
     #[test]
     fn extract_hf_error_hint_parses_requested_revision_tail() {
@@ -2294,5 +2303,24 @@ mod tests {
             extract_hf_error_hint(raw, "requested revision:").as_deref(),
             Some("requested revision: '4bpw'; available branches: exl2(legacy), main")
         );
+    }
+
+    #[test]
+    fn merge_hint_prefers_more_specific_hint() {
+        let mut hints = vec!["requested revision: '4bpw'".to_string()];
+        merge_hint(
+            &mut hints,
+            "fallback lookup failed: branch refs unavailable; requested revision: '4bpw'"
+                .to_string(),
+        );
+        assert_eq!(hints.len(), 1);
+        assert!(hints[0].starts_with("fallback lookup failed:"));
+    }
+
+    #[test]
+    fn compose_hf_download_error_avoids_overlapping_hint_duplicates() {
+        let raw = "HF 404: revision not found (fallback lookup failed: branch refs unavailable; requested revision: '4bpw')";
+        let msg = compose_hf_download_error(raw);
+        assert_eq!(msg.matches("requested revision: '4bpw'").count(), 1);
     }
 }

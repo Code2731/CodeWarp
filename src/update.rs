@@ -3,12 +3,41 @@ use super::*;
 use iced::widget::text_editor::{self, Action};
 use iced::{Subscription, Task};
 
+const HF_HINT_MARKERS: [&str; 3] = [
+    "fallback retry from",
+    "fallback lookup failed:",
+    "requested revision:",
+];
+
+fn starts_with_ascii_case_insensitive(text: &str, prefix: &str) -> bool {
+    text.to_ascii_lowercase()
+        .starts_with(&prefix.to_ascii_lowercase())
+}
+
+fn find_hint_boundary(tail: &str) -> Option<usize> {
+    for sep in [") (", ")("] {
+        let mut offset = 0usize;
+        while let Some(rel) = tail[offset..].find(sep) {
+            let pos = offset + rel;
+            let after = tail[pos + sep.len()..].trim_start();
+            if HF_HINT_MARKERS
+                .iter()
+                .any(|m| starts_with_ascii_case_insensitive(after, m))
+            {
+                return Some(pos);
+            }
+            offset = pos + sep.len();
+        }
+    }
+    None
+}
+
 fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
     let raw_lc = raw.to_ascii_lowercase();
     let marker_lc = marker.to_ascii_lowercase();
     let idx = raw_lc.find(&marker_lc)?;
     let tail = &raw[idx..];
-    let cut = tail.find(") (").or_else(|| tail.find(")("));
+    let cut = find_hint_boundary(tail);
     let head = cut.map(|i| &tail[..i]).unwrap_or(tail);
     let head = head.strip_suffix(')').unwrap_or(head).trim();
     if head.is_empty() {
@@ -37,11 +66,7 @@ fn merge_hint(hints: &mut Vec<String>, candidate: String) {
 fn compose_hf_download_error(raw: &str) -> String {
     let humanized = hf::humanize_error(raw);
     let mut hints: Vec<String> = Vec::new();
-    for marker in [
-        "fallback retry from",
-        "fallback lookup failed:",
-        "requested revision:",
-    ] {
+    for marker in HF_HINT_MARKERS {
         if let Some(h) = extract_hf_error_hint(raw, marker) {
             merge_hint(&mut hints, h);
         }
@@ -2260,7 +2285,7 @@ impl App {
 mod tests {
     use super::{
         compose_hf_download_error, contains_ascii_case_insensitive, extract_hf_error_hint,
-        merge_hint,
+        find_hint_boundary, merge_hint, starts_with_ascii_case_insensitive,
     };
 
     #[test]
@@ -2366,5 +2391,28 @@ mod tests {
         let mut hints = vec!["Requested Revision: '4bpw'".to_string()];
         merge_hint(&mut hints, "requested revision: '4bpw'".to_string());
         assert_eq!(hints.len(), 1);
+    }
+
+    #[test]
+    fn starts_with_ascii_case_insensitive_matches_mixed_case_prefix() {
+        assert!(starts_with_ascii_case_insensitive(
+            "Requested Revision: '4bpw'",
+            "requested revision:"
+        ));
+    }
+
+    #[test]
+    fn find_hint_boundary_detects_next_marker_separator() {
+        let tail = "fallback retry from '4bpw' to '4.0bpw') (requested revision: '4bpw')";
+        assert_eq!(find_hint_boundary(tail), Some(38));
+    }
+
+    #[test]
+    fn extract_hf_error_hint_keeps_internal_paren_separator_not_followed_by_marker() {
+        let raw = "HF 404: revision not found (requested revision: '4bpw'; available branches: weird)(branch), main)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "requested revision:").as_deref(),
+            Some("requested revision: '4bpw'; available branches: weird)(branch), main")
+        );
     }
 }

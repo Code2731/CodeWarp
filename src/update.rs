@@ -573,8 +573,13 @@ impl App {
                     self.hf_repo_input = p.repo_id.into();
                     self.hf_revision = Some(p.revision.into());
                     self.hf_folder_name = Some(p.folder_name.into());
+                    self.status = format!(
+                        "프리셋 다운로드 시작 준비: {} ({} @ {})",
+                        p.label, p.repo_id, p.revision
+                    );
                     return Task::done(Message::StartHfDownload);
                 }
+                self.status = format!("잘못된 프리셋 인덱스: {}", idx);
                 Task::none()
             }
             Message::StartHfDownload => {

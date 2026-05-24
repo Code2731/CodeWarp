@@ -2415,6 +2415,37 @@ mod tests {
     }
 
     #[test]
+    fn can_start_inference_tabby_requires_model_id() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::Tabby;
+        app.inference_selected_model = String::new();
+        assert!(!app.can_start_inference());
+
+        app.inference_selected_model = "TabbyML/Qwen2.5-Coder-7B".into();
+        assert!(app.can_start_inference());
+    }
+
+    #[test]
+    fn can_start_inference_custom_requires_non_empty_command() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::Custom;
+        app.inference_command_input = "   ".into();
+        assert!(!app.can_start_inference());
+
+        app.inference_command_input = "xllm serve --model X".into();
+        assert!(app.can_start_inference());
+    }
+
+    #[test]
+    fn can_start_inference_ollama_always_true() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::Ollama;
+        app.inference_selected_model = String::new();
+        app.inference_command_input = String::new();
+        assert!(app.can_start_inference());
+    }
+
+    #[test]
     fn model_dir_changed_clears_stale_local_model_selection() {
         let old_dir = tempfile::TempDir::new().unwrap();
         let new_dir = tempfile::TempDir::new().unwrap();

@@ -1717,7 +1717,7 @@ impl App {
 
         let runtime_can_start = match self.inference_engine {
             InferenceEngine::Custom => !self.inference_command_input.trim().is_empty(),
-            InferenceEngine::Ollama => false,
+            InferenceEngine::Ollama => true,
             _ => !self.inference_selected_model.trim().is_empty(),
         };
 
@@ -2045,7 +2045,7 @@ impl App {
         let running = self.inference_pid.is_some();
         let can_start = match self.inference_engine {
             InferenceEngine::Custom => !self.inference_command_input.trim().is_empty(),
-            InferenceEngine::Ollama => false, // Ollama는 spawn 안 함 (daemon)
+            InferenceEngine::Ollama => true, // Ollama는 spawn 없이 endpoint 연결/핑만 수행
             _ => !self.inference_selected_model.trim().is_empty(),
         };
 
@@ -2072,7 +2072,7 @@ impl App {
             .into()
         } else {
             let btn_label = if self.inference_engine == InferenceEngine::Ollama {
-                "Ollama는 daemon — 시작 불필요"
+                "Ollama 연결"
             } else {
                 "시작"
             };

@@ -309,10 +309,34 @@ pub fn download_repo(
                                 match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
                                     Ok(v2) => v2,
                                     Err(e2) => {
+                                        let prev = rev.clone();
+                                        rev = "main".to_string();
+                                        match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
+                                            Ok(v3) => v3,
+                                            Err(e3) => {
+                                                let decorated = annotate_revision_not_found_error(
+                                                    &format!(
+                                                        "{} (fallback retry from '{}' to '{}' failed; main fallback from '{}' failed: {}; requested revision: '{}')",
+                                                        e2, requested_rev, prev, prev, e3, requested_rev
+                                                    ),
+                                                    &requested_rev,
+                                                    &branches,
+                                                );
+                                                yield DownloadEvent::Error(decorated);
+                                                return;
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                rev = "main".to_string();
+                                match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
+                                    Ok(v3) => v3,
+                                    Err(e3) => {
                                         let decorated = annotate_revision_not_found_error(
                                             &format!(
-                                                "{} (fallback retry from '{}' to '{}')",
-                                                e2, requested_rev, rev
+                                                "{} (fallback matched requested revision '{}'; main fallback failed: {}; requested revision: '{}')",
+                                                e, requested_rev, e3, requested_rev
                                             ),
                                             &requested_rev,
                                             &branches,
@@ -321,30 +345,37 @@ pub fn download_repo(
                                         return;
                                     }
                                 }
-                            } else {
-                                let decorated = annotate_revision_not_found_error(
-                                    &e,
-                                    &requested_rev,
-                                    &branches,
-                                );
-                                yield DownloadEvent::Error(decorated);
-                                return;
                             }
                         } else {
-                            let decorated = annotate_revision_not_found_error(
-                                &e,
-                                &requested_rev,
-                                &branches,
-                            );
-                            yield DownloadEvent::Error(decorated);
-                            return;
+                            rev = "main".to_string();
+                            match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
+                                Ok(v3) => v3,
+                                Err(e3) => {
+                                    let decorated = annotate_revision_not_found_error(
+                                        &format!(
+                                            "{} (no fallback branch match; main fallback failed: {}; requested revision: '{}')",
+                                            e, e3, requested_rev
+                                        ),
+                                        &requested_rev,
+                                        &branches,
+                                    );
+                                    yield DownloadEvent::Error(decorated);
+                                    return;
+                                }
+                            }
                         }
                     } else {
-                        yield DownloadEvent::Error(format!(
-                            "{} (fallback lookup failed: branch refs unavailable; requested revision: '{}')",
-                            e, requested_rev
-                        ));
-                        return;
+                        rev = "main".to_string();
+                        match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
+                            Ok(v3) => v3,
+                            Err(e3) => {
+                                yield DownloadEvent::Error(format!(
+                                    "{} (fallback lookup failed: branch refs unavailable; main fallback failed: {}; requested revision: '{}')",
+                                    e, e3, requested_rev
+                                ));
+                                return;
+                            }
+                        }
                     }
                 } else {
                     yield DownloadEvent::Error(e);

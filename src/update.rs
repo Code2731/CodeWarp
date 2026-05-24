@@ -4,6 +4,16 @@ use iced::widget::text_editor::{self, Action};
 use iced::{Subscription, Task};
 
 impl App {
+    fn has_selected_local_model_available(&self) -> bool {
+        let selected = self.inference_selected_model.trim();
+        if selected.is_empty() {
+            return false;
+        }
+        list_downloaded_models(std::path::Path::new(&self.model_dir_input))
+            .iter()
+            .any(|m| m == selected)
+    }
+
     fn sync_selected_local_model_for_model_dir(&mut self) {
         if !matches!(
             self.inference_engine,
@@ -11,12 +21,7 @@ impl App {
         ) {
             return;
         }
-        let selected = self.inference_selected_model.trim();
-        if selected.is_empty() {
-            return;
-        }
-        let available = list_downloaded_models(std::path::Path::new(&self.model_dir_input));
-        if !available.iter().any(|m| m == selected) {
+        if !self.has_selected_local_model_available() {
             self.inference_selected_model.clear();
         }
     }
@@ -27,13 +32,7 @@ impl App {
             InferenceEngine::Ollama => true,
             InferenceEngine::Tabby => !self.inference_selected_model.trim().is_empty(),
             InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer => {
-                let selected = self.inference_selected_model.trim();
-                if selected.is_empty() {
-                    return false;
-                }
-                list_downloaded_models(std::path::Path::new(&self.model_dir_input))
-                    .iter()
-                    .any(|m| m == selected)
+                self.has_selected_local_model_available()
             }
         }
     }
@@ -212,14 +211,11 @@ impl App {
                             InferenceEngine::XLlm
                                 | InferenceEngine::VLlm
                                 | InferenceEngine::LlamaServer
-                        ) {
-                            let available =
-                                list_downloaded_models(std::path::Path::new(&self.model_dir_input));
-                            if !available.iter().any(|m| m == model) {
-                                self.status =
-                                    "선택 모델을 현재 다운로드 경로에서 찾을 수 없습니다.".into();
-                                return Task::none();
-                            }
+                        ) && !self.has_selected_local_model_available()
+                        {
+                            self.status =
+                                "선택 모델을 현재 다운로드 경로에서 찾을 수 없습니다.".into();
+                            return Task::none();
                         }
                         // xLLM/vLLM/llama-server는 받은 폴더를 absolute path로
                         let abs_model = if matches!(eng, InferenceEngine::Tabby) {

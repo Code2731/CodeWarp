@@ -189,6 +189,34 @@ fn choose_revision_fallback(requested: &str, branches: &[String]) -> Option<Stri
         .or_else(|| branches.first().cloned())
 }
 
+fn format_branch_suggestions(branches: &[String], limit: usize) -> String {
+    let shown: Vec<&str> = branches
+        .iter()
+        .map(|b| b.trim())
+        .filter(|b| !b.is_empty())
+        .take(limit)
+        .collect();
+    if shown.is_empty() {
+        return String::new();
+    }
+    let mut text = shown.join(", ");
+    if branches.len() > shown.len() {
+        text.push_str(&format!(" ... +{} more", branches.len() - shown.len()));
+    }
+    text
+}
+
+fn annotate_revision_not_found_error(base: &str, requested: &str, branches: &[String]) -> String {
+    let suggested = format_branch_suggestions(branches, 8);
+    if suggested.is_empty() {
+        return base.to_string();
+    }
+    format!(
+        "{} (requested revision: '{}'; available branches: {})",
+        base, requested, suggested
+    )
+}
+
 async fn fetch_repo_branches(
     client: &reqwest::Client,
     repo_id: &str,
@@ -266,6 +294,7 @@ pub fn download_repo(
         };
         let token_ref = token.as_deref();
         let mut rev = revision.as_deref().unwrap_or("main").to_string();
+        let requested_rev = rev.clone();
 
         // 1) siblings 메타 (revision 쿼리 파라미터로 branch 지정)
         let info: ModelInfo = match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
@@ -279,14 +308,35 @@ pub fn download_repo(
                                 rev = fallback;
                                 match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
                                     Ok(v2) => v2,
-                                    Err(e2) => { yield DownloadEvent::Error(e2); return; }
+                                    Err(e2) => {
+                                        let decorated = annotate_revision_not_found_error(
+                                            &format!(
+                                                "{} (fallback retry from '{}' to '{}')",
+                                                e2, requested_rev, rev
+                                            ),
+                                            &requested_rev,
+                                            &branches,
+                                        );
+                                        yield DownloadEvent::Error(decorated);
+                                        return;
+                                    }
                                 }
                             } else {
-                                yield DownloadEvent::Error(e);
+                                let decorated = annotate_revision_not_found_error(
+                                    &e,
+                                    &requested_rev,
+                                    &branches,
+                                );
+                                yield DownloadEvent::Error(decorated);
                                 return;
                             }
                         } else {
-                            yield DownloadEvent::Error(e);
+                            let decorated = annotate_revision_not_found_error(
+                                &e,
+                                &requested_rev,
+                                &branches,
+                            );
+                            yield DownloadEvent::Error(decorated);
                             return;
                         }
                     } else {
@@ -391,8 +441,8 @@ pub fn download_repo(
 #[cfg(test)]
 mod tests {
     use super::{
-        choose_revision_fallback, contains_status, extract_bpw_value, humanize_error,
-        normalize_revision_name,
+        annotate_revision_not_found_error, choose_revision_fallback, contains_status,
+        extract_bpw_value, format_branch_suggestions, humanize_error, normalize_revision_name,
     };
 
     #[test]
@@ -464,5 +514,27 @@ mod tests {
             choose_revision_fallback("unknown-branch", &branches).as_deref(),
             Some("main")
         );
+    }
+
+    #[test]
+    fn format_branch_suggestions_limits_and_counts() {
+        let branches = vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+            "d".to_string(),
+        ];
+        assert_eq!(
+            format_branch_suggestions(&branches, 2),
+            "a, b ... +2 more"
+        );
+    }
+
+    #[test]
+    fn annotate_revision_not_found_error_appends_requested_and_candidates() {
+        let branches = vec!["main".to_string(), "4.0bpw".to_string()];
+        let text = annotate_revision_not_found_error("HF 404: revision not found", "4bpw", &branches);
+        assert!(text.contains("requested revision: '4bpw'"));
+        assert!(text.contains("available branches: main, 4.0bpw"));
     }
 }

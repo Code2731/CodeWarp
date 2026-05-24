@@ -85,6 +85,16 @@ fn compose_hf_download_error(raw: &str) -> String {
     }
 }
 
+fn default_models_dir() -> String {
+    if let Some(p) = dirs::data_local_dir() {
+        return p.join("codewarp").join("models").display().to_string();
+    }
+    if let Some(home) = dirs::home_dir() {
+        return home.join(".codewarp").join("models").display().to_string();
+    }
+    "models".to_string()
+}
+
 impl App {
     fn has_selected_local_model_available(&self) -> bool {
         let selected = self.inference_selected_model.trim();
@@ -583,16 +593,14 @@ impl App {
                 }
                 let mut dir = self.model_dir_input.trim().to_string();
                 if dir.is_empty() {
-                    dir = dirs::data_local_dir()
-                        .map(|d| d.join("codewarp").join("models").display().to_string())
-                        .unwrap_or_else(|| "models".to_string());
+                    dir = default_models_dir();
                     self.status = format!("다운로드 경로 자동 설정: {}", dir);
                 }
                 let resolved_dir = resolve_user_path(&dir);
                 dir = resolved_dir.display().to_string();
                 self.model_dir_input = dir.clone();
                 if let Err(e) = std::fs::create_dir_all(&resolved_dir) {
-                    self.status = format!("다운로드 경로 생성 실패: {}", e);
+                    self.status = format!("다운로드 경로 생성 실패 ({}): {}", dir, e);
                     return Task::none();
                 }
                 // 경로 keystore에도 반영
@@ -2284,8 +2292,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        compose_hf_download_error, contains_ascii_case_insensitive, extract_hf_error_hint,
-        find_hint_boundary, merge_hint, starts_with_ascii_case_insensitive,
+        compose_hf_download_error, contains_ascii_case_insensitive, default_models_dir,
+        extract_hf_error_hint, find_hint_boundary, merge_hint, starts_with_ascii_case_insensitive,
     };
 
     #[test]
@@ -2414,5 +2422,10 @@ mod tests {
             extract_hf_error_hint(raw, "requested revision:").as_deref(),
             Some("requested revision: '4bpw'; available branches: weird)(branch), main")
         );
+    }
+
+    #[test]
+    fn default_models_dir_returns_non_empty_path() {
+        assert!(!default_models_dir().trim().is_empty());
     }
 }

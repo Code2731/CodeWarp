@@ -6,11 +6,8 @@ use iced::{Subscription, Task};
 fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
     let idx = raw.find(marker)?;
     let tail = &raw[idx..];
-    let head = tail
-        .split_once(')')
-        .map(|(left, _)| left)
-        .unwrap_or(tail)
-        .trim();
+    let head = tail.split_once(") (").map(|(left, _)| left).unwrap_or(tail);
+    let head = head.strip_suffix(')').unwrap_or(head).trim();
     if head.is_empty() {
         None
     } else {
@@ -2288,5 +2285,14 @@ mod tests {
         let msg = compose_hf_download_error(raw);
         assert!(msg.contains("fallback lookup failed: branch refs unavailable"));
         assert!(msg.contains("requested revision: '4bpw'"));
+    }
+
+    #[test]
+    fn extract_hf_error_hint_keeps_branch_names_with_parentheses() {
+        let raw = "HF 404: revision not found (requested revision: '4bpw'; available branches: exl2(legacy), main)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "requested revision:").as_deref(),
+            Some("requested revision: '4bpw'; available branches: exl2(legacy), main")
+        );
     }
 }

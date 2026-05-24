@@ -2368,6 +2368,32 @@ mod tests {
             .is_none());
     }
 
+    #[test]
+    fn can_start_inference_local_engine_requires_existing_model() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let model = tmp.path().join("Qwen--7B");
+        std::fs::create_dir_all(&model).unwrap();
+        std::fs::write(model.join("config.json"), "{}").unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::XLlm;
+        app.model_dir_input = tmp.path().display().to_string();
+        app.inference_selected_model = "Qwen--7B".into();
+
+        assert!(app.can_start_inference());
+    }
+
+    #[test]
+    fn can_start_inference_local_engine_rejects_missing_model() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::VLlm;
+        app.model_dir_input = tmp.path().display().to_string();
+        app.inference_selected_model = "missing-model".into();
+
+        assert!(!app.can_start_inference());
+    }
+
     // ── list_downloaded_models ──────────────────────────────────────
 
     #[test]

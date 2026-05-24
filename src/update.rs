@@ -4,6 +4,23 @@ use iced::widget::text_editor::{self, Action};
 use iced::{Subscription, Task};
 
 impl App {
+    pub(crate) fn can_start_inference(&self) -> bool {
+        match self.inference_engine {
+            InferenceEngine::Custom => !self.inference_command_input.trim().is_empty(),
+            InferenceEngine::Ollama => true,
+            InferenceEngine::Tabby => !self.inference_selected_model.trim().is_empty(),
+            InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer => {
+                let selected = self.inference_selected_model.trim();
+                if selected.is_empty() {
+                    return false;
+                }
+                list_downloaded_models(std::path::Path::new(&self.model_dir_input))
+                    .iter()
+                    .any(|m| m == selected)
+            }
+        }
+    }
+
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::OpenSettings => {

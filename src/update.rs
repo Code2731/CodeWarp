@@ -164,6 +164,20 @@ impl App {
                             self.status = "모델 선택 안 됨".into();
                             return Task::none();
                         }
+                        if matches!(
+                            eng,
+                            InferenceEngine::XLlm
+                                | InferenceEngine::VLlm
+                                | InferenceEngine::LlamaServer
+                        ) {
+                            let available =
+                                list_downloaded_models(std::path::Path::new(&self.model_dir_input));
+                            if !available.iter().any(|m| m == model) {
+                                self.status =
+                                    "선택 모델을 현재 다운로드 경로에서 찾을 수 없습니다.".into();
+                                return Task::none();
+                            }
+                        }
                         // xLLM/vLLM/llama-server는 받은 폴더를 absolute path로
                         let abs_model = if matches!(eng, InferenceEngine::Tabby) {
                             // Tabby는 카탈로그 ID 그대로

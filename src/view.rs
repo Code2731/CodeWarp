@@ -1715,10 +1715,18 @@ impl App {
         ))
         .size(FS_LABEL),];
 
+        let local_models = list_downloaded_models(std::path::Path::new(&self.model_dir_input));
+        let local_model_selected = !self.inference_selected_model.trim().is_empty()
+            && local_models
+                .iter()
+                .any(|m| m == self.inference_selected_model.trim());
         let runtime_can_start = match self.inference_engine {
             InferenceEngine::Custom => !self.inference_command_input.trim().is_empty(),
             InferenceEngine::Ollama => true,
-            _ => !self.inference_selected_model.trim().is_empty(),
+            InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer => {
+                local_model_selected
+            }
+            InferenceEngine::Tabby => !self.inference_selected_model.trim().is_empty(),
         };
 
         let (active_tab_title, active_health, active_action, quick_label, quick_action) = match self
@@ -2043,10 +2051,18 @@ impl App {
         };
 
         let running = self.inference_pid.is_some();
+        let local_models = list_downloaded_models(std::path::Path::new(&self.model_dir_input));
+        let local_model_selected = !self.inference_selected_model.trim().is_empty()
+            && local_models
+                .iter()
+                .any(|m| m == self.inference_selected_model.trim());
         let can_start = match self.inference_engine {
             InferenceEngine::Custom => !self.inference_command_input.trim().is_empty(),
             InferenceEngine::Ollama => true, // Ollama는 spawn 없이 endpoint 연결/핑만 수행
-            _ => !self.inference_selected_model.trim().is_empty(),
+            InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer => {
+                local_model_selected
+            }
+            InferenceEngine::Tabby => !self.inference_selected_model.trim().is_empty(),
         };
 
         let actions: Element<Message> = if running {

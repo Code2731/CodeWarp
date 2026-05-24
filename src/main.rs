@@ -576,6 +576,9 @@ impl std::fmt::Display for InferenceEngine {
 /// 모델 매니저 다운로드 폴더 안의 받은 모델(서브폴더) 리스트.
 /// 빈 폴더는 모델 아님 — skip.
 fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
+    if dir.as_os_str().is_empty() {
+        return Vec::new();
+    }
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -2329,6 +2332,11 @@ mod tests {
     fn list_models_empty_dir() {
         let tmp = tempfile::TempDir::new().unwrap();
         assert!(list_downloaded_models(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn list_models_empty_path_returns_empty() {
+        assert!(list_downloaded_models(std::path::Path::new("")).is_empty());
     }
 
     #[test]

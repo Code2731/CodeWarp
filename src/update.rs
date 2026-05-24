@@ -412,6 +412,19 @@ impl App {
             Message::ModelDirChanged(v) => {
                 self.model_dir_input = v.clone();
                 let _ = keystore::write_model_dir(&v);
+                if matches!(
+                    self.inference_engine,
+                    InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer
+                ) {
+                    let selected = self.inference_selected_model.trim();
+                    if !selected.is_empty() {
+                        let available =
+                            list_downloaded_models(std::path::Path::new(&self.model_dir_input));
+                        if !available.iter().any(|m| m == selected) {
+                            self.inference_selected_model.clear();
+                        }
+                    }
+                }
                 Task::none()
             }
             Message::PickModelDir => Task::perform(
@@ -428,6 +441,21 @@ impl App {
                     let s = path.display().to_string();
                     let _ = keystore::write_model_dir(&s);
                     self.model_dir_input = s;
+                    if matches!(
+                        self.inference_engine,
+                        InferenceEngine::XLlm
+                            | InferenceEngine::VLlm
+                            | InferenceEngine::LlamaServer
+                    ) {
+                        let selected = self.inference_selected_model.trim();
+                        if !selected.is_empty() {
+                            let available =
+                                list_downloaded_models(std::path::Path::new(&self.model_dir_input));
+                            if !available.iter().any(|m| m == selected) {
+                                self.inference_selected_model.clear();
+                            }
+                        }
+                    }
                     self.status = "모델 다운로드 경로 저장됨".into();
                 }
                 Task::none()

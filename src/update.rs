@@ -6,7 +6,8 @@ use iced::{Subscription, Task};
 fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
     let idx = raw.find(marker)?;
     let tail = &raw[idx..];
-    let head = tail.split_once(") (").map(|(left, _)| left).unwrap_or(tail);
+    let cut = tail.find(") (").or_else(|| tail.find(")("));
+    let head = cut.map(|i| &tail[..i]).unwrap_or(tail);
     let head = head.strip_suffix(')').unwrap_or(head).trim();
     if head.is_empty() {
         None
@@ -2302,6 +2303,15 @@ mod tests {
         assert_eq!(
             extract_hf_error_hint(raw, "requested revision:").as_deref(),
             Some("requested revision: '4bpw'; available branches: exl2(legacy), main")
+        );
+    }
+
+    #[test]
+    fn extract_hf_error_hint_parses_no_space_parenthesis_separator() {
+        let raw = "HF 404: revision not found (fallback retry from '4bpw' to '4.0bpw')(requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "fallback retry from").as_deref(),
+            Some("fallback retry from '4bpw' to '4.0bpw'")
         );
     }
 

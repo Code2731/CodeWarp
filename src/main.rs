@@ -620,6 +620,7 @@ fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
             out.push(name.to_string());
         }
     }
+    out.sort_unstable();
     out
 }
 
@@ -2384,6 +2385,23 @@ mod tests {
         models.sort();
         assert_eq!(models.len(), 2);
         assert!(models[0].contains("Qwen") || models[1].contains("Qwen"));
+    }
+
+    #[test]
+    fn list_models_are_sorted() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let zulu = tmp.path().join("zulu-model");
+        let alpha = tmp.path().join("alpha-model");
+        std::fs::create_dir_all(&zulu).unwrap();
+        std::fs::create_dir_all(&alpha).unwrap();
+        std::fs::write(zulu.join("model.safetensors"), "x").unwrap();
+        std::fs::write(alpha.join("model.safetensors"), "x").unwrap();
+
+        let models = list_downloaded_models(tmp.path());
+        assert_eq!(
+            models,
+            vec!["alpha-model".to_string(), "zulu-model".to_string()]
+        );
     }
 
     #[test]

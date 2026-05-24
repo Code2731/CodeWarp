@@ -74,7 +74,7 @@ pub(crate) fn parse_command(command: &str) -> Result<Vec<String>, String> {
     }
 
     if in_single || in_double {
-        return Err("MCP 명령 파싱 실패: 따옴표가 닫히지 않았습니다.".into());
+        return Err("명령 파싱 실패: 따옴표가 닫히지 않았습니다.".into());
     }
 
     if !current.is_empty() {
@@ -94,7 +94,7 @@ async fn rpc_call(
     method: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let parts = parse_command(command)?;
+    let parts = parse_command(command).map_err(|e| format!("MCP {}", e))?;
     let (program, args) = parts.split_first().ok_or("빈 명령")?;
 
     let mut child = Command::new(program)

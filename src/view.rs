@@ -1710,7 +1710,7 @@ impl App {
             } else {
                 "stopped"
             },
-            list_downloaded_models(std::path::Path::new(&self.model_dir_input)).len(),
+            local_model_count,
             self.mcp_servers.len()
         ))
         .size(FS_LABEL),];

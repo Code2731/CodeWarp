@@ -18,14 +18,19 @@ fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
     }
 }
 
+fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    haystack
+        .to_ascii_lowercase()
+        .contains(&needle.to_ascii_lowercase())
+}
+
 fn merge_hint(hints: &mut Vec<String>, candidate: String) {
-    if hints
-        .iter()
-        .any(|existing| existing == &candidate || existing.contains(&candidate))
-    {
+    if hints.iter().any(|existing| {
+        existing == &candidate || contains_ascii_case_insensitive(existing, &candidate)
+    }) {
         return;
     }
-    hints.retain(|existing| !candidate.contains(existing));
+    hints.retain(|existing| !contains_ascii_case_insensitive(&candidate, existing));
     hints.push(candidate);
 }
 
@@ -46,7 +51,7 @@ fn compose_hf_download_error(raw: &str) -> String {
     }
     let missing: Vec<String> = hints
         .into_iter()
-        .filter(|h| !humanized.contains(h))
+        .filter(|h| !contains_ascii_case_insensitive(&humanized, h))
         .collect();
     if missing.is_empty() {
         humanized
@@ -2253,7 +2258,10 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_hf_download_error, extract_hf_error_hint, merge_hint};
+    use super::{
+        compose_hf_download_error, contains_ascii_case_insensitive, extract_hf_error_hint,
+        merge_hint,
+    };
 
     #[test]
     fn extract_hf_error_hint_parses_requested_revision_tail() {
@@ -2343,5 +2351,20 @@ mod tests {
             extract_hf_error_hint(raw, "requested revision:").as_deref(),
             Some("Requested Revision: '4bpw'; available branches: main, 4.0bpw")
         );
+    }
+
+    #[test]
+    fn contains_ascii_case_insensitive_matches_mixed_case() {
+        assert!(contains_ascii_case_insensitive(
+            "Requested Revision: '4bpw'",
+            "requested revision:"
+        ));
+    }
+
+    #[test]
+    fn merge_hint_deduplicates_case_insensitive_overlap() {
+        let mut hints = vec!["Requested Revision: '4bpw'".to_string()];
+        merge_hint(&mut hints, "requested revision: '4bpw'".to_string());
+        assert_eq!(hints.len(), 1);
     }
 }

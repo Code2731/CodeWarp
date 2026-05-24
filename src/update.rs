@@ -387,7 +387,8 @@ impl App {
                 Task::none()
             }
             Message::ModelDirChanged(v) => {
-                self.model_dir_input = v;
+                self.model_dir_input = v.clone();
+                let _ = keystore::write_model_dir(&v);
                 Task::none()
             }
             Message::PickModelDir => Task::perform(

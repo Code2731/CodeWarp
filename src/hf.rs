@@ -47,10 +47,10 @@ pub enum DownloadEvent {
 pub fn humanize_error(raw: &str) -> String {
     let lc = raw.to_lowercase();
 
-    if raw.contains("HF 401") || raw.contains("HF 403") {
+    if contains_status(raw, 401) || contains_status(raw, 403) {
         return "권한 없음(401/403) — Hugging Face 토큰을 저장했는지, 게이트 모델 접근 권한이 있는지 확인해 주세요.".into();
     }
-    if raw.contains("HF 404") {
+    if contains_status(raw, 404) {
         if lc.contains("revision") || lc.contains("not found") {
             return "리비전/브랜치를 찾을 수 없음(404) — 프리셋 브랜치가 바뀌었을 수 있어요. 다른 프리셋으로 재시도해 주세요.".into();
         }
@@ -80,6 +80,21 @@ pub fn humanize_error(raw: &str) -> String {
     }
 
     raw.to_string()
+}
+
+fn contains_status(raw: &str, code: u16) -> bool {
+    let mut digits = String::new();
+    for ch in raw.chars() {
+        if ch.is_ascii_digit() {
+            digits.push(ch);
+            continue;
+        }
+        if digits.len() == 3 && digits.parse::<u16>().ok() == Some(code) {
+            return true;
+        }
+        digits.clear();
+    }
+    digits.len() == 3 && digits.parse::<u16>().ok() == Some(code)
 }
 
 fn http_client() -> Result<reqwest::Client, String> {
@@ -223,12 +238,24 @@ pub fn download_repo(
 
 #[cfg(test)]
 mod tests {
-    use super::humanize_error;
+    use super::{contains_status, humanize_error};
 
     #[test]
     fn humanize_auth() {
         let msg = humanize_error("HF 401: unauthorized");
         assert!(msg.contains("토큰"));
+    }
+
+    #[test]
+    fn humanize_auth_lowercase_prefix() {
+        let msg = humanize_error("hf 403: forbidden");
+        assert!(msg.contains("권한"));
+    }
+
+    #[test]
+    fn humanize_auth_status_text() {
+        let msg = humanize_error("request failed with status 401 Unauthorized");
+        assert!(msg.contains("401/403"));
     }
 
     #[test]
@@ -241,5 +268,11 @@ mod tests {
     fn humanize_timeout() {
         let msg = humanize_error("operation timed out");
         assert!(msg.contains("시간 초과"));
+    }
+
+    #[test]
+    fn contains_status_matches_standalone_code() {
+        assert!(contains_status("status=404 not found", 404));
+        assert!(!contains_status("file size 1404 bytes", 404));
     }
 }

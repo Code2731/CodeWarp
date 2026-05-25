@@ -111,6 +111,123 @@ fn tabbyapi_reject_tabbyml_message() -> String {
         .into()
 }
 
+pub(crate) fn default_tabbyapi_runtime_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("CODEWARP_TABBYAPI_RUNTIME_DIR") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return resolve_user_path(trimmed);
+        }
+    }
+    if let Some(p) = dirs::data_local_dir() {
+        return p.join("codewarp").join("runtimes").join("tabbyAPI");
+    }
+    if let Some(home) = dirs::home_dir() {
+        return home.join(".codewarp").join("runtimes").join("tabbyAPI");
+    }
+    PathBuf::from("runtimes").join("tabbyAPI")
+}
+
+fn tabbyapi_launcher_candidates(runtime_dir: &std::path::Path) -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        vec![
+            runtime_dir.join("start.bat"),
+            runtime_dir.join("Start.bat"),
+            runtime_dir.join("main.py"),
+        ]
+    }
+    #[cfg(not(windows))]
+    {
+        vec![runtime_dir.join("start.sh"), runtime_dir.join("main.py")]
+    }
+}
+
+pub(crate) fn find_tabbyapi_launcher(runtime_dir: &std::path::Path) -> Option<PathBuf> {
+    tabbyapi_launcher_candidates(runtime_dir)
+        .into_iter()
+        .find(|p| p.is_file())
+}
+
+fn yaml_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+pub(crate) fn write_tabbyapi_config_for_launcher(
+    launcher: &str,
+    model_path: &str,
+    port: u16,
+) -> Result<PathBuf, String> {
+    let launcher_path = std::path::Path::new(launcher);
+    let runtime_dir = launcher_path
+        .parent()
+        .ok_or_else(|| "TabbyAPI script 상위 폴더를 확인할 수 없습니다.".to_string())?;
+    let model_path = resolve_user_path(model_path);
+    if !model_path.exists() {
+        return Err(format!(
+            "TabbyAPI 모델 폴더를 찾을 수 없습니다: {}",
+            model_path.display()
+        ));
+    }
+    let model_dir = model_path
+        .parent()
+        .ok_or_else(|| "TabbyAPI 모델 폴더의 상위 경로를 확인할 수 없습니다.".to_string())?;
+    let model_name = model_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "TabbyAPI 모델 폴더 이름을 확인할 수 없습니다.".to_string())?;
+    let config_path = runtime_dir.join("config.yml");
+    let content = format!(
+        "network:\n  host: 127.0.0.1\n  port: {}\n  disable_auth: true\nmodel:\n  model_dir: {}\n  model_name: {}\nsampling:\n  override_preset: safe_defaults\n",
+        port,
+        yaml_quote(&model_dir.display().to_string()),
+        yaml_quote(model_name)
+    );
+    std::fs::write(&config_path, content)
+        .map_err(|e| format!("TabbyAPI config.yml 작성 실패: {e}"))?;
+    Ok(config_path)
+}
+
+async fn install_tabbyapi_runtime(runtime_dir: PathBuf) -> Result<PathBuf, String> {
+    if let Some(launcher) = find_tabbyapi_launcher(&runtime_dir) {
+        return Ok(launcher);
+    }
+    if runtime_dir.exists() {
+        return Err(format!(
+            "TabbyAPI 설치 폴더는 있지만 실행 스크립트를 찾지 못했습니다: {}",
+            runtime_dir.display()
+        ));
+    }
+    let parent = runtime_dir
+        .parent()
+        .ok_or_else(|| "TabbyAPI 설치 상위 폴더를 확인할 수 없습니다.".to_string())?;
+    tokio::fs::create_dir_all(parent)
+        .await
+        .map_err(|e| format!("TabbyAPI 설치 폴더 생성 실패: {e}"))?;
+
+    let output = tokio::process::Command::new("git")
+        .arg("clone")
+        .arg("--depth")
+        .arg("1")
+        .arg(TABBY_API_REPO_URL)
+        .arg(&runtime_dir)
+        .output()
+        .await
+        .map_err(|e| format!("git 실행 실패: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if stderr.is_empty() { stdout } else { stderr };
+        return Err(format!("TabbyAPI git clone 실패: {detail}"));
+    }
+
+    find_tabbyapi_launcher(&runtime_dir).ok_or_else(|| {
+        format!(
+            "TabbyAPI 설치 후에도 실행 스크립트를 찾지 못했습니다: {}",
+            runtime_dir.display()
+        )
+    })
+}
+
 fn default_models_dir() -> String {
     if let Some(p) = dirs::data_local_dir() {
         return p.join("codewarp").join("models").display().to_string();
@@ -202,20 +319,26 @@ impl App {
         #[cfg(windows)]
         {
             if ext == "bat" || ext == "cmd" {
-                return ("cmd.exe".into(), vec!["/C".into(), file_name], work_dir);
+                let mut final_args = vec!["/C".into(), file_name];
+                final_args.extend(args);
+                return ("cmd.exe".into(), final_args, work_dir);
             }
             if ext == "py" {
-                return ("python".into(), vec![file_name], work_dir);
+                let mut final_args = vec![file_name];
+                final_args.extend(args);
+                return ("python".into(), final_args, work_dir);
             }
         }
 
         #[cfg(not(windows))]
         {
             if ext == "sh" {
-                return (format!("./{}", file_name), Vec::new(), work_dir);
+                return (format!("./{}", file_name), args, work_dir);
             }
             if ext == "py" {
-                return ("python3".into(), vec![file_name], work_dir);
+                let mut final_args = vec![file_name];
+                final_args.extend(args);
+                return ("python3".into(), final_args, work_dir);
             }
         }
 
@@ -403,6 +526,45 @@ impl App {
                 }
                 Task::none()
             }
+            Message::InstallTabbyApiRuntime => {
+                self.busy = true;
+                let runtime_dir = default_tabbyapi_runtime_dir();
+                self.status = format!("TabbyAPI 런타임 설치 중: {}", runtime_dir.display());
+                Task::perform(
+                    install_tabbyapi_runtime(runtime_dir),
+                    Message::TabbyApiRuntimeInstalled,
+                )
+            }
+            Message::TabbyApiRuntimeInstalled(result) => {
+                self.busy = false;
+                match result {
+                    Ok(launcher) => {
+                        let s = launcher.display().to_string();
+                        self.inference_engine = InferenceEngine::TabbyApi;
+                        self.inference_binary_path = s.clone();
+                        self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
+                        self.tabby_url_input =
+                            format!("http://localhost:{}", TABBY_API_DEFAULT_PORT);
+                        self.openai_compat_label = "TabbyAPI".into();
+                        let _ = keystore::write_inference_binary(&s);
+                        let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                        let _ = keystore::write_openai_compat_label("TabbyAPI");
+                        self.status = format!(
+                            "TabbyAPI 런타임 설치/감지 완료: {} — 모델 선택 후 시작하세요.",
+                            launcher.display()
+                        );
+                        self.settings_tab = SettingsTab::Runtime;
+                    }
+                    Err(e) => {
+                        self.status = format!(
+                            "TabbyAPI 런타임 설치 실패: {}. Git/Python 설치와 네트워크를 확인해 주세요.",
+                            e
+                        );
+                        self.tabby_status = Some(Err(self.status.clone()));
+                    }
+                }
+                Task::none()
+            }
             Message::StartInference => {
                 if self.inference_pid.is_some() {
                     self.status = "이미 실행 중".into();
@@ -477,6 +639,13 @@ impl App {
                                 let msg = tabbyapi_reject_tabbyml_message();
                                 self.status = msg.clone();
                                 self.tabby_status = Some(Err(msg));
+                                return Task::none();
+                            }
+                            if let Err(e) =
+                                write_tabbyapi_config_for_launcher(launcher, model, port)
+                            {
+                                self.status = e.clone();
+                                self.tabby_status = Some(Err(e));
                                 return Task::none();
                             }
                         }
@@ -806,8 +975,13 @@ impl App {
                 self.inference_engine = InferenceEngine::TabbyApi;
                 self.inference_selected_model = model_path.display().to_string();
                 self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
-                self.inference_binary_path.clear();
-                let _ = keystore::clear_inference_binary();
+                if let Some(launcher) = find_tabbyapi_launcher(&default_tabbyapi_runtime_dir()) {
+                    self.inference_binary_path = launcher.display().to_string();
+                    let _ = keystore::write_inference_binary(&self.inference_binary_path);
+                } else {
+                    self.inference_binary_path.clear();
+                    let _ = keystore::clear_inference_binary();
+                }
                 self.tabby_url_input = format!("http://localhost:{}", self.inference_port_input);
                 let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
                 if self.openai_compat_label.trim().is_empty() {
@@ -911,8 +1085,16 @@ impl App {
                             self.inference_engine = InferenceEngine::TabbyApi;
                             self.inference_selected_model = model_path.display().to_string();
                             self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
-                            self.inference_binary_path.clear();
-                            let _ = keystore::clear_inference_binary();
+                            if let Some(launcher) =
+                                find_tabbyapi_launcher(&default_tabbyapi_runtime_dir())
+                            {
+                                self.inference_binary_path = launcher.display().to_string();
+                                let _ =
+                                    keystore::write_inference_binary(&self.inference_binary_path);
+                            } else {
+                                self.inference_binary_path.clear();
+                                let _ = keystore::clear_inference_binary();
+                            }
                             self.tabby_url_input =
                                 format!("http://localhost:{}", self.inference_port_input);
                             let _ = keystore::write_tabby_base_url(&self.tabby_url_input);

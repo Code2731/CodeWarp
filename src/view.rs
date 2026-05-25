@@ -1972,6 +1972,20 @@ impl App {
             } else {
                 "📁"
             };
+            let install_btn: Element<Message> =
+                if self.inference_engine == InferenceEngine::TabbyApi {
+                    button(text("TabbyAPI 설치").size(FS_LABEL))
+                        .on_press_maybe(if self.busy {
+                            None
+                        } else {
+                            Some(Message::InstallTabbyApiRuntime)
+                        })
+                        .padding([4, 8])
+                        .style(secondary_btn)
+                        .into()
+                } else {
+                    Space::new().width(Length::Shrink).into()
+                };
             row![
                 text(binary_label).size(FS_LABEL).font(semibold_font()),
                 text_input(binary_placeholder, &self.inference_binary_path,)
@@ -1984,6 +1998,7 @@ impl App {
                     .on_press(Message::PickInferenceBinary)
                     .padding([4, 8])
                     .style(secondary_btn),
+                install_btn,
             ]
             .spacing(6)
             .align_y(Alignment::Center)

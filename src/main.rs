@@ -253,6 +253,7 @@ const MAX_ATTACH_BYTES: u64 = 512 * 1024;
 /// PTY 출력 버퍼 최대 줄 수 (FIFO)
 const PTY_MAX_LINES: usize = 500;
 const TABBY_API_DEFAULT_PORT: u16 = 5000;
+const TABBY_API_REPO_URL: &str = "https://github.com/theroyallab/tabbyAPI.git";
 
 fn build_window_icon() -> Option<iced::window::Icon> {
     const SIZE: u32 = 64;
@@ -637,11 +638,19 @@ impl InferenceEngine {
             Self::TabbyApi => {
                 #[cfg(windows)]
                 {
-                    Some(vec!["Start.bat".into()])
+                    Some(vec![
+                        "Start.bat".into(),
+                        "--config".into(),
+                        "config.yml".into(),
+                    ])
                 }
                 #[cfg(not(windows))]
                 {
-                    Some(vec!["./start.sh".into()])
+                    Some(vec![
+                        "./start.sh".into(),
+                        "--config".into(),
+                        "config.yml".into(),
+                    ])
                 }
             }
             Self::Ollama | Self::Custom => None,
@@ -1569,6 +1578,8 @@ enum Message {
     InferenceBinaryChanged(String),
     PickInferenceBinary,
     InferenceBinaryPicked(Option<std::path::PathBuf>),
+    InstallTabbyApiRuntime,
+    TabbyApiRuntimeInstalled(Result<std::path::PathBuf, String>),
     StartInference,
     StopInference,
     InferenceLogLine(String),
@@ -1771,6 +1782,22 @@ impl App {
             mention_candidates: Vec::new(),
             mention_selected: 0,
         };
+
+        let should_auto_attach_tabbyapi = app.openai_compat_label.eq_ignore_ascii_case("TabbyAPI")
+            || app.tabby_url_input.contains(":5000");
+        if should_auto_attach_tabbyapi && app.inference_binary_path.trim().is_empty() {
+            if let Some(launcher) =
+                update::find_tabbyapi_launcher(&update::default_tabbyapi_runtime_dir())
+            {
+                app.inference_engine = InferenceEngine::TabbyApi;
+                app.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
+                if app.tabby_url_input.trim().is_empty() {
+                    app.tabby_url_input = format!("http://localhost:{}", TABBY_API_DEFAULT_PORT);
+                }
+                app.inference_binary_path = launcher.display().to_string();
+                let _ = keystore::write_inference_binary(&app.inference_binary_path);
+            }
+        }
 
         // 멀티 세션 복원
         let mut persisted = session::load_all();
@@ -2457,6 +2484,8 @@ mod tests {
         assert_eq!(cmd[0], "Start.bat");
         #[cfg(not(windows))]
         assert_eq!(cmd[0], "./start.sh");
+        assert_eq!(cmd[1], "--config");
+        assert_eq!(cmd[2], "config.yml");
     }
 
     #[test]
@@ -2544,8 +2573,15 @@ mod tests {
         assert_eq!(app.inference_port_input, TABBY_API_DEFAULT_PORT.to_string());
         assert_eq!(app.tabby_url_input, "http://localhost:5000");
         assert!(app.inference_selected_model.ends_with("Local-EXL2"));
-        assert!(app.inference_binary_path.is_empty());
-        assert!(!app.can_start_inference());
+        if let Some(launcher) =
+            update::find_tabbyapi_launcher(&update::default_tabbyapi_runtime_dir())
+        {
+            assert_eq!(app.inference_binary_path, launcher.display().to_string());
+            assert!(app.can_start_inference());
+        } else {
+            assert!(app.inference_binary_path.is_empty());
+            assert!(!app.can_start_inference());
+        }
         assert!(app.can_attempt_start_inference());
     }
 
@@ -2654,12 +2690,49 @@ mod tests {
         app.inference_engine = InferenceEngine::TabbyApi;
         app.inference_binary_path = script.display().to_string();
 
-        let (program, args, work_dir) =
-            app.resolve_runtime_spawn_command("Start.bat".into(), Vec::new());
+        let (program, args, work_dir) = app.resolve_runtime_spawn_command(
+            "Start.bat".into(),
+            vec!["--config".into(), "config.yml".into()],
+        );
 
         assert_eq!(program, "cmd.exe");
-        assert_eq!(args, vec!["/C".to_string(), "Start.bat".to_string()]);
+        assert_eq!(
+            args,
+            vec![
+                "/C".to_string(),
+                "Start.bat".to_string(),
+                "--config".to_string(),
+                "config.yml".to_string()
+            ]
+        );
         assert_eq!(work_dir.as_deref(), Some(tmp.path()));
+    }
+
+    #[test]
+    fn tabbyapi_config_points_to_selected_model_and_local_port() {
+        let runtime = tempfile::TempDir::new().unwrap();
+        let launcher = runtime.path().join("start.bat");
+        std::fs::write(&launcher, "@echo off").unwrap();
+        let models = tempfile::TempDir::new().unwrap();
+        let model = models.path().join("Local-EXL2");
+        std::fs::create_dir_all(&model).unwrap();
+
+        let config = update::write_tabbyapi_config_for_launcher(
+            &launcher.display().to_string(),
+            &model.display().to_string(),
+            TABBY_API_DEFAULT_PORT,
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(config).unwrap();
+
+        assert!(text.contains("port: 5000"), "got: {}", text);
+        assert!(text.contains("disable_auth: true"), "got: {}", text);
+        assert!(text.contains("model_name: 'Local-EXL2'"), "got: {}", text);
+        assert!(
+            text.contains(&format!("model_dir: '{}'", models.path().display())),
+            "got: {}",
+            text
+        );
     }
 
     #[test]

@@ -98,7 +98,9 @@ TabbyML / TabbyAPI / xLLM / vLLM / llama-server / Ollama 등 OpenAI 호환 infer
 별도 터미널에서 띄우는 게 친화적이지 않으니 CodeWarp가 child process로 spawn 관리:
 - 엔진 dropdown — xLLM / vLLM / llama-server / TabbyML / TabbyAPI / Ollama / Custom
 - 모델 dropdown — 모델 매니저로 받은 폴더 자동 스캔
-- 바이너리 경로 picker — PATH에 없을 때 절대 경로 지정 (예: winget으로 설치한 Tabby의 실제 폴더)
+- 바이너리/스크립트 경로 picker — PATH에 없을 때 절대 경로 지정
+- TabbyAPI 설치 — `theroyallab/tabbyAPI`를 CodeWarp 런타임 폴더에 clone하고 `start.bat/start.sh`를 자동 연결
+- TabbyAPI 시작 — 선택된 EXL2 모델 폴더를 `config.yml`에 자동 기록하고 로컬 `http://localhost:5000` endpoint로 실행
 - 시작 → 자동 명령 합성 + spawn + 5초 후 endpoint 자동 ping + child 종료 시 endpoint 자동 끊김 표시
 - 앱 종료 시 child도 같이 cleanup (좀비 방지)
 

@@ -107,6 +107,11 @@ impl App {
                 .on_toggle(Message::ToggleFilterFavorites)
                 .size(16)
                 .text_size(FS_BODY),
+            checkbox(self.compare_both)
+                .label("둘 다 답변")
+                .on_toggle(Message::ToggleCompareBoth)
+                .size(16)
+                .text_size(FS_BODY),
         ]
         .spacing(TOPBAR_ROW_SPACING)
         .align_y(Alignment::Center);
@@ -792,7 +797,10 @@ impl App {
                 .into()
         };
 
-        let send_disabled = self.input.trim().is_empty() || self.selected_model.is_none();
+        let send_disabled = self.input.trim().is_empty()
+            || self.compare_pending
+            || self.streaming_block_id.is_some()
+            || (!self.compare_both && self.selected_model.is_none());
 
         // 입력창 좌측 모드 라벨 (클릭으로 Plan ↔ Build 토글)
         let mode_label = button(
@@ -925,23 +933,24 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
-        let action_btn: Element<Message> = if self.streaming_block_id.is_some() {
-            button(text("■ 중지").size(FS_SUBTITLE).font(semibold_font()))
-                .on_press(Message::StopStream)
-                .padding([8, 18])
-                .style(danger_btn)
-                .into()
-        } else {
-            button(text("전송  ⏎").size(FS_SUBTITLE).font(semibold_font()))
-                .on_press_maybe(if send_disabled {
-                    None
-                } else {
-                    Some(Message::Send)
-                })
-                .padding([8, 18])
-                .style(primary_btn)
-                .into()
-        };
+        let action_btn: Element<Message> =
+            if self.streaming_block_id.is_some() || self.compare_pending {
+                button(text("■ 중지").size(FS_SUBTITLE).font(semibold_font()))
+                    .on_press(Message::StopStream)
+                    .padding([8, 18])
+                    .style(danger_btn)
+                    .into()
+            } else {
+                button(text("전송  ⏎").size(FS_SUBTITLE).font(semibold_font()))
+                    .on_press_maybe(if send_disabled {
+                        None
+                    } else {
+                        Some(Message::Send)
+                    })
+                    .padding([8, 18])
+                    .style(primary_btn)
+                    .into()
+            };
 
         // mention 팝업 활성 시 Enter → MentionConfirm, 비활성 시 → Send
         let submit_msg = if self.show_mention {

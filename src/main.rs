@@ -16,6 +16,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use futures_util::StreamExt;
 use iced::keyboard::key::Named;
 use iced::keyboard::{Key, Modifiers};
 use iced::task;
@@ -1230,6 +1231,8 @@ struct App {
     models: Vec<OpenRouterModel>,
     model_ids: Vec<String>,
     selected_model: Option<String>,
+    compare_both: bool,
+    compare_pending: bool,
 
     blocks: Vec<Block>,
     next_block_id: u64,
@@ -1533,6 +1536,12 @@ enum Message {
     /// 진행 중인 chat_stream을 중지 (Stop 버튼).
     StopStream,
     ChatChunk(ChatEvent),
+    CompareResponsesLoaded {
+        openrouter_block_id: u64,
+        tabby_block_id: u64,
+        openrouter_result: Result<String, String>,
+        tabby_result: Result<String, String>,
+    },
     CopyBlock(u64),
     CopyText(String),
     StreamScrolled(Viewport),
@@ -1551,6 +1560,7 @@ enum Message {
     ToggleFilterReasoning(bool),
     ToggleFilterGeneral(bool),
     ToggleFilterFavorites(bool),
+    ToggleCompareBoth(bool),
     ToggleFavorite,
     CycleSortMode,
     NewChat,
@@ -1716,6 +1726,8 @@ impl App {
             models: Vec::new(),
             model_ids: Vec::new(),
             selected_model: saved_model,
+            compare_both: false,
+            compare_pending: false,
             blocks: Vec::new(),
             next_block_id: 0,
             input: String::new(),
@@ -2596,6 +2608,40 @@ mod tests {
         assert_eq!(app.inference_port_input, TABBY_API_DEFAULT_PORT.to_string());
         assert_eq!(app.tabby_url_input, "http://localhost:5000");
         assert_eq!(app.openai_compat_label, "TabbyAPI");
+    }
+
+    #[test]
+    fn compare_mode_send_requires_registered_providers() {
+        let (mut app, _) = App::new();
+        app.compare_both = true;
+        app.input = "compare this".into();
+        app.selected_model = None;
+        app.model_options.clear();
+        let before_blocks = app.blocks.len();
+
+        let _ = app.update(Message::Send);
+
+        assert!(
+            app.status.contains("Compare 모드: OpenRouter 모델"),
+            "got: {}",
+            app.status
+        );
+        assert_eq!(app.blocks.len(), before_blocks);
+    }
+
+    #[test]
+    fn toggle_compare_mode_updates_status() {
+        let (mut app, _) = App::new();
+
+        let _ = app.update(Message::ToggleCompareBoth(true));
+
+        assert!(app.compare_both);
+        assert!(app.status.contains("Compare 모드"), "got: {}", app.status);
+
+        let _ = app.update(Message::ToggleCompareBoth(false));
+
+        assert!(!app.compare_both);
+        assert!(app.status.contains("Single 모드"), "got: {}", app.status);
     }
 
     #[test]

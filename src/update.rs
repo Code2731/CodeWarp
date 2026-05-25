@@ -187,6 +187,34 @@ pub(crate) fn write_tabbyapi_config_for_launcher(
     Ok(config_path)
 }
 
+#[derive(Clone)]
+struct ChatRoute {
+    label: String,
+    base_url: String,
+    api_key: Option<String>,
+    model: String,
+}
+
+async fn collect_chat_text(
+    base_url: String,
+    api_key: Option<String>,
+    model: String,
+    messages: Vec<ChatMessage>,
+) -> Result<String, String> {
+    let stream = openrouter::chat_stream(base_url, api_key, model, messages, None);
+    futures_util::pin_mut!(stream);
+    let mut out = String::new();
+    while let Some(event) = stream.next().await {
+        match event {
+            ChatEvent::Token(t) => out.push_str(&t),
+            ChatEvent::Done { .. } => return Ok(out),
+            ChatEvent::Error(e) => return Err(e),
+            ChatEvent::ToolCallDelta { .. } => {}
+        }
+    }
+    Ok(out)
+}
+
 async fn install_tabbyapi_runtime(runtime_dir: PathBuf) -> Result<PathBuf, String> {
     if let Some(launcher) = find_tabbyapi_launcher(&runtime_dir) {
         return Ok(launcher);
@@ -1653,8 +1681,98 @@ impl App {
                     }
                     _ => {}
                 }
-                if self.streaming_block_id.is_some() {
+                if self.streaming_block_id.is_some() || self.compare_pending {
                     return Task::none();
+                }
+                if self.compare_both {
+                    let (openrouter_route, tabby_route) = match self.compare_routes() {
+                        Ok(v) => v,
+                        Err(e) => {
+                            self.status = e;
+                            return Task::none();
+                        }
+                    };
+
+                    self.ensure_system_message();
+                    let user_msg = if !self.attached_files.is_empty() {
+                        let ctx = build_file_context(&self.attached_files);
+                        format!("{ctx}\n\n{text}")
+                    } else {
+                        text.clone()
+                    };
+                    self.conversation.push(ChatMessage::user(user_msg));
+                    self.attached_files.clear();
+                    self.close_mention();
+                    self.pending_tool_calls.clear();
+                    self.tool_round = 0;
+                    let messages = self.conversation.clone();
+
+                    let user_id = self.next_id();
+                    self.blocks.push(Block {
+                        id: user_id,
+                        body: BlockBody::User(text),
+                        view_mode: ViewMode::Rendered,
+                        md_items: Vec::new(),
+                        model: None,
+                        apply_candidates: Vec::new(),
+                    });
+                    let openrouter_block_id = self.next_id();
+                    self.blocks.push(Block {
+                        id: openrouter_block_id,
+                        body: BlockBody::Assistant(text_editor::Content::with_text(
+                            "OpenRouter 응답 대기 중…",
+                        )),
+                        view_mode: ViewMode::Rendered,
+                        md_items: Vec::new(),
+                        model: Some(format!(
+                            "{}: {}",
+                            openrouter_route.label, openrouter_route.model
+                        )),
+                        apply_candidates: Vec::new(),
+                    });
+                    let tabby_block_id = self.next_id();
+                    self.blocks.push(Block {
+                        id: tabby_block_id,
+                        body: BlockBody::Assistant(text_editor::Content::with_text(
+                            "Tabby 응답 대기 중…",
+                        )),
+                        view_mode: ViewMode::Rendered,
+                        md_items: Vec::new(),
+                        model: Some(format!("{}: {}", tabby_route.label, tabby_route.model)),
+                        apply_candidates: Vec::new(),
+                    });
+
+                    self.input.clear();
+                    self.compare_pending = true;
+                    self.status = "Compare 응답 생성 중…".into();
+                    self.follow_bottom = true;
+
+                    let openrouter_messages = messages.clone();
+                    let tabby_messages = messages;
+                    let task = Task::perform(
+                        async move {
+                            let openrouter = collect_chat_text(
+                                openrouter_route.base_url,
+                                openrouter_route.api_key,
+                                openrouter_route.model,
+                                openrouter_messages,
+                            );
+                            let tabby = collect_chat_text(
+                                tabby_route.base_url,
+                                tabby_route.api_key,
+                                tabby_route.model,
+                                tabby_messages,
+                            );
+                            tokio::join!(openrouter, tabby)
+                        },
+                        move |(openrouter_result, tabby_result)| Message::CompareResponsesLoaded {
+                            openrouter_block_id,
+                            tabby_block_id,
+                            openrouter_result,
+                            tabby_result,
+                        },
+                    );
+                    return Task::batch(vec![snap_to_end(self.stream_id.clone()), task]);
                 }
                 let (base_url, api_key) = match self.resolve_provider() {
                     Ok(v) => v,
@@ -1723,6 +1841,7 @@ impl App {
             }
             Message::StopStream => {
                 self.abort_active_chat_stream(true);
+                self.compare_pending = false;
                 self.status = "중지됨".into();
                 self.maybe_update_title();
                 self.save_session();
@@ -1735,6 +1854,41 @@ impl App {
                 Task::none()
             }
             Message::CopyText(text) => iced::clipboard::write(text),
+            Message::CompareResponsesLoaded {
+                openrouter_block_id,
+                tabby_block_id,
+                openrouter_result,
+                tabby_result,
+            } => {
+                if !self.compare_pending {
+                    return Task::none();
+                }
+                let openrouter_text = match openrouter_result {
+                    Ok(text) if !text.trim().is_empty() => text,
+                    Ok(_) => "[OpenRouter] 빈 응답".into(),
+                    Err(e) => format!("[ERROR] {}", openrouter::humanize_error(&e)),
+                };
+                let tabby_text = match tabby_result {
+                    Ok(text) if !text.trim().is_empty() => text,
+                    Ok(_) => "[Tabby] 빈 응답".into(),
+                    Err(e) => format!("[ERROR] {}", tabby::humanize_error(&e)),
+                };
+                self.fill_assistant_block(openrouter_block_id, openrouter_text.clone());
+                self.fill_assistant_block(tabby_block_id, tabby_text.clone());
+                self.conversation.push(ChatMessage::assistant(format!(
+                    "[OpenRouter]\n{}\n\n[Tabby]\n{}",
+                    openrouter_text, tabby_text
+                )));
+                self.compare_pending = false;
+                self.status = "Compare 응답 완료".into();
+                self.maybe_update_title();
+                self.save_session();
+                if self.follow_bottom {
+                    snap_to_end(self.stream_id.clone())
+                } else {
+                    Task::none()
+                }
+            }
             Message::ChatChunk(event) => {
                 let Some(ai_id) = self.streaming_block_id else {
                     return Task::none();
@@ -2022,6 +2176,15 @@ impl App {
             Message::ToggleFilterFavorites(v) => {
                 self.filter_favorites_only = v;
                 self.refresh_model_combo();
+                Task::none()
+            }
+            Message::ToggleCompareBoth(v) => {
+                self.compare_both = v;
+                self.status = if v {
+                    "Compare 모드 — OpenRouter와 Tabby가 각각 답변합니다.".into()
+                } else {
+                    "Single 모드 — 선택한 모델 하나만 답변합니다.".into()
+                };
                 Task::none()
             }
             Message::CycleSortMode => {
@@ -2462,6 +2625,7 @@ impl App {
         if let Some(h) = self.abort_handle.take() {
             h.abort();
         }
+        self.compare_pending = false;
         if keep_partial_assistant {
             if let Some(ai_id) = self.streaming_block_id {
                 if let Some(b) = self.blocks.iter().find(|b| b.id == ai_id) {
@@ -2676,6 +2840,65 @@ impl App {
                     .ok_or_else(|| "Tabby URL 미설정".to_string())?;
                 let token = keystore::read_tabby_token().filter(|s| !s.trim().is_empty());
                 Ok((tabby::chat_base(&base), token))
+            }
+        }
+    }
+
+    fn selected_option(&self) -> Option<&ModelOption> {
+        let id = self.selected_model.as_deref()?;
+        self.model_options.iter().find(|o| o.id == id)
+    }
+
+    fn compare_routes(&self) -> Result<(ChatRoute, ChatRoute), String> {
+        let selected = self.selected_option();
+        let openrouter_model = selected
+            .filter(|o| o.provider == LlmProvider::OpenRouter)
+            .or_else(|| {
+                self.model_options
+                    .iter()
+                    .find(|o| o.provider == LlmProvider::OpenRouter)
+            })
+            .ok_or_else(|| "Compare 모드: OpenRouter 모델이 없습니다. OpenRouter 키/모델 목록을 먼저 불러와 주세요.".to_string())?;
+        let tabby_model = selected
+            .filter(|o| o.provider == LlmProvider::OpenAICompat)
+            .or_else(|| {
+                self.model_options
+                    .iter()
+                    .find(|o| o.provider == LlmProvider::OpenAICompat)
+            })
+            .ok_or_else(|| "Compare 모드: Tabby 모델이 없습니다. Provider 연결 테스트로 Tabby 모델을 먼저 불러와 주세요.".to_string())?;
+
+        let openrouter_key = keystore::read_api_key()?;
+        let tabby_base = keystore::read_tabby_base_url()
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| "Compare 모드: Tabby URL 미설정".to_string())?;
+        let tabby_token = keystore::read_tabby_token().filter(|s| !s.trim().is_empty());
+
+        Ok((
+            ChatRoute {
+                label: "OpenRouter".into(),
+                base_url: openrouter::BASE_URL.to_string(),
+                api_key: Some(openrouter_key),
+                model: openrouter_model.id.clone(),
+            },
+            ChatRoute {
+                label: if tabby_model.provider_label.trim().is_empty() {
+                    "Local".into()
+                } else {
+                    tabby_model.provider_label.trim().to_string()
+                },
+                base_url: tabby::chat_base(&tabby_base),
+                api_key: tabby_token,
+                model: tabby_model.id.clone(),
+            },
+        ))
+    }
+
+    fn fill_assistant_block(&mut self, block_id: u64, text: String) {
+        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == block_id) {
+            if let BlockBody::Assistant(content) = &mut b.body {
+                *content = text_editor::Content::with_text(&text);
+                b.md_items = markdown::parse(&text).collect();
             }
         }
     }

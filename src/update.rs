@@ -149,6 +149,13 @@ impl App {
         }
     }
 
+    pub(crate) fn can_attempt_start_inference(&self) -> bool {
+        match self.inference_engine {
+            InferenceEngine::TabbyApi => true,
+            _ => self.can_start_inference(),
+        }
+    }
+
     pub(crate) fn resolve_runtime_spawn_command(
         &self,
         program: String,
@@ -320,6 +327,21 @@ impl App {
                 if !prev.shares_model_namespace(e) {
                     self.inference_selected_model.clear();
                 }
+                match e {
+                    InferenceEngine::TabbyApi => {
+                        self.tabby_url_input = format!("http://localhost:{}", e.default_port());
+                        let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                        self.openai_compat_label = "TabbyAPI".into();
+                        let _ = keystore::write_openai_compat_label("TabbyAPI");
+                    }
+                    InferenceEngine::TabbyMl => {
+                        self.tabby_url_input = format!("http://localhost:{}", e.default_port());
+                        let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                        self.openai_compat_label = "TabbyML".into();
+                        let _ = keystore::write_openai_compat_label("TabbyML");
+                    }
+                    _ => {}
+                }
                 Task::none()
             }
             Message::SelectInferenceModel(m) => {
@@ -399,7 +421,16 @@ impl App {
                     eng => {
                         let model = self.inference_selected_model.trim();
                         if model.is_empty() {
-                            self.status = "모델 선택 안 됨".into();
+                            let msg = if matches!(eng, InferenceEngine::TabbyApi) {
+                                "TabbyAPI 모델 경로가 비어 있습니다. Models 탭에서 다운로드된 모델을 선택하거나 Runtime의 EXL2 model folder path에 모델 폴더를 지정해 주세요."
+                            } else {
+                                "모델 선택 안 됨"
+                            }
+                            .to_string();
+                            self.status = msg.clone();
+                            if matches!(eng, InferenceEngine::TabbyApi) {
+                                self.tabby_status = Some(Err(msg));
+                            }
                             return Task::none();
                         }
                         if matches!(eng, InferenceEngine::TabbyApi) {

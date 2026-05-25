@@ -2546,6 +2546,51 @@ mod tests {
         assert!(app.inference_selected_model.ends_with("Local-EXL2"));
         assert!(app.inference_binary_path.is_empty());
         assert!(!app.can_start_inference());
+        assert!(app.can_attempt_start_inference());
+    }
+
+    #[test]
+    fn selecting_tabbyapi_runtime_sets_provider_endpoint() {
+        let (mut app, _) = App::new();
+        app.tabby_url_input = "http://localhost:8080".into();
+        app.openai_compat_label = "TabbyML".into();
+
+        let _ = app.update(Message::SelectInferenceEngine(InferenceEngine::TabbyApi));
+
+        assert_eq!(app.inference_port_input, TABBY_API_DEFAULT_PORT.to_string());
+        assert_eq!(app.tabby_url_input, "http://localhost:5000");
+        assert_eq!(app.openai_compat_label, "TabbyAPI");
+    }
+
+    #[test]
+    fn tabbyapi_start_button_can_show_missing_launcher_error() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_selected_model = r"C:\models\Local-EXL2".into();
+        app.inference_binary_path.clear();
+
+        assert!(!app.can_start_inference());
+        assert!(app.can_attempt_start_inference());
+
+        let _ = app.update(Message::StartInference);
+
+        assert!(app.status.contains("Start.bat"), "got: {}", app.status);
+        assert!(app.inference_pid.is_none());
+    }
+
+    #[test]
+    fn tabbyapi_start_button_can_show_missing_model_error() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_selected_model.clear();
+        app.inference_binary_path = r"C:\TabbyAPI\Start.bat".into();
+
+        assert!(app.can_attempt_start_inference());
+
+        let _ = app.update(Message::StartInference);
+
+        assert!(app.status.contains("모델 경로"), "got: {}", app.status);
+        assert!(app.inference_pid.is_none());
     }
 
     #[test]

@@ -1726,7 +1726,7 @@ impl App {
         ))
         .size(FS_LABEL),];
 
-        let runtime_can_start = self.can_start_inference();
+        let runtime_can_start = self.can_attempt_start_inference();
 
         let (active_tab_title, active_health, active_action, quick_label, quick_action) = match self
             .settings_tab
@@ -2067,7 +2067,7 @@ impl App {
         };
 
         let running = self.inference_pid.is_some();
-        let can_start = self.can_start_inference();
+        let can_start = self.can_attempt_start_inference();
 
         let actions: Element<Message> = if running {
             let running_label = if let Some(pid) = self.inference_pid {

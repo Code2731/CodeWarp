@@ -236,6 +236,14 @@ fn encode_path_segment(input: &str) -> String {
     out
 }
 
+fn encode_repo_file_path(input: &str) -> String {
+    input
+        .split('/')
+        .map(encode_path_segment)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 fn model_info_url(repo_id: &str, rev: &str) -> String {
     if rev == "main" {
         format!("{}/api/models/{}", HF_BASE, repo_id)
@@ -486,7 +494,11 @@ pub fn download_repo(
         // 3) 파일별 스트림 다운로드
         for (idx, sibling) in info.siblings.iter().enumerate() {
             let filename = &sibling.rfilename;
-            let dl_url = format!("{}/{}/resolve/{}/{}", HF_BASE, repo_id, rev_path, filename);
+            let encoded_filename = encode_repo_file_path(filename);
+            let dl_url = format!(
+                "{}/{}/resolve/{}/{}",
+                HF_BASE, repo_id, rev_path, encoded_filename
+            );
             let mut req = client.get(&dl_url);
             if let Some(t) = token.as_ref().filter(|s| !s.trim().is_empty()) {
                 req = req.bearer_auth(t.trim());
@@ -565,8 +577,8 @@ pub fn download_repo(
 mod tests {
     use super::{
         annotate_revision_not_found_error, choose_revision_fallback, contains_status,
-        encode_path_segment, extract_bpw_value, format_branch_suggestions, humanize_error,
-        model_info_url, model_tree_url, normalize_revision_name,
+        encode_path_segment, encode_repo_file_path, extract_bpw_value, format_branch_suggestions,
+        humanize_error, model_info_url, model_tree_url, normalize_revision_name,
     };
 
     #[test]
@@ -671,6 +683,22 @@ mod tests {
         assert_eq!(
             encode_path_segment("branch with/slash"),
             "branch%20with%2Fslash"
+        );
+    }
+
+    #[test]
+    fn encode_repo_file_path_keeps_slashes_and_escapes_segments() {
+        assert_eq!(
+            encode_repo_file_path("tokenizer/my file @v1.json"),
+            "tokenizer/my%20file%20%40v1.json"
+        );
+    }
+
+    #[test]
+    fn encode_repo_file_path_escapes_each_nested_segment() {
+        assert_eq!(
+            encode_repo_file_path("a b/c+d/model-00001.safetensors"),
+            "a%20b/c%2Bd/model-00001.safetensors"
         );
     }
 

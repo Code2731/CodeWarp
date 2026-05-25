@@ -1050,8 +1050,8 @@ const EXL2_PRESETS: &[Exl2Preset] = &[
     },
     Exl2Preset {
         repo_id: "turboderp/Llama-3.2-3B-Instruct-exl2",
-        revision: "4.0bpw",
-        folder_name: "Llama-3.2-3B-Instruct-4.0bpw",
+        revision: "3.5bpw",
+        folder_name: "Llama-3.2-3B-Instruct-3.5bpw",
         label: "Llama 3.2 3B Instruct",
         note: "소형 범용",
         vram: "~1.8GB",

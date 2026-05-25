@@ -2645,6 +2645,24 @@ mod tests {
     }
 
     #[test]
+    fn local_openai_compat_models_do_not_send_tool_definitions() {
+        let (mut app, _) = App::new();
+        app.model_options = vec![ModelOption {
+            id: "local-model".into(),
+            provider: LlmProvider::OpenAICompat,
+            provider_label: "TabbyAPI".into(),
+            ko_friendly: false,
+            favorite: false,
+            context_length: None,
+            prompt_per_million: Some(0.0),
+            completion_per_million: Some(0.0),
+        }];
+        app.selected_model = Some("local-model".into());
+
+        assert!(app.tool_definitions_for_selected_model().is_none());
+    }
+
+    #[test]
     fn tabbyapi_start_button_can_show_missing_launcher_error() {
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::TabbyApi;

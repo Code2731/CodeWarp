@@ -1199,7 +1199,7 @@ impl App {
                         api_key,
                         model,
                         messages,
-                        Some(tools::tool_definitions(self.agent_mode.allow_mutating())),
+                        self.tool_definitions_for_selected_model(),
                     ),
                     Message::ChatChunk,
                 )
@@ -1831,7 +1831,7 @@ impl App {
                         api_key,
                         model,
                         messages,
-                        Some(tools::tool_definitions(self.agent_mode.allow_mutating())),
+                        self.tool_definitions_for_selected_model(),
                     ),
                     Message::ChatChunk,
                 )
@@ -2844,6 +2844,22 @@ impl App {
         }
     }
 
+    fn selected_provider(&self) -> Option<LlmProvider> {
+        self.selected_option().map(|o| o.provider)
+    }
+
+    fn selected_model_supports_tools(&self) -> bool {
+        matches!(self.selected_provider(), Some(LlmProvider::OpenRouter))
+    }
+
+    pub(crate) fn tool_definitions_for_selected_model(&self) -> Option<serde_json::Value> {
+        if self.selected_model_supports_tools() {
+            Some(tools::tool_definitions(self.agent_mode.allow_mutating()))
+        } else {
+            None
+        }
+    }
+
     fn selected_option(&self) -> Option<&ModelOption> {
         let id = self.selected_model.as_deref()?;
         self.model_options.iter().find(|o| o.id == id)
@@ -2916,16 +2932,16 @@ impl App {
         let model = self.selected_model.clone().unwrap_or_default();
         let messages = self.conversation.clone();
         // 기본 tool + MCP tool 합산
-        let mut tool_defs = tools::tool_definitions(self.agent_mode.allow_mutating());
+        let mut tool_defs = self.tool_definitions_for_selected_model();
         if !self.mcp_tools.is_empty() {
-            if let Some(arr) = tool_defs.as_array_mut() {
+            if let Some(arr) = tool_defs.as_mut().and_then(|v| v.as_array_mut()) {
                 for t in &self.mcp_tools {
                     arr.push(t.to_openai_tool());
                 }
             }
         }
         let (task, handle) = Task::run(
-            openrouter::chat_stream(base_url, api_key, model, messages, Some(tool_defs)),
+            openrouter::chat_stream(base_url, api_key, model, messages, tool_defs),
             Message::ChatChunk,
         )
         .abortable();

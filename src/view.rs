@@ -1510,7 +1510,8 @@ impl App {
             .font(semibold_font())]
         .spacing(4);
         for (i, p) in EXL2_PRESETS.iter().take(4).enumerate() {
-            let is_downloaded = downloaded_model_exists(&self.model_dir_input, p.folder_name);
+            let downloaded_folder = downloaded_exl2_preset_folder(&self.model_dir_input, p);
+            let is_downloaded = downloaded_folder.is_some();
             let label = if is_downloaded {
                 format!("✓ {} · {} · 다운로드됨", p.label, p.vram)
             } else {
@@ -1519,8 +1520,8 @@ impl App {
             tabby_presets = tabby_presets.push(
                 button(text(label).size(FS_LABEL))
                     .on_press_maybe(if self.hf_dl.is_none() {
-                        if is_downloaded {
-                            Some(Message::SelectDownloadedModel(p.folder_name.into()))
+                        if let Some(folder_name) = downloaded_folder.clone() {
+                            Some(Message::SelectDownloadedModel(folder_name))
                         } else {
                             Some(Message::DownloadExl2Preset(i))
                         }
@@ -2367,7 +2368,8 @@ impl App {
             column![text("EXL2 프리셋 (TabbyAPI용) — 클릭하면 바로 다운로드").size(FS_BODY),]
                 .spacing(4);
         for (i, p) in EXL2_PRESETS.iter().enumerate() {
-            let is_downloaded = downloaded_model_exists(&self.model_dir_input, p.folder_name);
+            let downloaded_folder = downloaded_exl2_preset_folder(&self.model_dir_input, p);
+            let is_downloaded = downloaded_folder.is_some();
             let title = if is_downloaded {
                 format!("✓ {} · 다운로드됨", p.label)
             } else {
@@ -2393,8 +2395,8 @@ impl App {
             .padding([6, 12]);
             exl2_col = exl2_col.push(if is_downloading {
                 btn.style(secondary_btn)
-            } else if is_downloaded {
-                btn.on_press(Message::SelectDownloadedModel(p.folder_name.into()))
+            } else if let Some(folder_name) = downloaded_folder {
+                btn.on_press(Message::SelectDownloadedModel(folder_name))
                     .style(primary_btn)
             } else {
                 btn.on_press(Message::DownloadExl2Preset(i))

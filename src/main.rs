@@ -636,14 +636,43 @@ fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
     out
 }
 
-fn downloaded_model_exists(dir: &str, folder_name: &str) -> bool {
-    list_downloaded_models(std::path::Path::new(dir))
-        .iter()
-        .any(|m| m == folder_name)
-}
-
 fn downloaded_model_path(dir: &str, folder_name: &str) -> PathBuf {
     resolve_user_path(dir).join(folder_name)
+}
+
+fn exl2_repo_model_stem(repo_id: &str) -> Option<String> {
+    let name = repo_id.rsplit('/').next()?.trim();
+    if name.is_empty() {
+        return None;
+    }
+    name.strip_suffix("-exl2")
+        .or_else(|| name.strip_suffix("-EXL2"))
+        .map(str::to_string)
+}
+
+fn downloaded_exl2_preset_folder(dir: &str, preset: &Exl2Preset) -> Option<String> {
+    let models = list_downloaded_models(std::path::Path::new(dir));
+    if let Some(exact) = models
+        .iter()
+        .find(|m| m.eq_ignore_ascii_case(preset.folder_name))
+    {
+        return Some(exact.clone());
+    }
+
+    let stem = exl2_repo_model_stem(preset.repo_id)?;
+    let stem_prefix = format!("{}-", stem.to_ascii_lowercase());
+    let mut matches: Vec<String> = models
+        .into_iter()
+        .filter(|m| {
+            let lower = m.to_ascii_lowercase();
+            lower.starts_with(&stem_prefix) && lower.contains("bpw")
+        })
+        .collect();
+    if matches.len() == 1 {
+        matches.pop()
+    } else {
+        None
+    }
 }
 
 /// 윈도우는 taskkill /T /F (자식 트리 포함), 그 외는 kill SIGTERM.
@@ -2521,6 +2550,53 @@ mod tests {
     fn list_models_empty_dir() {
         let tmp = tempfile::TempDir::new().unwrap();
         assert!(list_downloaded_models(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn downloaded_exl2_preset_folder_accepts_same_model_bpw_variant() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let model = tmp.path().join("Llama-3.2-3B-Instruct-4.0bpw");
+        std::fs::create_dir_all(&model).unwrap();
+        std::fs::write(model.join("README.md"), "x").unwrap();
+
+        assert_eq!(
+            downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
+                .as_deref(),
+            Some("Llama-3.2-3B-Instruct-4.0bpw")
+        );
+    }
+
+    #[test]
+    fn downloaded_exl2_preset_folder_exact_match_wins() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let exact = tmp.path().join("Llama-3.2-3B-Instruct-3.5bpw");
+        let other = tmp.path().join("Llama-3.2-3B-Instruct-4.0bpw");
+        std::fs::create_dir_all(&exact).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(exact.join("README.md"), "x").unwrap();
+        std::fs::write(other.join("README.md"), "x").unwrap();
+
+        assert_eq!(
+            downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
+                .as_deref(),
+            Some("Llama-3.2-3B-Instruct-3.5bpw")
+        );
+    }
+
+    #[test]
+    fn downloaded_exl2_preset_folder_avoids_ambiguous_variants() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let a = tmp.path().join("Llama-3.2-3B-Instruct-4.0bpw");
+        let b = tmp.path().join("Llama-3.2-3B-Instruct-5.0bpw");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join("README.md"), "x").unwrap();
+        std::fs::write(b.join("README.md"), "x").unwrap();
+
+        assert!(
+            downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
+                .is_none()
+        );
     }
 
     #[test]

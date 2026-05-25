@@ -45,13 +45,15 @@ pub fn humanize_error(raw: &str) -> String {
             .into();
     }
     if lower.contains("refused") || lower.contains("os error 10061") {
-        return "서버 응답 없음 — `tabby serve` 실행 중인지 확인 (기본 8080)".into();
+        return "서버 응답 없음 — OpenAI 호환 서버가 실행 중인지 확인해 주세요. TabbyAPI는 기본 http://localhost:5000, TabbyML은 기본 http://localhost:8080 입니다."
+            .into();
     }
     if lower.contains("dns") || lower.contains("nodename") {
         return "호스트 주소 확인 — URL의 도메인이 맞나요?".into();
     }
     if lower.contains("timeout") || lower.contains("timed out") {
-        return "응답 지연 — 서버는 살아있지만 5초 내 응답 없음".into();
+        return "연결 시간 초과 — 서버가 응답하지 않습니다. 로컬 서버가 실행 중인지, 포트가 맞는지 확인해 주세요."
+            .into();
     }
     if raw.contains("Tabby 401") || raw.contains("Tabby 403") {
         return "인증 실패 — token이 필요/잘못됨".into();
@@ -246,14 +248,15 @@ mod tests {
     #[test]
     fn humanize_connection_refused() {
         let msg = humanize_error("error sending request: Connection refused");
-        assert!(msg.contains("`tabby serve`"), "got: {}", msg);
+        assert!(msg.contains("OpenAI 호환 서버"), "got: {}", msg);
+        assert!(msg.contains("localhost:5000"), "got: {}", msg);
     }
 
     #[test]
     fn humanize_os_error_10061() {
         // Windows: connection refused = OS error 10061
         let msg = humanize_error("os error 10061");
-        assert!(msg.contains("`tabby serve`"));
+        assert!(msg.contains("OpenAI 호환 서버"), "got: {}", msg);
     }
 
     #[test]
@@ -272,7 +275,8 @@ mod tests {
     #[test]
     fn humanize_timeout() {
         let msg = humanize_error("operation timed out");
-        assert!(msg.contains("응답 지연"));
+        assert!(msg.contains("연결 시간 초과"));
+        assert!(msg.contains("포트"));
     }
 
     #[test]

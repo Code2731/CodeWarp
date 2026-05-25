@@ -85,6 +85,22 @@ fn compose_hf_download_error(raw: &str) -> String {
     }
 }
 
+fn is_loopback_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.contains("localhost") || lower.contains("127.0.0.1") || lower.contains("[::1]")
+}
+
+fn tabby_connection_error_looks_unreachable(raw: &str, actionable: &str) -> bool {
+    let raw_lower = raw.to_ascii_lowercase();
+    raw_lower.contains("refused")
+        || raw_lower.contains("os error 10061")
+        || raw_lower.contains("timeout")
+        || raw_lower.contains("timed out")
+        || contains_ascii_case_insensitive(actionable, "응답 없음")
+        || contains_ascii_case_insensitive(actionable, "시간 초과")
+        || contains_ascii_case_insensitive(actionable, "응답하지")
+}
+
 fn default_models_dir() -> String {
     if let Some(p) = dirs::data_local_dir() {
         return p.join("codewarp").join("models").display().to_string();
@@ -187,6 +203,34 @@ impl App {
         }
 
         (script, args, work_dir)
+    }
+
+    pub(crate) fn compose_tabby_connection_error(&self, raw: &str) -> String {
+        let actionable = tabby::humanize_error(raw);
+        if self.inference_pid.is_some()
+            || !is_loopback_url(&self.tabby_url_input)
+            || !tabby_connection_error_looks_unreachable(raw, &actionable)
+        {
+            return actionable;
+        }
+
+        if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
+            if self.inference_binary_path.trim().is_empty() {
+                return "TabbyAPI 서버가 아직 실행되지 않았습니다. Runtime 탭에서 TabbyAPI script에 Start.bat/start.sh/main.py 경로를 지정하고 시작한 뒤 연결 테스트해 주세요."
+                    .into();
+            }
+            return format!(
+                "TabbyAPI 서버가 아직 응답하지 않습니다. Runtime 탭의 시작 상태와 로그를 확인한 뒤 {} 로 연결 테스트해 주세요.",
+                self.tabby_url_input.trim()
+            );
+        }
+
+        if !list_downloaded_models(std::path::Path::new(&self.model_dir_input)).is_empty() {
+            return "서버가 아직 실행 중이 아닙니다. Runtime 탭에서 현재 엔진을 시작한 뒤 연결 테스트를 다시 실행해 주세요."
+                .into();
+        }
+
+        actionable
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
@@ -613,16 +657,7 @@ impl App {
                         }
                     }
                     Err(e) => {
-                        let mut actionable = tabby::humanize_error(&e);
-                        if self.inference_pid.is_none()
-                            && contains_ascii_case_insensitive(&actionable, "tabby serve")
-                            && !list_downloaded_models(std::path::Path::new(&self.model_dir_input))
-                                .is_empty()
-                        {
-                            actionable =
-                                "서버가 아직 실행 중이 아닙니다. Runtime 탭에서 시작을 누른 뒤 연결 테스트를 다시 실행해 주세요."
-                                    .into();
-                        }
+                        let actionable = self.compose_tabby_connection_error(&e);
                         self.status = format!("Tabby 연결 실패: {}", actionable);
                         self.tabby_status = Some(Err(actionable));
                     }

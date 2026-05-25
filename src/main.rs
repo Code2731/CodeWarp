@@ -2548,6 +2548,35 @@ mod tests {
         assert!(!app.can_start_inference());
     }
 
+    #[test]
+    fn tabbyapi_connection_error_prompts_for_launcher_when_missing() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.tabby_url_input = "http://localhost:5000".into();
+        app.inference_binary_path.clear();
+
+        let msg = app.compose_tabby_connection_error("operation timed out");
+
+        assert!(msg.contains("TabbyAPI 서버"), "got: {}", msg);
+        assert!(msg.contains("Start.bat"), "got: {}", msg);
+        assert!(msg.contains("start.sh"), "got: {}", msg);
+        assert!(msg.contains("main.py"), "got: {}", msg);
+    }
+
+    #[test]
+    fn tabbyapi_connection_error_points_to_runtime_logs_when_launcher_is_set() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.tabby_url_input = "http://localhost:5000".into();
+        app.inference_binary_path = r"C:\TabbyAPI\Start.bat".into();
+
+        let msg = app.compose_tabby_connection_error("error sending request: Connection refused");
+
+        assert!(msg.contains("TabbyAPI 서버"), "got: {}", msg);
+        assert!(msg.contains("로그"), "got: {}", msg);
+        assert!(msg.contains("http://localhost:5000"), "got: {}", msg);
+    }
+
     #[cfg(windows)]
     #[test]
     fn tabbyapi_bat_launcher_runs_via_cmd_in_script_dir() {

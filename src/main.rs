@@ -44,7 +44,7 @@ enum LlmProvider {
 struct ModelOption {
     id: String,
     provider: LlmProvider,
-    /// OpenAICompat의 사용자 지정 라벨 (xLLM/Tabby/Local 등). 빈 값이면 "Local".
+    /// OpenAICompat의 사용자 지정 라벨 (xLLM/TabbyML/TabbyAPI/Local 등). 빈 값이면 "Local".
     /// OpenRouter일 땐 무의미 (Display에서 사용 안 함).
     provider_label: String,
     /// 한국어 토크나이저 친화 모델 휴리스틱 결과
@@ -440,11 +440,15 @@ impl Drop for App {
 fn spawn_inference_stream(
     program: String,
     args: Vec<String>,
+    work_dir: Option<PathBuf>,
 ) -> impl futures_util::Stream<Item = Message> {
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::process::Command;
     async_stream::stream! {
         let mut cmd = Command::new(&program);
+        if let Some(dir) = work_dir {
+            cmd.current_dir(dir);
+        }
         cmd.args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -542,7 +546,8 @@ enum InferenceEngine {
     XLlm,
     VLlm,
     LlamaServer,
-    Tabby,
+    TabbyMl,
+    TabbyApi,
     /// daemon 형태 — 이미 떠있다고 가정, CodeWarp는 spawn 안 함.
     Ollama,
     /// 사용자가 직접 명령 입력
@@ -554,7 +559,8 @@ impl InferenceEngine {
         InferenceEngine::XLlm,
         InferenceEngine::VLlm,
         InferenceEngine::LlamaServer,
-        InferenceEngine::Tabby,
+        InferenceEngine::TabbyMl,
+        InferenceEngine::TabbyApi,
         InferenceEngine::Ollama,
         InferenceEngine::Custom,
     ];
@@ -564,7 +570,8 @@ impl InferenceEngine {
             Self::XLlm => "xLLM",
             Self::VLlm => "vLLM",
             Self::LlamaServer => "llama-server",
-            Self::Tabby => "Tabby",
+            Self::TabbyMl => "TabbyML",
+            Self::TabbyApi => "TabbyAPI (EXL2)",
             Self::Ollama => "Ollama (이미 떠있는 daemon)",
             Self::Custom => "Custom (직접 명령)",
         }
@@ -572,7 +579,8 @@ impl InferenceEngine {
 
     fn default_port(&self) -> u16 {
         match self {
-            Self::Tabby => 8080,
+            Self::TabbyMl => 8080,
+            Self::TabbyApi => TABBY_API_DEFAULT_PORT,
             Self::Ollama => 11434,
             _ => 9000,
         }
@@ -583,7 +591,8 @@ impl InferenceEngine {
             (Self::XLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
             | (Self::VLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
             | (Self::LlamaServer, Self::XLlm | Self::VLlm | Self::LlamaServer)
-            | (Self::Tabby, Self::Tabby)
+            | (Self::TabbyMl, Self::TabbyMl)
+            | (Self::TabbyApi, Self::TabbyApi)
             | (Self::Ollama, Self::Ollama)
             | (Self::Custom, Self::Custom) => true,
             _ => false,
@@ -617,7 +626,7 @@ impl InferenceEngine {
                 "--port".into(),
                 port_s,
             ]),
-            Self::Tabby => Some(vec![
+            Self::TabbyMl => Some(vec![
                 "tabby".into(),
                 "serve".into(),
                 "--model".into(),
@@ -625,6 +634,16 @@ impl InferenceEngine {
                 "--chat-model".into(),
                 model.into(),
             ]),
+            Self::TabbyApi => {
+                #[cfg(windows)]
+                {
+                    Some(vec!["Start.bat".into()])
+                }
+                #[cfg(not(windows))]
+                {
+                    Some(vec!["./start.sh".into()])
+                }
+            }
             Self::Ollama | Self::Custom => None,
         }
     }
@@ -1179,11 +1198,11 @@ struct App {
     tabby_token_input: String,
     /// Tabby 토큰 입력란 노출 여부 (대부분 사용자는 토큰 불필요).
     show_tabby_token: bool,
-    /// OpenAICompat endpoint 사용자 라벨 (xLLM/Tabby/Local 등). 빈 값이면 [Local].
+    /// OpenAICompat endpoint 사용자 라벨 (xLLM/TabbyML/TabbyAPI/Local 등). 빈 값이면 [Local].
     openai_compat_label: String,
     /// inference 서버 시작 명령 (Custom 엔진일 때만 사용).
     inference_command_input: String,
-    /// 선택된 엔진 (xLLM/vLLM/llama-server/Tabby/Ollama/Custom).
+    /// 선택된 엔진 (xLLM/vLLM/llama-server/TabbyML/TabbyAPI/Ollama/Custom).
     inference_engine: InferenceEngine,
     /// 엔진 바이너리 절대 경로 (PATH에 없을 때 override). 비어있으면 PATH default.
     inference_binary_path: String,
@@ -2365,7 +2384,11 @@ mod tests {
 
     #[test]
     fn engine_default_ports() {
-        assert_eq!(InferenceEngine::Tabby.default_port(), 8080);
+        assert_eq!(InferenceEngine::TabbyMl.default_port(), 8080);
+        assert_eq!(
+            InferenceEngine::TabbyApi.default_port(),
+            TABBY_API_DEFAULT_PORT
+        );
         assert_eq!(InferenceEngine::Ollama.default_port(), 11434);
         assert_eq!(InferenceEngine::XLlm.default_port(), 9000);
         assert_eq!(InferenceEngine::VLlm.default_port(), 9000);
@@ -2376,8 +2399,9 @@ mod tests {
     fn engine_model_namespace_rules() {
         assert!(InferenceEngine::XLlm.shares_model_namespace(InferenceEngine::VLlm));
         assert!(InferenceEngine::VLlm.shares_model_namespace(InferenceEngine::LlamaServer));
-        assert!(!InferenceEngine::Tabby.shares_model_namespace(InferenceEngine::XLlm));
-        assert!(!InferenceEngine::Custom.shares_model_namespace(InferenceEngine::Tabby));
+        assert!(!InferenceEngine::TabbyMl.shares_model_namespace(InferenceEngine::XLlm));
+        assert!(!InferenceEngine::Custom.shares_model_namespace(InferenceEngine::TabbyMl));
+        assert!(!InferenceEngine::TabbyMl.shares_model_namespace(InferenceEngine::TabbyApi));
     }
 
     #[test]
@@ -2415,13 +2439,24 @@ mod tests {
 
     #[test]
     fn engine_compose_tabby_uses_repo_id() {
-        let cmd = InferenceEngine::Tabby
+        let cmd = InferenceEngine::TabbyMl
             .compose_command("TabbyML/Qwen2.5-Coder-7B", 8080)
             .unwrap();
         assert_eq!(cmd[0], "tabby");
         assert_eq!(cmd[1], "serve");
         assert!(cmd.contains(&"--chat-model".to_string()));
         assert!(cmd.contains(&"TabbyML/Qwen2.5-Coder-7B".to_string()));
+    }
+
+    #[test]
+    fn engine_compose_tabbyapi_uses_platform_launcher() {
+        let cmd = InferenceEngine::TabbyApi
+            .compose_command("C:\\models\\Local-EXL2", TABBY_API_DEFAULT_PORT)
+            .unwrap();
+        #[cfg(windows)]
+        assert_eq!(cmd[0], "Start.bat");
+        #[cfg(not(windows))]
+        assert_eq!(cmd[0], "./start.sh");
     }
 
     #[test]
@@ -2456,7 +2491,7 @@ mod tests {
         app.inference_engine = InferenceEngine::XLlm;
         app.inference_selected_model = "Qwen--7B".into();
 
-        let _ = app.update(Message::SelectInferenceEngine(InferenceEngine::Tabby));
+        let _ = app.update(Message::SelectInferenceEngine(InferenceEngine::TabbyMl));
         assert!(app.inference_selected_model.is_empty());
     }
 
@@ -2489,7 +2524,7 @@ mod tests {
     #[test]
     fn can_start_inference_tabby_requires_model_id() {
         let (mut app, _) = App::new();
-        app.inference_engine = InferenceEngine::Tabby;
+        app.inference_engine = InferenceEngine::TabbyMl;
         app.inference_selected_model = String::new();
         assert!(!app.can_start_inference());
 
@@ -2505,10 +2540,31 @@ mod tests {
 
         let _ = app.update(Message::SelectDownloadedModel("Local-EXL2".into()));
 
-        assert_eq!(app.inference_engine, InferenceEngine::Tabby);
+        assert_eq!(app.inference_engine, InferenceEngine::TabbyApi);
         assert_eq!(app.inference_port_input, TABBY_API_DEFAULT_PORT.to_string());
         assert_eq!(app.tabby_url_input, "http://localhost:5000");
         assert!(app.inference_selected_model.ends_with("Local-EXL2"));
+        assert!(app.inference_binary_path.is_empty());
+        assert!(!app.can_start_inference());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn tabbyapi_bat_launcher_runs_via_cmd_in_script_dir() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let script = tmp.path().join("Start.bat");
+        std::fs::write(&script, "@echo off").unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_binary_path = script.display().to_string();
+
+        let (program, args, work_dir) =
+            app.resolve_runtime_spawn_command("Start.bat".into(), Vec::new());
+
+        assert_eq!(program, "cmd.exe");
+        assert_eq!(args, vec!["/C".to_string(), "Start.bat".to_string()]);
+        assert_eq!(work_dir.as_deref(), Some(tmp.path()));
     }
 
     #[test]
@@ -2518,7 +2574,7 @@ mod tests {
         std::fs::create_dir_all(&model).unwrap();
 
         let (mut app, _) = App::new();
-        app.inference_engine = InferenceEngine::Tabby;
+        app.inference_engine = InferenceEngine::TabbyMl;
         app.inference_selected_model = model.display().to_string();
 
         let _ = app.update(Message::StartInference);
@@ -2570,7 +2626,7 @@ mod tests {
     fn model_dir_changed_keeps_selection_for_tabby_engine() {
         let new_dir = tempfile::TempDir::new().unwrap();
         let (mut app, _) = App::new();
-        app.inference_engine = InferenceEngine::Tabby;
+        app.inference_engine = InferenceEngine::TabbyMl;
         app.inference_selected_model = "TabbyML/Qwen2.5-Coder-7B".into();
 
         let _ = app.update(Message::ModelDirChanged(

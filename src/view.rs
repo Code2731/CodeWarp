@@ -1933,7 +1933,7 @@ impl App {
             .into()
     }
 
-    /// inference 서버 (xLLM/vLLM/llama-server/Tabby/Ollama/Custom) — dropdown 기반.
+    /// inference 서버 (xLLM/vLLM/llama-server/TabbyML/TabbyAPI/Ollama/Custom) — dropdown 기반.
     /// CodeWarp가 child process로 spawn 관리.
     fn view_inference_runner(&self) -> Element<'_, Message> {
         let header = text("inference 서버 (CodeWarp가 spawn 관리)")
@@ -1957,17 +1957,24 @@ impl App {
             // Ollama는 spawn 안 함, Custom은 명령에 포함 → 별도 binary 입력 불필요
             Space::new().height(Length::Shrink).into()
         } else {
+            let binary_label = if self.inference_engine == InferenceEngine::TabbyApi {
+                "TabbyAPI script"
+            } else {
+                "바이너리"
+            };
+            let binary_placeholder = if self.inference_engine == InferenceEngine::TabbyApi {
+                "Windows: Start.bat / macOS: start.sh 또는 main.py"
+            } else {
+                "PATH 기본값 사용, 필요 시 실제 실행 파일 경로"
+            };
             row![
-                text("바이너리").size(FS_LABEL).font(semibold_font()),
-                text_input(
-                    "PATH의 기본값 사용 (비워두면 됨) 또는 절대 경로",
-                    &self.inference_binary_path,
-                )
-                .on_input(Message::InferenceBinaryChanged)
-                .padding(6)
-                .size(FS_BODY)
-                .style(field_input)
-                .width(Length::Fixed(300.0)),
+                text(binary_label).size(FS_LABEL).font(semibold_font()),
+                text_input(binary_placeholder, &self.inference_binary_path,)
+                    .on_input(Message::InferenceBinaryChanged)
+                    .padding(6)
+                    .size(FS_BODY)
+                    .style(field_input)
+                    .width(Length::Fixed(300.0)),
                 button(text("📁").size(FS_LABEL))
                     .on_press(Message::PickInferenceBinary)
                     .padding([4, 8])
@@ -2000,8 +2007,18 @@ impl App {
                         .into()
                 }
             }
-            InferenceEngine::Tabby => text_input(
+            InferenceEngine::TabbyMl => text_input(
                 "Tabby 카탈로그 (예: TabbyML/Qwen2.5-Coder-7B — Tabby가 자체 다운로드)",
+                &self.inference_selected_model,
+            )
+            .on_input(Message::SelectInferenceModel)
+            .padding(8)
+            .size(FS_BODY)
+            .style(field_input)
+            .width(Length::Fixed(420.0))
+            .into(),
+            InferenceEngine::TabbyApi => text_input(
+                "EXL2 model folder path (TabbyAPI Start.bat/start.sh)",
                 &self.inference_selected_model,
             )
             .on_input(Message::SelectInferenceModel)

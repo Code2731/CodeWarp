@@ -122,11 +122,71 @@ impl App {
         match self.inference_engine {
             InferenceEngine::Custom => !self.inference_command_input.trim().is_empty(),
             InferenceEngine::Ollama => true,
-            InferenceEngine::Tabby => !self.inference_selected_model.trim().is_empty(),
+            InferenceEngine::TabbyMl => !self.inference_selected_model.trim().is_empty(),
+            InferenceEngine::TabbyApi => {
+                !self.inference_selected_model.trim().is_empty()
+                    && !self.inference_binary_path.trim().is_empty()
+            }
             InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer => {
                 self.has_selected_local_model_available()
             }
         }
+    }
+
+    pub(crate) fn resolve_runtime_spawn_command(
+        &self,
+        program: String,
+        args: Vec<String>,
+    ) -> (String, Vec<String>, Option<PathBuf>) {
+        let override_path = self.inference_binary_path.trim();
+        if !matches!(self.inference_engine, InferenceEngine::TabbyApi) {
+            let final_program = if override_path.is_empty() {
+                program
+            } else {
+                override_path.to_string()
+            };
+            return (final_program, args, None);
+        }
+
+        let script = if override_path.is_empty() {
+            program
+        } else {
+            override_path.to_string()
+        };
+        let script_path = std::path::Path::new(&script);
+        let work_dir = script_path.parent().map(|p| p.to_path_buf());
+        let file_name = script_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&script)
+            .to_string();
+        let ext = script_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+
+        #[cfg(windows)]
+        {
+            if ext == "bat" || ext == "cmd" {
+                return ("cmd.exe".into(), vec!["/C".into(), file_name], work_dir);
+            }
+            if ext == "py" {
+                return ("python".into(), vec![file_name], work_dir);
+            }
+        }
+
+        #[cfg(not(windows))]
+        {
+            if ext == "sh" {
+                return (format!("./{}", file_name), Vec::new(), work_dir);
+            }
+            if ext == "py" {
+                return ("python3".into(), vec![file_name], work_dir);
+            }
+        }
+
+        (script, args, work_dir)
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
@@ -298,7 +358,23 @@ impl App {
                             self.status = "모델 선택 안 됨".into();
                             return Task::none();
                         }
-                        if matches!(eng, InferenceEngine::Tabby)
+                        if matches!(eng, InferenceEngine::TabbyApi) {
+                            let launcher = self.inference_binary_path.trim();
+                            let launcher_name = std::path::Path::new(launcher)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or(launcher)
+                                .to_ascii_lowercase();
+                            if launcher.is_empty() || launcher_name == "tabby.exe" {
+                                let msg =
+                                    "TabbyAPI는 TabbyML tabby.exe가 아니라 TabbyAPI의 Start.bat, start.sh, 또는 main.py 경로를 지정해야 합니다."
+                                        .to_string();
+                                self.status = msg.clone();
+                                self.tabby_status = Some(Err(msg));
+                                return Task::none();
+                            }
+                        }
+                        if matches!(eng, InferenceEngine::TabbyMl)
                             && std::path::Path::new(model).exists()
                         {
                             let msg = format!(
@@ -321,7 +397,10 @@ impl App {
                             return Task::none();
                         }
                         // xLLM/vLLM/llama-server는 받은 폴더를 absolute path로
-                        let abs_model = if matches!(eng, InferenceEngine::Tabby) {
+                        let abs_model = if matches!(
+                            eng,
+                            InferenceEngine::TabbyMl | InferenceEngine::TabbyApi
+                        ) {
                             // Tabby는 카탈로그 ID 그대로
                             model.to_string()
                         } else {
@@ -355,15 +434,15 @@ impl App {
                 }
 
                 // 바이너리 경로가 명시되어 있으면 PATH 의존 안 하고 절대 경로 사용
-                let final_program = if !self.inference_binary_path.trim().is_empty() {
-                    self.inference_binary_path.trim().to_string()
-                } else {
-                    program
-                };
+                let (final_program, args, work_dir) =
+                    self.resolve_runtime_spawn_command(program, args);
                 self.inference_log.clear();
                 self.status = format!("실행 시작: {} {}", final_program, args.join(" "));
                 Task::batch(vec![
-                    Task::run(spawn_inference_stream(final_program, args), |ev| ev),
+                    Task::run(
+                        spawn_inference_stream(final_program, args, work_dir),
+                        |ev| ev,
+                    ),
                     Task::perform(
                         async {
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -627,14 +706,16 @@ impl App {
             }
             Message::SelectDownloadedModel(folder_name) => {
                 let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
-                self.inference_engine = InferenceEngine::Tabby;
+                self.inference_engine = InferenceEngine::TabbyApi;
                 self.inference_selected_model = model_path.display().to_string();
                 self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
+                self.inference_binary_path.clear();
+                let _ = keystore::clear_inference_binary();
                 self.tabby_url_input = format!("http://localhost:{}", self.inference_port_input);
                 let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
                 if self.openai_compat_label.trim().is_empty() {
-                    self.openai_compat_label = "Tabby".into();
-                    let _ = keystore::write_openai_compat_label("Tabby");
+                    self.openai_compat_label = "TabbyAPI".into();
+                    let _ = keystore::write_openai_compat_label("TabbyAPI");
                 }
                 self.settings_tab = SettingsTab::Runtime;
                 self.status = format!(
@@ -730,15 +811,17 @@ impl App {
                             let folder_name = dl.folder_name.clone();
                             let model_path =
                                 downloaded_model_path(&self.model_dir_input, &folder_name);
-                            self.inference_engine = InferenceEngine::Tabby;
+                            self.inference_engine = InferenceEngine::TabbyApi;
                             self.inference_selected_model = model_path.display().to_string();
                             self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
+                            self.inference_binary_path.clear();
+                            let _ = keystore::clear_inference_binary();
                             self.tabby_url_input =
                                 format!("http://localhost:{}", self.inference_port_input);
                             let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
                             if self.openai_compat_label.trim().is_empty() {
-                                self.openai_compat_label = "Tabby".into();
-                                let _ = keystore::write_openai_compat_label("Tabby");
+                                self.openai_compat_label = "TabbyAPI".into();
+                                let _ = keystore::write_openai_compat_label("TabbyAPI");
                             }
                             self.status = format!(
                                 "다운로드 완료: {} — Runtime에서 시작을 누른 뒤 연결 테스트",

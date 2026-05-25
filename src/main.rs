@@ -636,6 +636,16 @@ fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
     out
 }
 
+fn downloaded_model_exists(dir: &str, folder_name: &str) -> bool {
+    list_downloaded_models(std::path::Path::new(dir))
+        .iter()
+        .any(|m| m == folder_name)
+}
+
+fn downloaded_model_path(dir: &str, folder_name: &str) -> PathBuf {
+    resolve_user_path(dir).join(folder_name)
+}
+
 /// 윈도우는 taskkill /T /F (자식 트리 포함), 그 외는 kill SIGTERM.
 fn kill_pid(pid: u32) {
     #[cfg(windows)]
@@ -984,7 +994,7 @@ impl<'a> Viewer<'a, Message> for CodewarpViewer {
 
 /// 진행 중 HF 다운로드의 UI state.
 struct HfDownload {
-    repo_id: String,
+    folder_name: String,
     total_files: usize,
     file_idx: usize,
     file_name: String,
@@ -1502,6 +1512,7 @@ enum Message {
     UsePreset(usize),
     /// EXL2 프리셋 클릭 → 바로 다운로드
     DownloadExl2Preset(usize),
+    SelectDownloadedModel(String),
     StartHfDownload,
     HfDownloadEvent(hf::DownloadEvent),
     CancelHfDownload,

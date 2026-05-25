@@ -500,7 +500,16 @@ impl App {
                         }
                     }
                     Err(e) => {
-                        let actionable = tabby::humanize_error(&e);
+                        let mut actionable = tabby::humanize_error(&e);
+                        if self.inference_pid.is_none()
+                            && contains_ascii_case_insensitive(&actionable, "tabby serve")
+                            && !list_downloaded_models(std::path::Path::new(&self.model_dir_input))
+                                .is_empty()
+                        {
+                            actionable =
+                                "서버가 아직 실행 중이 아닙니다. Runtime 탭에서 시작을 누른 뒤 연결 테스트를 다시 실행해 주세요."
+                                    .into();
+                        }
                         self.status = format!("Tabby 연결 실패: {}", actionable);
                         self.tabby_status = Some(Err(actionable));
                     }
@@ -582,6 +591,24 @@ impl App {
                 self.status = format!("잘못된 프리셋 인덱스: {}", idx);
                 Task::none()
             }
+            Message::SelectDownloadedModel(folder_name) => {
+                let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
+                self.inference_engine = InferenceEngine::Tabby;
+                self.inference_selected_model = model_path.display().to_string();
+                self.inference_port_input = InferenceEngine::Tabby.default_port().to_string();
+                self.tabby_url_input = format!("http://localhost:{}", self.inference_port_input);
+                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                if self.openai_compat_label.trim().is_empty() {
+                    self.openai_compat_label = "Tabby".into();
+                    let _ = keystore::write_openai_compat_label("Tabby");
+                }
+                self.settings_tab = SettingsTab::Runtime;
+                self.status = format!(
+                    "다운로드된 모델 선택됨: {} — Runtime에서 시작 후 연결 테스트",
+                    folder_name
+                );
+                Task::none()
+            }
             Message::StartHfDownload => {
                 if self.hf_dl.is_some() {
                     self.status = "이미 다운로드가 진행 중입니다.".into();
@@ -615,8 +642,13 @@ impl App {
                 } else {
                     Some(self.hf_token_input.trim().to_string())
                 };
+                let download_folder_name = self
+                    .hf_folder_name
+                    .take()
+                    .unwrap_or_else(|| repo.replace('/', "--"));
+                let revision = self.hf_revision.take();
                 self.hf_dl = Some(HfDownload {
-                    repo_id: repo.clone(),
+                    folder_name: download_folder_name.clone(),
                     total_files: 0,
                     file_idx: 0,
                     file_name: String::new(),
@@ -629,8 +661,8 @@ impl App {
                         repo,
                         resolved_dir,
                         token,
-                        self.hf_revision.take(),
-                        self.hf_folder_name.take(),
+                        revision,
+                        Some(download_folder_name),
                     ),
                     Message::HfDownloadEvent,
                 )
@@ -661,9 +693,23 @@ impl App {
                         }
                         hf::DownloadEvent::FileDone => {}
                         hf::DownloadEvent::AllDone => {
+                            let folder_name = dl.folder_name.clone();
+                            let model_path =
+                                downloaded_model_path(&self.model_dir_input, &folder_name);
+                            self.inference_engine = InferenceEngine::Tabby;
+                            self.inference_selected_model = model_path.display().to_string();
+                            self.inference_port_input =
+                                InferenceEngine::Tabby.default_port().to_string();
+                            self.tabby_url_input =
+                                format!("http://localhost:{}", self.inference_port_input);
+                            let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                            if self.openai_compat_label.trim().is_empty() {
+                                self.openai_compat_label = "Tabby".into();
+                                let _ = keystore::write_openai_compat_label("Tabby");
+                            }
                             self.status = format!(
-                                "다운로드 완료: {} — 이 경로를 inference 엔진(xLLM 등)에 지정해 띄운 뒤 Tabby URL 자리에 그 endpoint 입력",
-                                dl.repo_id
+                                "다운로드 완료: {} — Runtime에서 시작을 누른 뒤 연결 테스트",
+                                folder_name
                             );
                             self.hf_dl = None;
                             self.hf_abort_handle = None;

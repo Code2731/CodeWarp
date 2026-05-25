@@ -252,6 +252,7 @@ const MAX_ATTACH_BYTES: u64 = 512 * 1024;
 
 /// PTY 출력 버퍼 최대 줄 수 (FIFO)
 const PTY_MAX_LINES: usize = 500;
+const TABBY_API_DEFAULT_PORT: u16 = 5000;
 
 fn build_window_icon() -> Option<iced::window::Icon> {
     const SIZE: u32 = 64;
@@ -450,7 +451,10 @@ fn spawn_inference_stream(
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                yield Message::InferenceLogLine(format!("[spawn 실패] {}: {}", program, e));
+                yield Message::InferenceLogLine(format!(
+                    "[spawn 실패] {}",
+                    humanize_inference_spawn_error(&program, &e)
+                ));
                 yield Message::InferenceExited(-1);
                 return;
             }
@@ -505,6 +509,31 @@ fn spawn_inference_stream(
         }
         yield Message::InferenceExited(exit_code);
     }
+}
+
+fn humanize_inference_spawn_error(program: &str, err: &std::io::Error) -> String {
+    let raw = err.to_string();
+    let program_name = std::path::Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+
+    if program_name == "tabby" || program_name == "tabby.exe" {
+        let lower = raw.to_ascii_lowercase();
+        if lower.contains("access is denied")
+            || raw.contains("액세스가 거부")
+            || raw.contains("응용 프로그램")
+            || raw.contains("연결")
+        {
+            return format!(
+                "Tabby 실행 파일을 시작할 수 없습니다. 현재 PATH의 tabby.exe가 실행 가능한 TabbyML 서버 CLI가 아니거나 권한/alias 문제가 있습니다: {}",
+                raw
+            );
+        }
+    }
+
+    format!("{}: {}", program, raw)
 }
 
 /// inference 엔진 종류 — 사용자가 dropdown으로 선택.
@@ -592,6 +621,8 @@ impl InferenceEngine {
                 "tabby".into(),
                 "serve".into(),
                 "--model".into(),
+                model.into(),
+                "--chat-model".into(),
                 model.into(),
             ]),
             Self::Ollama | Self::Custom => None,
@@ -2389,6 +2420,7 @@ mod tests {
             .unwrap();
         assert_eq!(cmd[0], "tabby");
         assert_eq!(cmd[1], "serve");
+        assert!(cmd.contains(&"--chat-model".to_string()));
         assert!(cmd.contains(&"TabbyML/Qwen2.5-Coder-7B".to_string()));
     }
 
@@ -2463,6 +2495,36 @@ mod tests {
 
         app.inference_selected_model = "TabbyML/Qwen2.5-Coder-7B".into();
         assert!(app.can_start_inference());
+    }
+
+    #[test]
+    fn select_downloaded_model_defaults_to_tabbyapi_port() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (mut app, _) = App::new();
+        app.model_dir_input = tmp.path().display().to_string();
+
+        let _ = app.update(Message::SelectDownloadedModel("Local-EXL2".into()));
+
+        assert_eq!(app.inference_engine, InferenceEngine::Tabby);
+        assert_eq!(app.inference_port_input, TABBY_API_DEFAULT_PORT.to_string());
+        assert_eq!(app.tabby_url_input, "http://localhost:5000");
+        assert!(app.inference_selected_model.ends_with("Local-EXL2"));
+    }
+
+    #[test]
+    fn start_inference_tabby_rejects_local_exl2_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let model = tmp.path().join("Local-EXL2");
+        std::fs::create_dir_all(&model).unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::Tabby;
+        app.inference_selected_model = model.display().to_string();
+
+        let _ = app.update(Message::StartInference);
+
+        assert!(app.status.contains("TabbyAPI"), "got: {}", app.status);
+        assert!(app.inference_pid.is_none());
     }
 
     #[test]

@@ -298,6 +298,17 @@ impl App {
                             self.status = "모델 선택 안 됨".into();
                             return Task::none();
                         }
+                        if matches!(eng, InferenceEngine::Tabby)
+                            && std::path::Path::new(model).exists()
+                        {
+                            let msg = format!(
+                                "EXL2 로컬 폴더는 TabbyAPI용입니다. TabbyAPI(Start.bat 또는 python main.py)를 실행한 뒤 Provider URL을 http://localhost:{} 로 연결 테스트해 주세요.",
+                                TABBY_API_DEFAULT_PORT
+                            );
+                            self.status = msg.clone();
+                            self.tabby_status = Some(Err(msg));
+                            return Task::none();
+                        }
                         if matches!(
                             eng,
                             InferenceEngine::XLlm
@@ -379,15 +390,38 @@ impl App {
                         self.inference_pid = Some(pid);
                     }
                 }
+                if let Some(detail) = line.strip_prefix("[spawn 실패] ") {
+                    self.status = detail.to_string();
+                    self.tabby_status = Some(Err(detail.to_string()));
+                }
                 self.push_inference_log(line);
                 Task::none()
             }
             Message::InferenceExited(code) => {
+                let last_error = self
+                    .inference_log
+                    .iter()
+                    .rev()
+                    .find(|line| line.starts_with("[spawn 실패]") || line.starts_with("[err]"))
+                    .cloned();
                 self.push_inference_log(format!("[exited] code {}", code));
                 self.inference_pid = None;
                 self.status = format!("inference 서버 종료 (exit {})", code);
                 // endpoint 끊김 표시
                 self.tabby_status = Some(Err("inference 서버 종료됨".into()));
+                let status = if code == -1 {
+                    last_error
+                        .and_then(|line| line.strip_prefix("[spawn 실패] ").map(str::to_string))
+                        .unwrap_or_else(|| "inference 서버 시작 실패".into())
+                } else if code == 0 {
+                    format!("inference 서버 종료 (exit {})", code)
+                } else if let Some(line) = last_error {
+                    format!("inference 서버 종료 (exit {}) — {}", code, line)
+                } else {
+                    format!("inference 서버 종료 (exit {})", code)
+                };
+                self.status = status.clone();
+                self.tabby_status = Some(Err(status));
                 self.model_options
                     .retain(|o| o.provider != LlmProvider::OpenAICompat);
                 self.refresh_model_combo();
@@ -595,7 +629,7 @@ impl App {
                 let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
                 self.inference_engine = InferenceEngine::Tabby;
                 self.inference_selected_model = model_path.display().to_string();
-                self.inference_port_input = InferenceEngine::Tabby.default_port().to_string();
+                self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
                 self.tabby_url_input = format!("http://localhost:{}", self.inference_port_input);
                 let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
                 if self.openai_compat_label.trim().is_empty() {
@@ -698,8 +732,7 @@ impl App {
                                 downloaded_model_path(&self.model_dir_input, &folder_name);
                             self.inference_engine = InferenceEngine::Tabby;
                             self.inference_selected_model = model_path.display().to_string();
-                            self.inference_port_input =
-                                InferenceEngine::Tabby.default_port().to_string();
+                            self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
                             self.tabby_url_input =
                                 format!("http://localhost:{}", self.inference_port_input);
                             let _ = keystore::write_tabby_base_url(&self.tabby_url_input);

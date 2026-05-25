@@ -667,6 +667,45 @@ impl std::fmt::Display for InferenceEngine {
 
 /// 모델 매니저 다운로드 폴더 안의 받은 모델(서브폴더) 리스트.
 /// 빈 폴더는 모델 아님 — skip.
+fn has_model_weight_file(dir: &std::path::Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if has_model_weight_file(&path) {
+                return true;
+            }
+            continue;
+        }
+
+        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let file_name = file_name.to_ascii_lowercase();
+        if file_name.ends_with(".safetensors")
+            || file_name.ends_with(".bin")
+            || file_name.ends_with(".gguf")
+            || file_name.ends_with(".pt")
+            || file_name.ends_with(".pth")
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn is_downloaded_model_dir(path: &std::path::Path) -> bool {
+    path.is_dir() && has_model_weight_file(path)
+}
+
+fn is_valid_tabbyapi_model_dir(path: &std::path::Path) -> bool {
+    path.is_dir() && path.join("config.json").is_file() && has_model_weight_file(path)
+}
+
 fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
     let resolved_dir = resolve_user_path(&dir.to_string_lossy());
     if resolved_dir.as_os_str().is_empty() {
@@ -681,11 +720,7 @@ fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
         if !path.is_dir() {
             continue;
         }
-        // 빈 폴더 skip
-        let has_files = std::fs::read_dir(&path)
-            .map(|mut it| it.next().is_some())
-            .unwrap_or(false);
-        if !has_files {
+        if !is_downloaded_model_dir(&path) {
             continue;
         }
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
@@ -711,7 +746,10 @@ fn exl2_repo_model_stem(repo_id: &str) -> Option<String> {
 }
 
 fn downloaded_exl2_preset_folder(dir: &str, preset: &Exl2Preset) -> Option<String> {
-    let models = list_downloaded_models(std::path::Path::new(dir));
+    let models: Vec<String> = list_downloaded_models(std::path::Path::new(dir))
+        .into_iter()
+        .filter(|model| is_valid_tabbyapi_model_dir(&downloaded_model_path(dir, model)))
+        .collect();
     if let Some(exact) = models
         .iter()
         .find(|m| m.eq_ignore_ascii_case(preset.folder_name))
@@ -2542,6 +2580,7 @@ mod tests {
         let model = tmp.path().join("Qwen--7B");
         std::fs::create_dir_all(&model).unwrap();
         std::fs::write(model.join("config.json"), "{}").unwrap();
+        std::fs::write(model.join("model.safetensors"), "x").unwrap();
 
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::XLlm;
@@ -2578,6 +2617,10 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let (mut app, _) = App::new();
         app.model_dir_input = tmp.path().display().to_string();
+        let model = tmp.path().join("Local-EXL2");
+        std::fs::create_dir_all(&model).unwrap();
+        std::fs::write(model.join("config.json"), "{}").unwrap();
+        std::fs::write(model.join("model.safetensors"), "x").unwrap();
 
         let _ = app.update(Message::SelectDownloadedModel("Local-EXL2".into()));
 
@@ -2842,6 +2885,7 @@ mod tests {
         let model = old_dir.path().join("Qwen--7B");
         std::fs::create_dir_all(&model).unwrap();
         std::fs::write(model.join("config.json"), "{}").unwrap();
+        std::fs::write(model.join("model.safetensors"), "x").unwrap();
 
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::XLlm;
@@ -2874,6 +2918,7 @@ mod tests {
         let model = old_dir.path().join("Qwen--7B");
         std::fs::create_dir_all(&model).unwrap();
         std::fs::write(model.join("config.json"), "{}").unwrap();
+        std::fs::write(model.join("model.safetensors"), "x").unwrap();
 
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::LlamaServer;
@@ -2907,7 +2952,8 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let model = tmp.path().join("Llama-3.2-3B-Instruct-4.0bpw");
         std::fs::create_dir_all(&model).unwrap();
-        std::fs::write(model.join("README.md"), "x").unwrap();
+        std::fs::write(model.join("config.json"), "{}").unwrap();
+        std::fs::write(model.join("model.safetensors"), "x").unwrap();
 
         assert_eq!(
             downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
@@ -2923,8 +2969,10 @@ mod tests {
         let other = tmp.path().join("Llama-3.2-3B-Instruct-4.0bpw");
         std::fs::create_dir_all(&exact).unwrap();
         std::fs::create_dir_all(&other).unwrap();
-        std::fs::write(exact.join("README.md"), "x").unwrap();
-        std::fs::write(other.join("README.md"), "x").unwrap();
+        std::fs::write(exact.join("config.json"), "{}").unwrap();
+        std::fs::write(exact.join("model.safetensors"), "x").unwrap();
+        std::fs::write(other.join("config.json"), "{}").unwrap();
+        std::fs::write(other.join("model.safetensors"), "x").unwrap();
 
         assert_eq!(
             downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
@@ -2940,8 +2988,10 @@ mod tests {
         let b = tmp.path().join("Llama-3.2-3B-Instruct-5.0bpw");
         std::fs::create_dir_all(&a).unwrap();
         std::fs::create_dir_all(&b).unwrap();
-        std::fs::write(a.join("README.md"), "x").unwrap();
-        std::fs::write(b.join("README.md"), "x").unwrap();
+        std::fs::write(a.join("config.json"), "{}").unwrap();
+        std::fs::write(a.join("model.safetensors"), "x").unwrap();
+        std::fs::write(b.join("config.json"), "{}").unwrap();
+        std::fs::write(b.join("model.safetensors"), "x").unwrap();
 
         assert!(
             downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
@@ -2969,6 +3019,7 @@ mod tests {
         let qwen = tmp.path().join("Qwen--Qwen2.5-Coder-7B");
         std::fs::create_dir_all(&qwen).unwrap();
         std::fs::write(qwen.join("config.json"), "{}").unwrap();
+        std::fs::write(qwen.join("model.safetensors"), "x").unwrap();
         let solar = tmp.path().join("upstage--SOLAR-10.7B");
         std::fs::create_dir_all(&solar).unwrap();
         std::fs::write(solar.join("model.safetensors"), "x").unwrap();
@@ -3003,6 +3054,21 @@ mod tests {
         std::fs::create_dir_all(tmp.path().join("empty")).unwrap();
         // 빈 폴더는 모델 아님 — skip
         assert!(list_downloaded_models(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn list_models_skips_metadata_only_dirs() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let model = tmp.path().join("Llama-3.2-3B-Instruct-4.0bpw");
+        std::fs::create_dir_all(&model).unwrap();
+        std::fs::write(model.join("README.md"), "x").unwrap();
+        std::fs::write(model.join(".gitattributes"), "x").unwrap();
+
+        assert!(list_downloaded_models(tmp.path()).is_empty());
+        assert!(
+            downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
+                .is_none()
+        );
     }
 
     // ── extract_mention_query ───────────────────────────────────────

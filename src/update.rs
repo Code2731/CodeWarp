@@ -669,6 +669,16 @@ impl App {
                                 self.tabby_status = Some(Err(msg));
                                 return Task::none();
                             }
+                            let model_path = std::path::Path::new(model);
+                            if !is_valid_tabbyapi_model_dir(model_path) {
+                                let msg = format!(
+                                    "TabbyAPI 모델 폴더가 완전하지 않습니다: {} (config.json과 실제 모델 가중치 파일이 필요합니다.)",
+                                    model_path.display()
+                                );
+                                self.status = msg.clone();
+                                self.tabby_status = Some(Err(msg));
+                                return Task::none();
+                            }
                             if let Err(e) =
                                 write_tabbyapi_config_for_launcher(launcher, model, port)
                             {
@@ -1000,6 +1010,15 @@ impl App {
             }
             Message::SelectDownloadedModel(folder_name) => {
                 let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
+                if !is_valid_tabbyapi_model_dir(&model_path) {
+                    let msg = format!(
+                        "TabbyAPI 모델 폴더가 완전하지 않습니다: {} (config.json과 실제 모델 가중치 파일이 필요합니다.)",
+                        model_path.display()
+                    );
+                    self.status = msg.clone();
+                    self.tabby_status = Some(Err(msg));
+                    return Task::none();
+                }
                 self.inference_engine = InferenceEngine::TabbyApi;
                 self.inference_selected_model = model_path.display().to_string();
                 self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
@@ -1110,6 +1129,16 @@ impl App {
                             let folder_name = dl.folder_name.clone();
                             let model_path =
                                 downloaded_model_path(&self.model_dir_input, &folder_name);
+                            if !is_valid_tabbyapi_model_dir(&model_path) {
+                                self.status = format!(
+                                    "다운로드 결과가 TabbyAPI 모델로 완전하지 않습니다: {} (config.json과 실제 모델 가중치 파일이 필요합니다.)",
+                                    model_path.display()
+                                );
+                                self.tabby_status = Some(Err(self.status.clone()));
+                                self.hf_dl = None;
+                                self.hf_abort_handle = None;
+                                return Task::none();
+                            }
                             self.inference_engine = InferenceEngine::TabbyApi;
                             self.inference_selected_model = model_path.display().to_string();
                             self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();

@@ -20,6 +20,13 @@ struct Sibling {
 }
 
 #[derive(Deserialize)]
+struct TreeEntry {
+    path: String,
+    #[serde(rename = "type")]
+    kind: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct RepoRefs {
     branches: Vec<RepoBranch>,
 }
@@ -242,6 +249,15 @@ fn model_info_url(repo_id: &str, rev: &str) -> String {
     }
 }
 
+fn model_tree_url(repo_id: &str, rev: &str) -> String {
+    format!(
+        "{}/api/models/{}/tree/{}?recursive=true",
+        HF_BASE,
+        repo_id,
+        encode_path_segment(rev)
+    )
+}
+
 async fn fetch_repo_branches(
     client: &reqwest::Client,
     repo_id: &str,
@@ -268,6 +284,44 @@ async fn fetch_repo_branches(
     } else {
         Some(out)
     }
+}
+
+async fn fetch_model_tree(
+    client: &reqwest::Client,
+    repo_id: &str,
+    token: Option<&str>,
+    rev: &str,
+) -> Result<ModelInfo, String> {
+    let tree_url = model_tree_url(repo_id, rev);
+    let mut req = client.get(&tree_url);
+    if let Some(t) = token.filter(|s| !s.trim().is_empty()) {
+        req = req.bearer_auth(t.trim());
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("HF tree {}: {}", status, body));
+    }
+    let entries: Vec<TreeEntry> = resp
+        .json()
+        .await
+        .map_err(|e| format!("repo tree parsing failed: {}", e))?;
+    let siblings = entries
+        .into_iter()
+        .filter(|entry| {
+            !entry.path.trim().is_empty()
+                && !entry
+                    .kind
+                    .as_deref()
+                    .unwrap_or_default()
+                    .eq_ignore_ascii_case("directory")
+        })
+        .map(|entry| Sibling {
+            rfilename: entry.path,
+        })
+        .collect();
+    Ok(ModelInfo { siblings })
 }
 
 async fn fetch_model_info(
@@ -318,7 +372,7 @@ pub fn download_repo(
         let requested_rev = rev.clone();
 
         // 1) siblings 메타 (revision 쿼리 파라미터로 branch 지정)
-        let info: ModelInfo = match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
+        let mut info: ModelInfo = match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
             Ok(v) => v,
             Err(e) => {
                 // EXL2 프리셋처럼 branch가 바뀐 경우 404면 refs에서 fallback branch를 찾아 1회 재시도.
@@ -404,6 +458,19 @@ pub fn download_repo(
                 }
             }
         };
+        match fetch_model_tree(&client, &repo_id, token_ref, &rev).await {
+            Ok(tree) if !tree.siblings.is_empty() => {
+                info = tree;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                yield DownloadEvent::Error(format!(
+                    "HF file tree fetch failed for revision '{}': {}",
+                    rev, e
+                ));
+                return;
+            }
+        }
         let total_files = info.siblings.len();
         yield DownloadEvent::Started { total_files };
         let rev_path = encode_path_segment(&rev);
@@ -499,7 +566,7 @@ mod tests {
     use super::{
         annotate_revision_not_found_error, choose_revision_fallback, contains_status,
         encode_path_segment, extract_bpw_value, format_branch_suggestions, humanize_error,
-        model_info_url, normalize_revision_name,
+        model_info_url, model_tree_url, normalize_revision_name,
     };
 
     #[test]
@@ -612,6 +679,14 @@ mod tests {
         assert_eq!(
             model_info_url("owner/repo", "4.0bpw"),
             "https://huggingface.co/api/models/owner/repo/revision/4.0bpw"
+        );
+    }
+
+    #[test]
+    fn model_tree_url_uses_revision_tree_endpoint() {
+        assert_eq!(
+            model_tree_url("owner/repo", "4.0bpw"),
+            "https://huggingface.co/api/models/owner/repo/tree/4.0bpw?recursive=true"
         );
     }
 

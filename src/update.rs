@@ -101,6 +101,16 @@ fn tabby_connection_error_looks_unreachable(raw: &str, actionable: &str) -> bool
         || contains_ascii_case_insensitive(actionable, "응답하지")
 }
 
+fn tabbyapi_launcher_required_message() -> String {
+    "TabbyAPI 런타임 스크립트가 비어 있습니다. EXL2 모델 폴더만으로는 서버가 실행되지 않습니다. TabbyAPI 프로젝트의 Start.bat(Windows), start.sh(macOS/Linux), 또는 main.py 경로를 지정해 주세요. 해당 파일이 없다면 TabbyAPI를 먼저 설치해야 합니다."
+        .into()
+}
+
+fn tabbyapi_reject_tabbyml_message() -> String {
+    "지정한 tabby.exe는 TabbyML CLI라 EXL2 모델을 실행할 수 없습니다. TabbyAPI 프로젝트의 Start.bat, start.sh, 또는 main.py를 지정해 주세요."
+        .into()
+}
+
 fn default_models_dir() -> String {
     if let Some(p) = dirs::data_local_dir() {
         return p.join("codewarp").join("models").display().to_string();
@@ -360,7 +370,7 @@ impl App {
             Message::PickInferenceBinary => Task::perform(
                 async {
                     rfd::AsyncFileDialog::new()
-                        .set_title("inference 엔진 바이너리 선택 (xllm.exe / python.exe 등)")
+                        .set_title("inference 엔진 바이너리/스크립트 선택")
                         .pick_file()
                         .await
                         .map(|h| h.path().to_path_buf())
@@ -370,9 +380,26 @@ impl App {
             Message::InferenceBinaryPicked(maybe) => {
                 if let Some(path) = maybe {
                     let s = path.display().to_string();
+                    if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
+                        let launcher_name = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or_default()
+                            .to_ascii_lowercase();
+                        if launcher_name == "tabby.exe" {
+                            let msg = tabbyapi_reject_tabbyml_message();
+                            self.status = msg.clone();
+                            self.tabby_status = Some(Err(msg));
+                            return Task::none();
+                        }
+                    }
                     let _ = keystore::write_inference_binary(&s);
                     self.inference_binary_path = s;
-                    self.status = "바이너리 경로 저장됨".into();
+                    self.status = if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
+                        "TabbyAPI script 경로 저장됨".into()
+                    } else {
+                        "바이너리 경로 저장됨".into()
+                    };
                 }
                 Task::none()
             }
@@ -440,10 +467,14 @@ impl App {
                                 .and_then(|n| n.to_str())
                                 .unwrap_or(launcher)
                                 .to_ascii_lowercase();
-                            if launcher.is_empty() || launcher_name == "tabby.exe" {
-                                let msg =
-                                    "TabbyAPI는 TabbyML tabby.exe가 아니라 TabbyAPI의 Start.bat, start.sh, 또는 main.py 경로를 지정해야 합니다."
-                                        .to_string();
+                            if launcher.is_empty() {
+                                let msg = tabbyapi_launcher_required_message();
+                                self.status = msg.clone();
+                                self.tabby_status = Some(Err(msg));
+                                return Task::none();
+                            }
+                            if launcher_name == "tabby.exe" {
+                                let msg = tabbyapi_reject_tabbyml_message();
                                 self.status = msg.clone();
                                 self.tabby_status = Some(Err(msg));
                                 return Task::none();

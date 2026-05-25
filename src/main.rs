@@ -2575,6 +2575,27 @@ mod tests {
         let _ = app.update(Message::StartInference);
 
         assert!(app.status.contains("Start.bat"), "got: {}", app.status);
+        assert!(
+            app.status.contains("TabbyAPI 런타임"),
+            "got: {}",
+            app.status
+        );
+        assert!(app.status.contains("먼저 설치"), "got: {}", app.status);
+        assert!(app.inference_pid.is_none());
+    }
+
+    #[test]
+    fn tabbyapi_start_rejects_tabbyml_binary_with_specific_guidance() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_selected_model = r"C:\models\Local-EXL2".into();
+        app.inference_binary_path = r"C:\tools\tabby.exe".into();
+
+        let _ = app.update(Message::StartInference);
+
+        assert!(app.status.contains("TabbyML CLI"), "got: {}", app.status);
+        assert!(app.status.contains("EXL2"), "got: {}", app.status);
+        assert!(app.status.contains("Start.bat"), "got: {}", app.status);
         assert!(app.inference_pid.is_none());
     }
 

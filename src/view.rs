@@ -1967,6 +1967,11 @@ impl App {
             } else {
                 "PATH 기본값 사용, 필요 시 실제 실행 파일 경로"
             };
+            let pick_label = if self.inference_engine == InferenceEngine::TabbyApi {
+                "script 선택"
+            } else {
+                "📁"
+            };
             row![
                 text(binary_label).size(FS_LABEL).font(semibold_font()),
                 text_input(binary_placeholder, &self.inference_binary_path,)
@@ -1975,7 +1980,7 @@ impl App {
                     .size(FS_BODY)
                     .style(field_input)
                     .width(Length::Fixed(300.0)),
-                button(text("📁").size(FS_LABEL))
+                button(text(pick_label).size(FS_LABEL))
                     .on_press(Message::PickInferenceBinary)
                     .padding([4, 8])
                     .style(secondary_btn),
@@ -1983,6 +1988,21 @@ impl App {
             .spacing(6)
             .align_y(Alignment::Center)
             .into()
+        };
+
+        let tabbyapi_launcher_hint: Element<Message> = if self.inference_engine
+            == InferenceEngine::TabbyApi
+            && self.inference_binary_path.trim().is_empty()
+        {
+            container(
+                    text("EXL2 모델 다운로드만으로는 서버가 실행되지 않습니다. TabbyAPI 프로젝트의 Start.bat/start.sh/main.py를 script로 지정해야 합니다.")
+                        .size(FS_LABEL),
+                )
+                .padding([6, 10])
+                .style(panel_style)
+                .into()
+        } else {
+            Space::new().height(Length::Shrink).into()
         };
 
         // 엔진별 모델 입력 분기
@@ -2143,6 +2163,7 @@ impl App {
                 .spacing(8)
                 .align_y(Alignment::Center),
                 binary_section,
+                tabbyapi_launcher_hint,
                 model_section,
                 port_section,
                 actions,

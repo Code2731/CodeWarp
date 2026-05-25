@@ -217,6 +217,31 @@ fn annotate_revision_not_found_error(base: &str, requested: &str, branches: &[St
     )
 }
 
+fn encode_path_segment(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for b in input.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+fn model_info_url(repo_id: &str, rev: &str) -> String {
+    if rev == "main" {
+        format!("{}/api/models/{}", HF_BASE, repo_id)
+    } else {
+        format!(
+            "{}/api/models/{}/revision/{}",
+            HF_BASE,
+            repo_id,
+            encode_path_segment(rev)
+        )
+    }
+}
+
 async fn fetch_repo_branches(
     client: &reqwest::Client,
     repo_id: &str,
@@ -251,11 +276,7 @@ async fn fetch_model_info(
     token: Option<&str>,
     rev: &str,
 ) -> Result<ModelInfo, String> {
-    let info_url = if rev == "main" {
-        format!("{}/api/models/{}", HF_BASE, repo_id)
-    } else {
-        format!("{}/api/models/{}?revision={}", HF_BASE, repo_id, rev)
-    };
+    let info_url = model_info_url(repo_id, rev);
     let mut req = client.get(&info_url);
     if let Some(t) = token.filter(|s| !s.trim().is_empty()) {
         req = req.bearer_auth(t.trim());
@@ -385,6 +406,7 @@ pub fn download_repo(
         };
         let total_files = info.siblings.len();
         yield DownloadEvent::Started { total_files };
+        let rev_path = encode_path_segment(&rev);
 
         // 2) 다운로드 디렉토리 보장
         let safe_id = folder_name.unwrap_or_else(|| repo_id.replace('/', "--"));
@@ -397,7 +419,7 @@ pub fn download_repo(
         // 3) 파일별 스트림 다운로드
         for (idx, sibling) in info.siblings.iter().enumerate() {
             let filename = &sibling.rfilename;
-            let dl_url = format!("{}/{}/resolve/{}/{}", HF_BASE, repo_id, rev, filename);
+            let dl_url = format!("{}/{}/resolve/{}/{}", HF_BASE, repo_id, rev_path, filename);
             let mut req = client.get(&dl_url);
             if let Some(t) = token.as_ref().filter(|s| !s.trim().is_empty()) {
                 req = req.bearer_auth(t.trim());
@@ -476,7 +498,8 @@ pub fn download_repo(
 mod tests {
     use super::{
         annotate_revision_not_found_error, choose_revision_fallback, contains_status,
-        extract_bpw_value, format_branch_suggestions, humanize_error, normalize_revision_name,
+        encode_path_segment, extract_bpw_value, format_branch_suggestions, humanize_error,
+        model_info_url, normalize_revision_name,
     };
 
     #[test]
@@ -568,5 +591,35 @@ mod tests {
             annotate_revision_not_found_error("HF 404: revision not found", "4bpw", &branches);
         assert!(text.contains("requested revision: '4bpw'"));
         assert!(text.contains("available branches: main, 4.0bpw"));
+    }
+
+    #[test]
+    fn encode_path_segment_keeps_safe_revision_names() {
+        assert_eq!(encode_path_segment("4.0bpw"), "4.0bpw");
+        assert_eq!(encode_path_segment("main"), "main");
+    }
+
+    #[test]
+    fn encode_path_segment_escapes_reserved_chars() {
+        assert_eq!(
+            encode_path_segment("branch with/slash"),
+            "branch%20with%2Fslash"
+        );
+    }
+
+    #[test]
+    fn model_info_url_uses_revision_path_endpoint() {
+        assert_eq!(
+            model_info_url("owner/repo", "4.0bpw"),
+            "https://huggingface.co/api/models/owner/repo/revision/4.0bpw"
+        );
+    }
+
+    #[test]
+    fn model_info_url_keeps_main_on_base_model_endpoint() {
+        assert_eq!(
+            model_info_url("owner/repo", "main"),
+            "https://huggingface.co/api/models/owner/repo"
+        );
     }
 }

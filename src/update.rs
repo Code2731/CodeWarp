@@ -910,7 +910,11 @@ impl App {
                         self.status = format!("Tabby 연결됨 — {}", label);
                         self.tabby_status = Some(Ok(label));
                         let provider_label = self.openai_compat_label.clone();
+                        let mut first_tabby_id: Option<String> = None;
                         for id in ids {
+                            if first_tabby_id.is_none() {
+                                first_tabby_id = Some(id.clone());
+                            }
                             let ko_friendly = is_korean_friendly(&id);
                             let favorite = self.favorites.contains(&id);
                             self.model_options.push(ModelOption {
@@ -923,6 +927,21 @@ impl App {
                                 prompt_per_million: Some(0.0),
                                 completion_per_million: Some(0.0),
                             });
+                        }
+                        if let Some(id) = first_tabby_id {
+                            let selected_is_tabby = self
+                                .selected_model
+                                .as_deref()
+                                .map(|selected| {
+                                    self.model_options.iter().any(|o| {
+                                        o.provider == LlmProvider::OpenAICompat && o.id == selected
+                                    })
+                                })
+                                .unwrap_or(false);
+                            if !selected_is_tabby {
+                                self.selected_model = Some(id.clone());
+                                let _ = keystore::write_selected_model(&id);
+                            }
                         }
                     }
                     Err(e) => {
@@ -1623,12 +1642,8 @@ impl App {
                             }
                         }));
                         self.refresh_model_combo();
-                        let saved_in_list = self
-                            .selected_model
-                            .as_ref()
-                            .map(|id| self.model_ids.iter().any(|m| m == id))
-                            .unwrap_or(false);
-                        if !saved_in_list {
+                        let saved_in_list = self.selected_model_exists_in_options();
+                        if !saved_in_list && self.tabby_url_input.trim().is_empty() {
                             self.selected_model = self.model_ids.first().cloned();
                             if let Some(id) = &self.selected_model {
                                 let _ = keystore::write_selected_model(id);
@@ -2898,6 +2913,13 @@ impl App {
     fn selected_option(&self) -> Option<&ModelOption> {
         let id = self.selected_model.as_deref()?;
         self.model_options.iter().find(|o| o.id == id)
+    }
+
+    fn selected_model_exists_in_options(&self) -> bool {
+        self.selected_model
+            .as_deref()
+            .map(|id| self.model_options.iter().any(|o| o.id == id))
+            .unwrap_or(false)
     }
 
     fn compare_routes(&self) -> Result<(ChatRoute, ChatRoute), String> {

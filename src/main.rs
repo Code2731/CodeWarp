@@ -2793,6 +2793,72 @@ mod tests {
     }
 
     #[test]
+    fn tabby_models_loaded_selects_first_local_model() {
+        let (mut app, _) = App::new();
+        app.model_options.clear();
+        app.selected_model = Some("openrouter-model".into());
+        app.openai_compat_label = "TabbyAPI".into();
+
+        let _ = app.update(Message::TabbyModelsLoaded(Ok(vec![
+            "tabby-a".into(),
+            "tabby-b".into(),
+        ])));
+
+        assert_eq!(app.selected_model.as_deref(), Some("tabby-a"));
+        assert!(app
+            .model_options
+            .iter()
+            .any(|o| { o.id == "tabby-a" && o.provider == LlmProvider::OpenAICompat }));
+    }
+
+    #[test]
+    fn openrouter_models_loaded_preserves_existing_tabby_selection() {
+        let (mut app, _) = App::new();
+        app.model_options = vec![ModelOption {
+            id: "tabby-a".into(),
+            provider: LlmProvider::OpenAICompat,
+            provider_label: "TabbyAPI".into(),
+            ko_friendly: false,
+            favorite: false,
+            context_length: None,
+            prompt_per_million: Some(0.0),
+            completion_per_million: Some(0.0),
+        }];
+        app.selected_model = Some("tabby-a".into());
+        app.tabby_url_input = "http://localhost:5000".into();
+
+        let _ = app.update(Message::ModelsLoaded(Ok(vec![OpenRouterModel {
+            id: "openrouter-a".into(),
+            name: None,
+            context_length: None,
+            pricing: None,
+        }])));
+
+        assert_eq!(app.selected_model.as_deref(), Some("tabby-a"));
+        assert!(app
+            .model_options
+            .iter()
+            .any(|o| { o.id == "tabby-a" && o.provider == LlmProvider::OpenAICompat }));
+    }
+
+    #[test]
+    fn openrouter_models_loaded_waits_for_tabby_when_saved_selection_not_loaded_yet() {
+        let (mut app, _) = App::new();
+        app.model_options.clear();
+        app.selected_model = Some("tabby-a".into());
+        app.tabby_url_input = "http://localhost:5000".into();
+
+        let _ = app.update(Message::ModelsLoaded(Ok(vec![OpenRouterModel {
+            id: "openrouter-a".into(),
+            name: None,
+            context_length: None,
+            pricing: None,
+        }])));
+
+        assert_eq!(app.selected_model.as_deref(), Some("tabby-a"));
+    }
+
+    #[test]
     fn tabbyapi_start_button_can_show_missing_launcher_error() {
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::TabbyApi;

@@ -111,6 +111,27 @@ fn tabbyapi_reject_tabbyml_message() -> String {
         .into()
 }
 
+fn is_tabbyapi_launcher_path(path: &str) -> bool {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let p = std::path::Path::new(trimmed);
+    let name = p
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !matches!(name.as_str(), "start.bat" | "start.sh" | "main.py") {
+        return false;
+    }
+    let parent = p
+        .parent()
+        .map(|d| d.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    parent.contains("tabbyapi")
+}
+
 pub(crate) fn default_tabbyapi_runtime_dir() -> PathBuf {
     if let Ok(path) = std::env::var("CODEWARP_TABBYAPI_RUNTIME_DIR") {
         let trimmed = path.trim();
@@ -319,6 +340,8 @@ impl App {
         let override_path = self.inference_binary_path.trim();
         if !matches!(self.inference_engine, InferenceEngine::TabbyApi) {
             let final_program = if override_path.is_empty() {
+                program
+            } else if is_tabbyapi_launcher_path(override_path) {
                 program
             } else {
                 override_path.to_string()

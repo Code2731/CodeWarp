@@ -338,6 +338,45 @@ fn http_client() -> Result<reqwest::Client, String> {
         .map_err(|e| format!("HTTP client 생성 실패: {e}"))
 }
 
+async fn fetch_non_stream_fallback(
+    client: &reqwest::Client,
+    endpoint: &str,
+    base_url: &str,
+    api_key: Option<&str>,
+    model: &str,
+    messages: &[ChatMessage],
+    tools: Option<&serde_json::Value>,
+) -> Result<Option<String>, String> {
+    let mut payload = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "stream": false
+    });
+    if let Some(tool_defs) = tools {
+        payload["tools"] = tool_defs.clone();
+        payload["tool_choice"] = serde_json::json!("auto");
+    }
+
+    let mut req = client.post(endpoint).json(&payload);
+    if base_url.contains("openrouter.ai") {
+        req = req
+            .header("HTTP-Referer", "https://codewarp.app")
+            .header("X-Title", "CodeWarp");
+    }
+    if let Some(k) = api_key.filter(|s| !s.trim().is_empty()) {
+        req = req.bearer_auth(k);
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("OpenRouter {}: {}", status, text));
+    }
+    let raw = resp.text().await.unwrap_or_default();
+    Ok(extract_non_stream_content(raw.trim()))
+}
+
 /// OpenRouter 키의 사용량/한도 정보 (`/api/v1/auth/key`).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AuthKeyData {
@@ -754,6 +793,25 @@ pub fn chat_stream(
 
         if !emitted_any_token {
             if let Some(content) = extract_non_stream_content(raw_capture.trim()) {
+                if !content.is_empty() {
+                    emitted_any_token = true;
+                    yield ChatEvent::Token(content);
+                }
+            }
+        }
+
+        if !emitted_any_token {
+            if let Ok(Some(content)) = fetch_non_stream_fallback(
+                &client,
+                &endpoint,
+                &base_url,
+                api_key.as_deref(),
+                &model,
+                &messages,
+                tools.as_ref(),
+            )
+            .await
+            {
                 if !content.is_empty() {
                     yield ChatEvent::Token(content);
                 }

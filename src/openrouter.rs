@@ -142,6 +142,29 @@ struct ToolCallFunctionDelta {
     arguments: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct NonStreamChatResponse {
+    choices: Vec<NonStreamChoice>,
+}
+
+#[derive(Deserialize)]
+struct NonStreamChoice {
+    message: Option<NonStreamMessage>,
+}
+
+#[derive(Deserialize)]
+struct NonStreamMessage {
+    content: Option<String>,
+}
+
+fn extract_non_stream_content(raw: &str) -> Option<String> {
+    let parsed: NonStreamChatResponse = serde_json::from_str(raw).ok()?;
+    parsed
+        .choices
+        .into_iter()
+        .find_map(|choice| choice.message.and_then(|message| message.content))
+}
+
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent("CodeWarp/0.2.0")
@@ -334,6 +357,21 @@ mod tests {
             assert_ne!(msg, synthetic, "status {} should be humanized", status);
         }
     }
+
+    #[test]
+    fn extract_non_stream_content_reads_openai_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"message":{"role":"assistant","content":"hello"}}]
+        }"#;
+        assert_eq!(extract_non_stream_content(raw).as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn extract_non_stream_content_returns_none_for_invalid_shape() {
+        let raw = r#"{"object":"list","data":[]}"#;
+        assert!(extract_non_stream_content(raw).is_none());
+    }
 }
 
 /// OpenAI 호환 `/chat/completions` 스트림.
@@ -392,8 +430,10 @@ pub fn chat_stream(
 
         let mut stream = resp.bytes_stream();
         let mut buffer = String::new();
+        let mut raw_capture = String::new();
         let mut last_finish_reason: Option<String> = None;
         let mut generation_id: Option<String> = None;
+        let mut emitted_any_token = false;
 
         while let Some(item) = stream.next().await {
             let chunk = match item {
@@ -408,6 +448,7 @@ pub fn chat_stream(
                 Err(_) => continue,
             };
             buffer.push_str(text);
+            raw_capture.push_str(text);
 
             loop {
                 let Some(idx) = buffer.find('\n') else { break };
@@ -437,6 +478,7 @@ pub fn chat_stream(
                         if let Some(delta) = choice.delta {
                             if let Some(content) = delta.content {
                                 if !content.is_empty() {
+                                    emitted_any_token = true;
                                     yield ChatEvent::Token(content);
                                 }
                             }
@@ -456,6 +498,47 @@ pub fn chat_stream(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        if !buffer.trim().is_empty() {
+            for line in buffer.lines() {
+                let trimmed = line.trim();
+                let payload = trimmed
+                    .strip_prefix("data:")
+                    .map(str::trim)
+                    .unwrap_or(trimmed);
+                if payload.is_empty() || payload == "[DONE]" {
+                    continue;
+                }
+                if let Ok(parsed) = serde_json::from_str::<StreamChunk>(payload) {
+                    if generation_id.is_none() {
+                        if let Some(id) = parsed.id {
+                            generation_id = Some(id);
+                        }
+                    }
+                    for choice in parsed.choices {
+                        if let Some(reason) = choice.finish_reason {
+                            last_finish_reason = Some(reason);
+                        }
+                        if let Some(delta) = choice.delta {
+                            if let Some(content) = delta.content {
+                                if !content.is_empty() {
+                                    emitted_any_token = true;
+                                    yield ChatEvent::Token(content);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !emitted_any_token {
+            if let Some(content) = extract_non_stream_content(raw_capture.trim()) {
+                if !content.is_empty() {
+                    yield ChatEvent::Token(content);
                 }
             }
         }

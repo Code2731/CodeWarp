@@ -12,10 +12,6 @@ mod tools;
 mod update;
 mod view;
 
-use std::collections::HashSet;
-use std::path::PathBuf;
-use std::sync::Arc;
-
 use futures_util::StreamExt;
 use iced::keyboard::key::Named;
 use iced::keyboard::{Key, Modifiers};
@@ -23,11 +19,13 @@ use iced::task;
 use iced::widget::markdown::{self, HeadingLevel, Settings as MdSettings, Text as MdText, Viewer};
 use iced::widget::operation::snap_to_end;
 use iced::widget::scrollable::{Direction, Scrollbar, Viewport};
-use iced::widget::text_editor::{Action, Edit};
+use iced::widget::text_editor::Action;
 use iced::widget::{
     button, column, combo_box, container, row, scrollable, text, text_editor, Id as ScrollId, Space,
 };
 use iced::{font, Color, Element, Font, Length, Size, Task, Theme};
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
 
@@ -2297,6 +2295,27 @@ mod tests {
         assert!(app.pending_tool_calls.is_empty());
         assert_eq!(app.tool_round, 0);
         assert!(app.conversation.is_empty());
+    }
+
+    #[test]
+    fn chat_chunk_tokens_append_to_assistant_block_without_editor_focus() {
+        let (mut app, _) = App::new();
+        app.conversation.clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(text_editor::Content::new()),
+            view_mode: ViewMode::Rendered,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Token("hel".into())));
+        let _ = app.update(Message::ChatChunk(ChatEvent::Token("lo".into())));
+
+        assert_eq!(app.blocks[0].body.to_text(), "hello");
     }
 
     #[test]

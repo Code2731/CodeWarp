@@ -1,6 +1,6 @@
 // update.rs — App update + 헬퍼 메서드 (main.rs child module)
 use super::*;
-use iced::widget::text_editor::{self, Action};
+use iced::widget::text_editor;
 use iced::{Subscription, Task};
 
 const HF_HINT_MARKERS: [&str; 3] = [
@@ -1924,13 +1924,7 @@ impl App {
                 };
                 match event {
                     ChatEvent::Token(t) => {
-                        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
-                            if let BlockBody::Assistant(content) = &mut b.body {
-                                content.perform(Action::Edit(Edit::Paste(Arc::new(t))));
-                                let raw = content.text();
-                                b.md_items = markdown::parse(&raw).collect();
-                            }
-                        }
+                        self.append_assistant_block_text(ai_id, &t);
                     }
                     ChatEvent::ToolCallDelta {
                         index,
@@ -1989,15 +1983,12 @@ impl App {
                         } else {
                             self.status =
                                 "[WARN] 모델이 빈 응답을 반환했습니다. Provider/Runtime 로그를 확인해 주세요.".into();
-                            if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
-                                if let BlockBody::Assistant(content) = &mut b.body {
-                                    if content.text().trim().is_empty() {
-                                        content.perform(Action::Edit(Edit::Paste(Arc::new(
-                                            "[WARN] 빈 응답".to_string(),
-                                        ))));
-                                        let raw = content.text();
-                                        b.md_items = markdown::parse(&raw).collect();
-                                    }
+                            if let Some(b) = self.blocks.iter().find(|b| b.id == ai_id) {
+                                if b.body.to_text().trim().is_empty() {
+                                    self.append_assistant_block_text(
+                                        ai_id,
+                                        "[WARN] empty response",
+                                    );
                                 }
                             }
                         }
@@ -2032,8 +2023,9 @@ impl App {
                                     "\n\n"
                                 };
                                 let msg = format!("{}[ERROR] {}", prefix, e);
-                                content.perform(Action::Edit(Edit::Paste(Arc::new(msg))));
-                                let raw = content.text();
+                                let mut raw = content.text();
+                                raw.push_str(&msg);
+                                *content = text_editor::Content::with_text(&raw);
                                 b.md_items = markdown::parse(&raw).collect();
                             }
                         }
@@ -2958,6 +2950,20 @@ impl App {
             if let BlockBody::Assistant(content) = &mut b.body {
                 *content = text_editor::Content::with_text(&text);
                 b.md_items = markdown::parse(&text).collect();
+            }
+        }
+    }
+
+    fn append_assistant_block_text(&mut self, block_id: u64, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == block_id) {
+            if let BlockBody::Assistant(content) = &mut b.body {
+                let mut raw = content.text();
+                raw.push_str(text);
+                *content = text_editor::Content::with_text(&raw);
+                b.md_items = markdown::parse(&raw).collect();
             }
         }
     }

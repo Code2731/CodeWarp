@@ -360,6 +360,21 @@ fn http_client() -> Result<reqwest::Client, String> {
         .map_err(|e| format!("HTTP client 생성 실패: {e}"))
 }
 
+fn apply_compat_auth_headers(
+    mut req: reqwest::RequestBuilder,
+    base_url: &str,
+    api_key: Option<&str>,
+) -> reqwest::RequestBuilder {
+    if let Some(k) = api_key.filter(|s| !s.trim().is_empty()) {
+        let token = k.trim();
+        req = req.bearer_auth(token);
+        if !base_url.contains("openrouter.ai") {
+            req = req.header("x-api-key", token);
+        }
+    }
+    req
+}
+
 async fn fetch_non_stream_fallback(
     client: &reqwest::Client,
     endpoint: &str,
@@ -385,9 +400,7 @@ async fn fetch_non_stream_fallback(
             .header("HTTP-Referer", "https://codewarp.app")
             .header("X-Title", "CodeWarp");
     }
-    if let Some(k) = api_key.filter(|s| !s.trim().is_empty()) {
-        req = req.bearer_auth(k);
-    }
+    req = apply_compat_auth_headers(req, base_url, api_key);
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
@@ -715,9 +728,7 @@ pub fn chat_stream(
                 .header("HTTP-Referer", "https://codewarp.app")
                 .header("X-Title", "CodeWarp");
         }
-        if let Some(k) = api_key.as_ref().filter(|s| !s.trim().is_empty()) {
-            req = req.bearer_auth(k);
-        }
+        req = apply_compat_auth_headers(req, &base_url, api_key.as_deref());
 
         let resp = match req.send().await
         {

@@ -529,8 +529,8 @@ fn humanize_inference_spawn_error(program: &str, err: &std::io::Error) -> String
     ) && err.kind() == std::io::ErrorKind::NotFound
     {
         return format!(
-            "{} ?ㅽ뻾 ?뚯씪??李얠쓣 ???놁뒿?덈떎. Runtime??binary path瑜?吏?뺥빐 ?덇굅??PATH??{}瑜?異붽??댁＜?몄슂. ?먮낫 ?ㅻ쪟: {}",
-            program_name, program_name, raw
+            "{} binary was not found. Set Runtime > binary path to the executable (for example xllm.exe) or add it to PATH. Raw error: {}",
+            program_name, raw
         );
     }
 
@@ -538,8 +538,8 @@ fn humanize_inference_spawn_error(program: &str, err: &std::io::Error) -> String
         && err.kind() == std::io::ErrorKind::NotFound
     {
         return format!(
-            "{} ?ㅽ뻾 ?뚯씪??李얠쓣 ???놁뒿?덈떎. Runtime??binary path瑜?吏?뺥빐 ?덇굅??PATH??{}瑜?異붽??댁＜?몄슂. ?먮낫 ?ㅻ쪟: {}",
-            program_name, program_name, raw
+            "{} binary was not found. Set Runtime > binary path to the executable or add it to PATH. Raw error: {}",
+            program_name, raw
         );
     }
 
@@ -551,7 +551,7 @@ fn humanize_inference_spawn_error(program: &str, err: &std::io::Error) -> String
             || raw.contains("연결")
         {
             return format!(
-                "Tabby 실행 파일을 시작할 수 없습니다. 현재 PATH의 tabby.exe가 실행 가능한 TabbyML 서버 CLI가 아니거나 권한/alias 문제가 있습니다: {}",
+                "Tabby executable could not be started. The tabby.exe on PATH may not be a runnable TabbyML server CLI, or there may be a permission/alias issue: {}",
                 raw
             );
         }

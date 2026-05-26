@@ -728,8 +728,7 @@ impl App {
                                 | InferenceEngine::LlamaServer
                         ) && !self.has_selected_local_model_available()
                         {
-                            self.status =
-                                "선택 모델을 현재 다운로드 경로에서 찾을 수 없습니다.".into();
+                            self.status = "Selected local model was not found in the current model directory. Verify Models > download status and Runtime > model directory/path, then try Start again.".into();
                             return Task::none();
                         }
                         // xLLM/vLLM/llama-server는 받은 폴더를 absolute path로

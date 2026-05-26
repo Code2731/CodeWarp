@@ -766,6 +766,36 @@ pub fn chat_stream(
                 let payload = payload.trim();
                 if payload.is_empty() { continue; }
                 if payload == "[DONE]" {
+                    if !emitted_any_token {
+                        if let Some(content) = extract_non_stream_content(raw_capture.trim()) {
+                            if !content.is_empty() {
+                                emitted_any_token = true;
+                                yield ChatEvent::Token(content);
+                            }
+                        }
+                    }
+                    if !emitted_any_token {
+                        match fetch_non_stream_fallback(
+                            &client,
+                            &endpoint,
+                            &base_url,
+                            api_key.as_deref(),
+                            &model,
+                            &messages,
+                            tools.as_ref(),
+                        )
+                        .await
+                        {
+                            Ok(Some(content)) if !content.is_empty() => {
+                                yield ChatEvent::Token(content);
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                yield ChatEvent::Error(e);
+                                return;
+                            }
+                        }
+                    }
                     yield ChatEvent::Done {
                         finish_reason: last_finish_reason.clone(),
                         generation_id: generation_id.clone(),
@@ -846,7 +876,7 @@ pub fn chat_stream(
         }
 
         if !emitted_any_token {
-            if let Ok(Some(content)) = fetch_non_stream_fallback(
+            match fetch_non_stream_fallback(
                 &client,
                 &endpoint,
                 &base_url,
@@ -857,8 +887,13 @@ pub fn chat_stream(
             )
             .await
             {
-                if !content.is_empty() {
+                Ok(Some(content)) if !content.is_empty() => {
                     yield ChatEvent::Token(content);
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    yield ChatEvent::Error(e);
+                    return;
                 }
             }
         }

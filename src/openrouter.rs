@@ -120,12 +120,16 @@ struct StreamChunk {
 #[derive(Deserialize)]
 struct ChunkChoice {
     delta: Option<DeltaPayload>,
+    message: Option<NonStreamMessage>,
+    text: Option<String>,
     finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct DeltaPayload {
     content: Option<FlexibleContent>,
+    text: Option<String>,
+    reasoning_content: Option<String>,
     tool_calls: Option<Vec<ToolCallDelta>>,
 }
 
@@ -230,6 +234,101 @@ fn extract_non_stream_content(raw: &str) -> Option<String> {
                 })
             })
     })
+}
+
+fn normalize_non_empty_text(text: String) -> Option<String> {
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
+    if let Some(delta) = choice.delta.as_ref() {
+        if let Some(content) = delta.content.as_ref() {
+            let text = match content {
+                FlexibleContent::Text(s) => {
+                    if s.trim().is_empty() {
+                        None
+                    } else {
+                        Some(s.clone())
+                    }
+                }
+                FlexibleContent::Part(part) => part
+                    .text
+                    .as_ref()
+                    .or(part.content.as_ref())
+                    .and_then(|s| normalize_non_empty_text(s.clone())),
+                FlexibleContent::Parts(parts) => {
+                    let mut out = String::new();
+                    for part in parts {
+                        if let Some(text) = part
+                            .text
+                            .as_ref()
+                            .or(part.content.as_ref())
+                            .and_then(|s| normalize_non_empty_text(s.clone()))
+                        {
+                            out.push_str(&text);
+                        }
+                    }
+                    normalize_non_empty_text(out)
+                }
+            };
+            if text.is_some() {
+                return text;
+            }
+        }
+
+        if let Some(text) = delta
+            .text
+            .as_ref()
+            .and_then(|s| normalize_non_empty_text(s.clone()))
+        {
+            return Some(text);
+        }
+        if let Some(text) = delta
+            .reasoning_content
+            .as_ref()
+            .and_then(|s| normalize_non_empty_text(s.clone()))
+        {
+            return Some(text);
+        }
+    }
+
+    if let Some(text) = choice
+        .text
+        .as_ref()
+        .and_then(|s| normalize_non_empty_text(s.clone()))
+    {
+        return Some(text);
+    }
+    choice
+        .message
+        .as_ref()
+        .and_then(|m| m.content.as_ref())
+        .and_then(|c| match c {
+            FlexibleContent::Text(s) => normalize_non_empty_text(s.clone()),
+            FlexibleContent::Part(part) => part
+                .text
+                .as_ref()
+                .or(part.content.as_ref())
+                .and_then(|s| normalize_non_empty_text(s.clone())),
+            FlexibleContent::Parts(parts) => {
+                let mut out = String::new();
+                for part in parts {
+                    if let Some(text) = part
+                        .text
+                        .as_ref()
+                        .or(part.content.as_ref())
+                        .and_then(|s| normalize_non_empty_text(s.clone()))
+                    {
+                        out.push_str(&text);
+                    }
+                }
+                normalize_non_empty_text(out)
+            }
+        })
 }
 
 fn http_client() -> Result<reqwest::Client, String> {
@@ -465,12 +564,30 @@ mod tests {
             "choices":[{"index":0,"delta":{"content":[{"type":"text","text":"hello"}]},"finish_reason":null}]
         }"#;
         let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
-        let token = parsed
-            .choices
-            .into_iter()
-            .find_map(|choice| choice.delta.and_then(|d| d.content))
-            .and_then(FlexibleContent::into_text);
+        let token = parsed.choices.iter().find_map(extract_stream_text);
         assert_eq!(token.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn stream_chunk_supports_choice_text_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"text":"hello from choice text","finish_reason":null}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed.choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("hello from choice text"));
+    }
+
+    #[test]
+    fn stream_chunk_supports_reasoning_content_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"delta":{"reasoning_content":"reasoning token"},"finish_reason":null}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed.choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("reasoning token"));
     }
 
     #[test]
@@ -578,16 +695,14 @@ pub fn chat_stream(
                         }
                     }
                     for choice in parsed.choices {
-                        if let Some(reason) = choice.finish_reason {
-                            last_finish_reason = Some(reason);
+                        if let Some(reason) = choice.finish_reason.as_ref() {
+                            last_finish_reason = Some(reason.clone());
+                        }
+                        if let Some(text) = extract_stream_text(&choice) {
+                            emitted_any_token = true;
+                            yield ChatEvent::Token(text);
                         }
                         if let Some(delta) = choice.delta {
-                            if let Some(content) = delta.content {
-                                if let Some(content) = content.into_text() {
-                                    emitted_any_token = true;
-                                    yield ChatEvent::Token(content);
-                                }
-                            }
                             if let Some(calls) = delta.tool_calls {
                                 for call in calls {
                                     let (name, arguments) = match call.function {
@@ -625,16 +740,12 @@ pub fn chat_stream(
                         }
                     }
                     for choice in parsed.choices {
-                        if let Some(reason) = choice.finish_reason {
-                            last_finish_reason = Some(reason);
+                        if let Some(reason) = choice.finish_reason.as_ref() {
+                            last_finish_reason = Some(reason.clone());
                         }
-                        if let Some(delta) = choice.delta {
-                            if let Some(content) = delta.content {
-                                if let Some(content) = content.into_text() {
-                                    emitted_any_token = true;
-                                    yield ChatEvent::Token(content);
-                                }
-                            }
+                        if let Some(text) = extract_stream_text(&choice) {
+                            emitted_any_token = true;
+                            yield ChatEvent::Token(text);
                         }
                     }
                 }

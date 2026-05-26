@@ -130,6 +130,7 @@ struct DeltaPayload {
     content: Option<FlexibleContent>,
     text: Option<String>,
     reasoning_content: Option<String>,
+    reasoning: Option<String>,
     tool_calls: Option<Vec<ToolCallDelta>>,
 }
 
@@ -160,6 +161,10 @@ struct NonStreamChoice {
 #[derive(Deserialize)]
 struct NonStreamMessage {
     content: Option<FlexibleContent>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -223,7 +228,17 @@ fn extract_non_stream_content(raw: &str) -> Option<String> {
     parsed.choices.into_iter().find_map(|choice| {
         choice
             .message
-            .and_then(|message| message.content.and_then(FlexibleContent::into_text))
+            .and_then(|message| {
+                message
+                    .content
+                    .and_then(FlexibleContent::into_text)
+                    .or_else(|| {
+                        message
+                            .reasoning_content
+                            .and_then(normalize_non_empty_text)
+                            .or_else(|| message.reasoning.and_then(normalize_non_empty_text))
+                    })
+            })
             .or_else(|| {
                 choice.text.and_then(|text| {
                     if text.trim().is_empty() {
@@ -289,6 +304,13 @@ fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
         }
         if let Some(text) = delta
             .reasoning_content
+            .as_ref()
+            .and_then(|s| normalize_non_empty_text(s.clone()))
+        {
+            return Some(text);
+        }
+        if let Some(text) = delta
+            .reasoning
             .as_ref()
             .and_then(|s| normalize_non_empty_text(s.clone()))
         {
@@ -627,6 +649,29 @@ mod tests {
         let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
         let token = parsed.choices.iter().find_map(extract_stream_text);
         assert_eq!(token.as_deref(), Some("reasoning token"));
+    }
+
+    #[test]
+    fn stream_chunk_supports_reasoning_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"delta":{"reasoning":"reasoning token"},"finish_reason":null}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed.choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("reasoning token"));
+    }
+
+    #[test]
+    fn extract_non_stream_content_reads_reasoning_content_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"message":{"role":"assistant","reasoning_content":"hello from reasoning"}}]
+        }"#;
+        assert_eq!(
+            extract_non_stream_content(raw).as_deref(),
+            Some("hello from reasoning")
+        );
     }
 
     #[test]

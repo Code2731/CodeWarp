@@ -125,7 +125,7 @@ struct ChunkChoice {
 
 #[derive(Deserialize)]
 struct DeltaPayload {
-    content: Option<String>,
+    content: Option<FlexibleContent>,
     tool_calls: Option<Vec<ToolCallDelta>>,
 }
 
@@ -150,19 +150,86 @@ struct NonStreamChatResponse {
 #[derive(Deserialize)]
 struct NonStreamChoice {
     message: Option<NonStreamMessage>,
+    text: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct NonStreamMessage {
+    content: Option<FlexibleContent>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FlexibleContent {
+    Text(String),
+    Part(FlexibleContentPart),
+    Parts(Vec<FlexibleContentPart>),
+}
+
+#[derive(Deserialize)]
+struct FlexibleContentPart {
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
     content: Option<String>,
+}
+
+impl FlexibleContent {
+    fn into_text(self) -> Option<String> {
+        match self {
+            FlexibleContent::Text(s) => {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            }
+            FlexibleContent::Part(part) => part.into_text(),
+            FlexibleContent::Parts(parts) => {
+                let mut out = String::new();
+                for part in parts {
+                    if let Some(text) = part.into_text() {
+                        out.push_str(&text);
+                    }
+                }
+                if out.trim().is_empty() {
+                    None
+                } else {
+                    Some(out)
+                }
+            }
+        }
+    }
+}
+
+impl FlexibleContentPart {
+    fn into_text(self) -> Option<String> {
+        let text = self.text.or(self.content)?;
+        if text.trim().is_empty() {
+            None
+        } else {
+            Some(text)
+        }
+    }
 }
 
 fn extract_non_stream_content(raw: &str) -> Option<String> {
     let parsed: NonStreamChatResponse = serde_json::from_str(raw).ok()?;
-    parsed
-        .choices
-        .into_iter()
-        .find_map(|choice| choice.message.and_then(|message| message.content))
+    parsed.choices.into_iter().find_map(|choice| {
+        choice
+            .message
+            .and_then(|message| message.content.and_then(FlexibleContent::into_text))
+            .or_else(|| {
+                choice.text.and_then(|text| {
+                    if text.trim().is_empty() {
+                        None
+                    } else {
+                        Some(text)
+                    }
+                })
+            })
+    })
 }
 
 fn http_client() -> Result<reqwest::Client, String> {
@@ -368,6 +435,45 @@ mod tests {
     }
 
     #[test]
+    fn extract_non_stream_content_reads_text_choice_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"text":"hello from text field"}]
+        }"#;
+        assert_eq!(
+            extract_non_stream_content(raw).as_deref(),
+            Some("hello from text field")
+        );
+    }
+
+    #[test]
+    fn extract_non_stream_content_reads_array_content_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"message":{"role":"assistant","content":[{"type":"text","text":"hello "},{"type":"output_text","text":"world"}]}}]
+        }"#;
+        assert_eq!(
+            extract_non_stream_content(raw).as_deref(),
+            Some("hello world")
+        );
+    }
+
+    #[test]
+    fn stream_chunk_supports_array_delta_content() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"delta":{"content":[{"type":"text","text":"hello"}]},"finish_reason":null}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed
+            .choices
+            .into_iter()
+            .find_map(|choice| choice.delta.and_then(|d| d.content))
+            .and_then(FlexibleContent::into_text);
+        assert_eq!(token.as_deref(), Some("hello"));
+    }
+
+    #[test]
     fn extract_non_stream_content_returns_none_for_invalid_shape() {
         let raw = r#"{"object":"list","data":[]}"#;
         assert!(extract_non_stream_content(raw).is_none());
@@ -477,7 +583,7 @@ pub fn chat_stream(
                         }
                         if let Some(delta) = choice.delta {
                             if let Some(content) = delta.content {
-                                if !content.is_empty() {
+                                if let Some(content) = content.into_text() {
                                     emitted_any_token = true;
                                     yield ChatEvent::Token(content);
                                 }
@@ -524,7 +630,7 @@ pub fn chat_stream(
                         }
                         if let Some(delta) = choice.delta {
                             if let Some(content) = delta.content {
-                                if !content.is_empty() {
+                                if let Some(content) = content.into_text() {
                                     emitted_any_token = true;
                                     yield ChatEvent::Token(content);
                                 }

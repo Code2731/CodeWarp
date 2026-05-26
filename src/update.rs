@@ -1986,6 +1986,20 @@ impl App {
                         if !assistant_text.is_empty() {
                             self.conversation
                                 .push(ChatMessage::assistant(assistant_text.clone()));
+                        } else {
+                            self.status =
+                                "[WARN] 모델이 빈 응답을 반환했습니다. Provider/Runtime 로그를 확인해 주세요.".into();
+                            if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
+                                if let BlockBody::Assistant(content) = &mut b.body {
+                                    if content.text().trim().is_empty() {
+                                        content.perform(Action::Edit(Edit::Paste(Arc::new(
+                                            "[WARN] 빈 응답".to_string(),
+                                        ))));
+                                        let raw = content.text();
+                                        b.md_items = markdown::parse(&raw).collect();
+                                    }
+                                }
+                            }
                         }
                         // Apply 후보 추출
                         let candidates = parse_apply_candidates(&assistant_text);

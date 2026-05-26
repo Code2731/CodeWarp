@@ -676,6 +676,17 @@ mod tests {
     }
 
     #[test]
+    fn stream_chunk_supports_xllm_delta_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"delta":{"role":"assistant","content":"안녕하세요","tool_calls":[]}}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed.choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("안녕하세요"));
+    }
+
+    #[test]
     fn extract_non_stream_content_reads_reasoning_content_shape() {
         let raw = r#"{
             "id":"chatcmpl-x",

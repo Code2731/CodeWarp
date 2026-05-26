@@ -408,9 +408,9 @@ impl BlockBody {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ViewMode {
-    /// 마크다운으로 예쁘게 렌더 (기본). 코드 블록은 syntax highlight.
+    /// 마크다운으로 예쁘게 렌더. 코드 블록은 syntax highlight.
     Rendered,
-    /// 원문(read-only text_editor). 부분 텍스트 드래그 선택 + Ctrl+C 가능.
+    /// 원문(read-only text_editor). 기본 assistant 보기이며 부분 선택 + Ctrl+C 가능.
     Raw,
 }
 
@@ -921,7 +921,11 @@ fn persisted_to_block(pb: session::PersistedBlock) -> Block {
     Block {
         id: pb.id,
         body,
-        view_mode: ViewMode::Rendered,
+        view_mode: if role == "assistant" {
+            ViewMode::Raw
+        } else {
+            ViewMode::Rendered
+        },
         md_items,
         model,
         apply_candidates: Vec::new(),
@@ -2295,6 +2299,31 @@ mod tests {
         assert!(app.pending_tool_calls.is_empty());
         assert_eq!(app.tool_round, 0);
         assert!(app.conversation.is_empty());
+    }
+
+    #[test]
+    fn persisted_assistant_blocks_default_to_raw_for_selection() {
+        let block = persisted_to_block(session::PersistedBlock {
+            id: 1,
+            role: "assistant".into(),
+            content: "selectable answer".into(),
+            model: "local".into(),
+        });
+
+        assert_eq!(block.view_mode, ViewMode::Raw);
+        assert_eq!(block.body.to_text(), "selectable answer");
+    }
+
+    #[test]
+    fn persisted_user_blocks_keep_rendered_layout() {
+        let block = persisted_to_block(session::PersistedBlock {
+            id: 1,
+            role: "user".into(),
+            content: "hello".into(),
+            model: String::new(),
+        });
+
+        assert_eq!(block.view_mode, ViewMode::Rendered);
     }
 
     #[test]

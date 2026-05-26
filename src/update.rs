@@ -1213,7 +1213,7 @@ impl App {
                 self.blocks.push(Block {
                     id: ai_id,
                     body: BlockBody::Assistant(text_editor::Content::new()),
-                    view_mode: ViewMode::Rendered,
+                    view_mode: ViewMode::Raw,
                     md_items: Vec::new(),
                     model: self.selected_model.clone(),
                     apply_candidates: Vec::new(),
@@ -1751,7 +1751,7 @@ impl App {
                         body: BlockBody::Assistant(text_editor::Content::with_text(
                             "OpenRouter 응답 대기 중…",
                         )),
-                        view_mode: ViewMode::Rendered,
+                        view_mode: ViewMode::Raw,
                         md_items: Vec::new(),
                         model: Some(format!(
                             "{}: {}",
@@ -1765,7 +1765,7 @@ impl App {
                         body: BlockBody::Assistant(text_editor::Content::with_text(
                             "Tabby 응답 대기 중…",
                         )),
-                        view_mode: ViewMode::Rendered,
+                        view_mode: ViewMode::Raw,
                         md_items: Vec::new(),
                         model: Some(format!("{}: {}", tabby_route.label, tabby_route.model)),
                         apply_candidates: Vec::new(),
@@ -1844,7 +1844,7 @@ impl App {
                 self.blocks.push(Block {
                     id: ai_id,
                     body: BlockBody::Assistant(text_editor::Content::new()),
-                    view_mode: ViewMode::Rendered,
+                    view_mode: ViewMode::Raw,
                     md_items: Vec::new(),
                     model: self.selected_model.clone(),
                     apply_candidates: Vec::new(),

@@ -847,10 +847,14 @@ impl App {
                     InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer
                 ) && !runtime_command_exists(&final_program)
                 {
-                    self.status = format!(
-                        "{} binary was not found. Set Runtime > binary path to the executable or install/add it to PATH.",
-                        self.inference_engine.label()
-                    );
+                    self.status = if matches!(self.inference_engine, InferenceEngine::XLlm) {
+                        "xLLM binary was not found on this machine. Set Runtime > binary path to a host xllm executable, or use Engine=Custom and run xLLM through Docker.".into()
+                    } else {
+                        format!(
+                            "{} binary was not found. Set Runtime > binary path to the executable or install/add it to PATH.",
+                            self.inference_engine.label()
+                        )
+                    };
                     return Task::none();
                 }
                 self.inference_log.clear();

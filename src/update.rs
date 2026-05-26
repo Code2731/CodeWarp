@@ -132,6 +132,77 @@ fn is_tabbyapi_launcher_path(path: &str) -> bool {
     parent.contains("tabbyapi")
 }
 
+fn runtime_command_exists(command: &str) -> bool {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let candidate = std::path::Path::new(trimmed);
+    if candidate.is_absolute()
+        || trimmed.contains(std::path::MAIN_SEPARATOR)
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+    {
+        return candidate.is_file();
+    }
+
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return false;
+    };
+    let path_dirs: Vec<PathBuf> = std::env::split_paths(&path_var).collect();
+
+    #[cfg(windows)]
+    {
+        let has_ext = candidate.extension().is_some();
+        let extensions: Vec<String> = if has_ext {
+            vec![String::new()]
+        } else {
+            std::env::var_os("PATHEXT")
+                .and_then(|v| v.into_string().ok())
+                .map(|v| {
+                    v.split(';')
+                        .map(|e| e.trim())
+                        .filter(|e| !e.is_empty())
+                        .map(|e| e.to_ascii_lowercase())
+                        .collect::<Vec<_>>()
+                })
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| {
+                    vec![
+                        ".com".to_string(),
+                        ".exe".to_string(),
+                        ".bat".to_string(),
+                        ".cmd".to_string(),
+                    ]
+                })
+        };
+
+        for dir in path_dirs {
+            for ext in &extensions {
+                let full = if ext.is_empty() {
+                    dir.join(trimmed)
+                } else {
+                    dir.join(format!("{trimmed}{ext}"))
+                };
+                if full.is_file() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    #[cfg(not(windows))]
+    {
+        for dir in path_dirs {
+            if dir.join(trimmed).is_file() {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 pub(crate) fn default_tabbyapi_runtime_dir() -> PathBuf {
     if let Ok(path) = std::env::var("CODEWARP_TABBYAPI_RUNTIME_DIR") {
         let trimmed = path.trim();
@@ -771,6 +842,17 @@ impl App {
                 // 바이너리 경로가 명시되어 있으면 PATH 의존 안 하고 절대 경로 사용
                 let (final_program, args, work_dir) =
                     self.resolve_runtime_spawn_command(program, args);
+                if matches!(
+                    self.inference_engine,
+                    InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer
+                ) && !runtime_command_exists(&final_program)
+                {
+                    self.status = format!(
+                        "{} binary was not found. Set Runtime > binary path to the executable or install/add it to PATH.",
+                        self.inference_engine.label()
+                    );
+                    return Task::none();
+                }
                 self.inference_log.clear();
                 self.status = format!("실행 시작: {} {}", final_program, args.join(" "));
                 Task::batch(vec![
@@ -3071,7 +3153,8 @@ impl App {
 mod tests {
     use super::{
         compose_hf_download_error, contains_ascii_case_insensitive, default_models_dir,
-        extract_hf_error_hint, find_hint_boundary, merge_hint, starts_with_ascii_case_insensitive,
+        extract_hf_error_hint, find_hint_boundary, merge_hint, runtime_command_exists,
+        starts_with_ascii_case_insensitive,
     };
 
     #[test]
@@ -3205,5 +3288,18 @@ mod tests {
     #[test]
     fn default_models_dir_returns_non_empty_path() {
         assert!(!default_models_dir().trim().is_empty());
+    }
+
+    #[test]
+    fn runtime_command_exists_accepts_current_exe_absolute_path() {
+        let current = std::env::current_exe().unwrap();
+        assert!(runtime_command_exists(&current.to_string_lossy()));
+    }
+
+    #[test]
+    fn runtime_command_exists_rejects_missing_absolute_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let missing = tmp.path().join("missing-runtime-binary.exe");
+        assert!(!runtime_command_exists(&missing.to_string_lossy()));
     }
 }

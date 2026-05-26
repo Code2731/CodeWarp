@@ -525,6 +525,26 @@ fn humanize_inference_spawn_error(program: &str, err: &std::io::Error) -> String
         .unwrap_or(program)
         .to_ascii_lowercase();
 
+    if matches!(
+        program_name.as_str(),
+        "xllm" | "xllm.exe" | "vllm" | "vllm.exe"
+    ) && err.kind() == std::io::ErrorKind::NotFound
+    {
+        return format!(
+            "{} ?ㅽ뻾 ?뚯씪??李얠쓣 ???놁뒿?덈떎. Runtime??binary path瑜?吏?뺥빐 ?덇굅??PATH??{}瑜?異붽??댁＜?몄슂. ?먮낫 ?ㅻ쪟: {}",
+            program_name, program_name, raw
+        );
+    }
+
+    if matches!(program_name.as_str(), "llama-server" | "llama-server.exe")
+        && err.kind() == std::io::ErrorKind::NotFound
+    {
+        return format!(
+            "{} ?ㅽ뻾 ?뚯씪??李얠쓣 ???놁뒿?덈떎. Runtime??binary path瑜?吏?뺥빐 ?덇굅??PATH??{}瑜?異붽??댁＜?몄슂. ?먮낫 ?ㅻ쪟: {}",
+            program_name, program_name, raw
+        );
+    }
+
     if program_name == "tabby" || program_name == "tabby.exe" {
         let lower = raw.to_ascii_lowercase();
         if lower.contains("access is denied")
@@ -1988,6 +2008,25 @@ mod tests {
         assert_eq!(parse_price_per_million(None), None);
         assert_eq!(parse_price_per_million(Some("")), None);
         assert_eq!(parse_price_per_million(Some("abc")), None);
+    }
+    #[test]
+    fn humanize_inference_spawn_error_explains_missing_xllm_binary() {
+        let err = std::io::Error::new(std::io::ErrorKind::NotFound, "not found");
+        let msg = humanize_inference_spawn_error("xllm", &err);
+        assert!(msg.contains("xllm"), "got: {}", msg);
+        assert!(msg.to_ascii_lowercase().contains("path"), "got: {}", msg);
+        assert!(
+            msg.to_ascii_lowercase().contains("binary path"),
+            "got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn humanize_inference_spawn_error_falls_back_for_other_errors() {
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let msg = humanize_inference_spawn_error("xllm", &err);
+        assert!(msg.starts_with("xllm: "), "got: {}", msg);
     }
 
     // ── is_korean_friendly ──────────────────────────────────────────

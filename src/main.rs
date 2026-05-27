@@ -2791,6 +2791,32 @@ mod tests {
     }
 
     #[test]
+    fn tabbyapi_port_change_syncs_loopback_provider_url() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_port_input = "5000".into();
+        app.tabby_url_input = "http://localhost:5000".into();
+
+        let _ = app.update(Message::InferencePortChanged("5001".into()));
+
+        assert_eq!(app.inference_port_input, "5001");
+        assert_eq!(app.tabby_url_input, "http://localhost:5001");
+    }
+
+    #[test]
+    fn tabbyapi_port_change_does_not_override_non_loopback_provider_url() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_port_input = "5000".into();
+        app.tabby_url_input = "http://192.168.0.20:5000".into();
+
+        let _ = app.update(Message::InferencePortChanged("5001".into()));
+
+        assert_eq!(app.inference_port_input, "5001");
+        assert_eq!(app.tabby_url_input, "http://192.168.0.20:5000");
+    }
+
+    #[test]
     fn compare_mode_send_requires_registered_providers() {
         let (mut app, _) = App::new();
         app.compare_both = true;

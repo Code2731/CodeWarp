@@ -90,6 +90,37 @@ fn is_loopback_url(url: &str) -> bool {
     lower.contains("localhost") || lower.contains("127.0.0.1") || lower.contains("[::1]")
 }
 
+fn extract_loopback_port(url: &str) -> Option<u16> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let no_scheme = trimmed
+        .strip_prefix("http://")
+        .or_else(|| trimmed.strip_prefix("https://"))
+        .unwrap_or(trimmed);
+    let authority = no_scheme.split('/').next()?.trim();
+    if authority.is_empty() {
+        return None;
+    }
+    if authority.starts_with('[') {
+        let closing = authority.find(']')?;
+        let host = &authority[..=closing];
+        if !host.eq_ignore_ascii_case("[::1]") {
+            return None;
+        }
+        let rest = &authority[closing + 1..];
+        let port = rest.strip_prefix(':')?;
+        return port.parse::<u16>().ok();
+    }
+    let (host, port) = authority.rsplit_once(':')?;
+    if host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" {
+        port.parse::<u16>().ok()
+    } else {
+        None
+    }
+}
+
 fn tabby_connection_error_looks_unreachable(raw: &str, actionable: &str) -> bool {
     let raw_lower = raw.to_ascii_lowercase();
     raw_lower.contains("refused")
@@ -619,7 +650,28 @@ impl App {
                 Task::none()
             }
             Message::InferencePortChanged(v) => {
-                self.inference_port_input = v;
+                let prev_port = self.inference_port_input.trim().parse::<u16>().ok();
+                self.inference_port_input = v.clone();
+                if let Ok(new_port) = v.trim().parse::<u16>() {
+                    if matches!(
+                        self.inference_engine,
+                        InferenceEngine::XLlm
+                            | InferenceEngine::VLlm
+                            | InferenceEngine::LlamaServer
+                            | InferenceEngine::TabbyMl
+                            | InferenceEngine::TabbyApi
+                    ) {
+                        let current_url = self.tabby_url_input.trim();
+                        let current_url_port = extract_loopback_port(current_url);
+                        let should_sync = current_url.is_empty()
+                            || (is_loopback_url(current_url)
+                                && (current_url_port == prev_port || current_url_port.is_none()));
+                        if should_sync {
+                            self.tabby_url_input = format!("http://localhost:{}", new_port);
+                            let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                        }
+                    }
+                }
                 Task::none()
             }
             Message::InferenceBinaryChanged(v) => {

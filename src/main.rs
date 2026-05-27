@@ -1323,6 +1323,7 @@ struct App {
     models: Vec<OpenRouterModel>,
     model_ids: Vec<String>,
     selected_model: Option<String>,
+    selected_model_provider: Option<LlmProvider>,
     compare_both: bool,
     compare_pending: bool,
 
@@ -1821,6 +1822,7 @@ impl App {
             models: Vec::new(),
             model_ids: Vec::new(),
             selected_model: saved_model,
+            selected_model_provider: None,
             compare_both: false,
             compare_pending: false,
             blocks: Vec::new(),
@@ -2934,6 +2936,34 @@ mod tests {
         app.selected_model = Some("local-model".into());
 
         assert!(app.tool_definitions_for_selected_model().is_none());
+    }
+
+    #[test]
+    fn selected_model_with_same_id_uses_explicit_provider_choice() {
+        let (mut app, _) = App::new();
+        app.model_options = vec![or_opt("shared-model"), oai_opt("shared-model", "TabbyAPI")];
+        app.tabby_url_input = "http://localhost:5000".into();
+
+        let _ = app.update(Message::SelectModel(oai_opt("shared-model", "TabbyAPI")));
+        assert_eq!(app.selected_model_provider, Some(LlmProvider::OpenAICompat));
+        assert!(app.tool_definitions_for_selected_model().is_none());
+
+        let _ = app.update(Message::SelectModel(or_opt("shared-model")));
+        assert_eq!(app.selected_model_provider, Some(LlmProvider::OpenRouter));
+        assert!(app.tool_definitions_for_selected_model().is_some());
+    }
+
+    #[test]
+    fn saved_shared_model_prefers_tabby_when_tabby_url_is_set() {
+        let (mut app, _) = App::new();
+        app.selected_model = Some("shared-model".into());
+        app.selected_model_provider = None;
+        app.tabby_url_input = "http://localhost:5000".into();
+        app.model_options = vec![or_opt("shared-model")];
+
+        let _ = app.update(Message::TabbyModelsLoaded(Ok(vec!["shared-model".into()])));
+
+        assert_eq!(app.selected_model_provider, Some(LlmProvider::OpenAICompat));
     }
 
     #[test]

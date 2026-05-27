@@ -697,6 +697,7 @@ impl App {
                         self.models.clear();
                         self.model_ids.clear();
                         self.selected_model = None;
+                        self.selected_model_provider = None;
                         let _ = keystore::clear_selected_model();
                         self.status = "키 삭제됨".into();
                     }
@@ -1168,7 +1169,13 @@ impl App {
                 // 선택된 모델이 Tabby였다면 해제
                 if let Some(sel) = self.selected_model.clone() {
                     if !self.model_options.iter().any(|o| o.id == sel) {
-                        self.selected_model = self.model_options.first().map(|o| o.id.clone());
+                        if let Some(first) = self.model_options.first() {
+                            self.selected_model = Some(first.id.clone());
+                            self.selected_model_provider = Some(first.provider);
+                        } else {
+                            self.selected_model = None;
+                            self.selected_model_provider = None;
+                        }
                         if let Some(id) = &self.selected_model {
                             let _ = keystore::write_selected_model(id);
                         }
@@ -1253,6 +1260,7 @@ impl App {
                                 .unwrap_or(false);
                             if !selected_is_tabby {
                                 self.selected_model = Some(id.clone());
+                                self.selected_model_provider = Some(LlmProvider::OpenAICompat);
                                 let _ = keystore::write_selected_model(&id);
                             }
                         }
@@ -1988,6 +1996,10 @@ impl App {
                         let saved_in_list = self.selected_model_exists_in_options();
                         if !saved_in_list && self.tabby_url_input.trim().is_empty() {
                             self.selected_model = self.model_ids.first().cloned();
+                            self.selected_model_provider = self
+                                .selected_model
+                                .as_ref()
+                                .map(|_| LlmProvider::OpenRouter);
                             if let Some(id) = &self.selected_model {
                                 let _ = keystore::write_selected_model(id);
                             }
@@ -2003,6 +2015,7 @@ impl App {
             }
             Message::SelectModel(opt) => {
                 let _ = keystore::write_selected_model(&opt.id);
+                self.selected_model_provider = Some(opt.provider);
                 self.selected_model = Some(opt.id);
                 Task::none()
             }
@@ -2804,8 +2817,60 @@ impl App {
         opts
     }
 
+    fn sync_selected_model_provider(&mut self) {
+        let Some(selected_id) = self.selected_model.as_deref() else {
+            self.selected_model_provider = None;
+            return;
+        };
+
+        if let Some(provider) = self.selected_model_provider {
+            if self
+                .model_options
+                .iter()
+                .any(|o| o.id == selected_id && o.provider == provider)
+            {
+                return;
+            }
+        }
+
+        let mut matches = self
+            .model_options
+            .iter()
+            .filter(|o| o.id == selected_id)
+            .map(|o| o.provider);
+
+        let Some(first) = matches.next() else {
+            self.selected_model_provider = None;
+            return;
+        };
+
+        let mut has_openrouter = first == LlmProvider::OpenRouter;
+        let mut has_openai_compat = first == LlmProvider::OpenAICompat;
+        for provider in matches {
+            match provider {
+                LlmProvider::OpenRouter => has_openrouter = true,
+                LlmProvider::OpenAICompat => has_openai_compat = true,
+            }
+        }
+
+        self.selected_model_provider = if has_openrouter && has_openai_compat {
+            if self.tabby_url_input.trim().is_empty() {
+                Some(LlmProvider::OpenRouter)
+            } else {
+                Some(LlmProvider::OpenAICompat)
+            }
+        } else if has_openrouter {
+            Some(LlmProvider::OpenRouter)
+        } else if has_openai_compat {
+            Some(LlmProvider::OpenAICompat)
+        } else {
+            None
+        };
+    }
+
     /// 필터/즐겨찾기 변경 시 combo_box::State 재구성.
     fn refresh_model_combo(&mut self) {
+        self.sync_selected_model_provider();
         // favorite 필드를 현재 favorites HashSet과 동기화 (Display에 ★ 반영)
         for opt in &mut self.model_options {
             opt.favorite = self.favorites.contains(&opt.id);
@@ -3217,9 +3282,7 @@ impl App {
             .as_deref()
             .ok_or_else(|| "모델 미선택".to_string())?;
         let provider = self
-            .model_options
-            .iter()
-            .find(|o| o.id == id)
+            .selected_option()
             .map(|o| o.provider)
             .ok_or_else(|| format!("선택된 모델을 찾을 수 없습니다: {}", id))?;
         match provider {
@@ -3255,6 +3318,15 @@ impl App {
 
     fn selected_option(&self) -> Option<&ModelOption> {
         let id = self.selected_model.as_deref()?;
+        if let Some(provider) = self.selected_model_provider {
+            if let Some(opt) = self
+                .model_options
+                .iter()
+                .find(|o| o.id == id && o.provider == provider)
+            {
+                return Some(opt);
+            }
+        }
         self.model_options.iter().find(|o| o.id == id)
     }
 

@@ -261,7 +261,10 @@ fn normalize_non_empty_text(text: String) -> Option<String> {
 
 fn normalize_stream_payload_line(line: &str) -> Option<&str> {
     let trimmed = line.trim();
-    let payload = trimmed.strip_prefix("data:").map(str::trim).unwrap_or(trimmed);
+    let payload = trimmed
+        .strip_prefix("data:")
+        .map(str::trim)
+        .unwrap_or(trimmed);
     if payload.is_empty() {
         None
     } else {

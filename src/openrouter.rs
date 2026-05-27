@@ -259,6 +259,16 @@ fn normalize_non_empty_text(text: String) -> Option<String> {
     }
 }
 
+fn normalize_stream_payload_line(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    let payload = trimmed.strip_prefix("data:").map(str::trim).unwrap_or(trimmed);
+    if payload.is_empty() {
+        None
+    } else {
+        Some(payload)
+    }
+}
+
 fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
     if let Some(delta) = choice.delta.as_ref() {
         if let Some(content) = delta.content.as_ref() {
@@ -703,6 +713,27 @@ mod tests {
         let raw = r#"{"object":"list","data":[]}"#;
         assert!(extract_non_stream_content(raw).is_none());
     }
+
+    #[test]
+    fn normalize_stream_payload_line_accepts_sse_data_prefix() {
+        assert_eq!(
+            normalize_stream_payload_line("data: {\"choices\":[]}"),
+            Some("{\"choices\":[]}")
+        );
+    }
+
+    #[test]
+    fn normalize_stream_payload_line_accepts_jsonl_without_data_prefix() {
+        assert_eq!(
+            normalize_stream_payload_line("{\"choices\":[]}"),
+            Some("{\"choices\":[]}")
+        );
+    }
+
+    #[test]
+    fn normalize_stream_payload_line_ignores_blank_lines() {
+        assert_eq!(normalize_stream_payload_line("   "), None);
+    }
 }
 
 /// OpenAI 호환 `/chat/completions` 스트림.
@@ -784,9 +815,7 @@ pub fn chat_stream(
                 let line = buffer[..idx].trim_end_matches('\r').to_string();
                 buffer.drain(..=idx);
 
-                let Some(payload) = line.strip_prefix("data:") else { continue };
-                let payload = payload.trim();
-                if payload.is_empty() { continue; }
+                let Some(payload) = normalize_stream_payload_line(&line) else { continue };
                 if payload == "[DONE]" {
                     if !emitted_any_token {
                         if let Some(content) = extract_non_stream_content(raw_capture.trim()) {
@@ -862,11 +891,8 @@ pub fn chat_stream(
         if !buffer.trim().is_empty() {
             for line in buffer.lines() {
                 let trimmed = line.trim();
-                let payload = trimmed
-                    .strip_prefix("data:")
-                    .map(str::trim)
-                    .unwrap_or(trimmed);
-                if payload.is_empty() || payload == "[DONE]" {
+                let Some(payload) = normalize_stream_payload_line(trimmed) else { continue };
+                if payload == "[DONE]" {
                     continue;
                 }
                 if let Ok(parsed) = serde_json::from_str::<StreamChunk>(payload) {

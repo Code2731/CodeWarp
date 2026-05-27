@@ -180,7 +180,11 @@ struct FlexibleContentPart {
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
-    content: Option<String>,
+    content: Option<serde_json::Value>,
+    #[serde(default)]
+    value: Option<serde_json::Value>,
+    #[serde(default)]
+    output_text: Option<serde_json::Value>,
 }
 
 impl FlexibleContent {
@@ -214,12 +218,39 @@ impl FlexibleContent {
 
 impl FlexibleContentPart {
     fn into_text(self) -> Option<String> {
-        let text = self.text.or(self.content)?;
-        if text.trim().is_empty() {
-            None
-        } else {
-            Some(text)
+        if let Some(text) = self.text.and_then(normalize_non_empty_text) {
+            return Some(text);
         }
+        if let Some(text) = self.content.as_ref().and_then(value_to_text) {
+            return Some(text);
+        }
+        if let Some(text) = self.value.as_ref().and_then(value_to_text) {
+            return Some(text);
+        }
+        if let Some(text) = self.output_text.as_ref().and_then(value_to_text) {
+            return Some(text);
+        }
+        None
+    }
+
+    fn extract_text_ref(&self) -> Option<String> {
+        if let Some(text) = self
+            .text
+            .as_ref()
+            .and_then(|s| normalize_non_empty_text(s.clone()))
+        {
+            return Some(text);
+        }
+        if let Some(text) = self.content.as_ref().and_then(value_to_text) {
+            return Some(text);
+        }
+        if let Some(text) = self.value.as_ref().and_then(value_to_text) {
+            return Some(text);
+        }
+        if let Some(text) = self.output_text.as_ref().and_then(value_to_text) {
+            return Some(text);
+        }
+        None
     }
 }
 
@@ -359,20 +390,11 @@ fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
                         Some(s.clone())
                     }
                 }
-                FlexibleContent::Part(part) => part
-                    .text
-                    .as_ref()
-                    .or(part.content.as_ref())
-                    .and_then(|s| normalize_non_empty_text(s.clone())),
+                FlexibleContent::Part(part) => part.extract_text_ref(),
                 FlexibleContent::Parts(parts) => {
                     let mut out = String::new();
                     for part in parts {
-                        if let Some(text) = part
-                            .text
-                            .as_ref()
-                            .or(part.content.as_ref())
-                            .and_then(|s| normalize_non_empty_text(s.clone()))
-                        {
+                        if let Some(text) = part.extract_text_ref() {
                             out.push_str(&text);
                         }
                     }
@@ -420,20 +442,11 @@ fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
         .and_then(|m| m.content.as_ref())
         .and_then(|c| match c {
             FlexibleContent::Text(s) => normalize_non_empty_text(s.clone()),
-            FlexibleContent::Part(part) => part
-                .text
-                .as_ref()
-                .or(part.content.as_ref())
-                .and_then(|s| normalize_non_empty_text(s.clone())),
+            FlexibleContent::Part(part) => part.extract_text_ref(),
             FlexibleContent::Parts(parts) => {
                 let mut out = String::new();
                 for part in parts {
-                    if let Some(text) = part
-                        .text
-                        .as_ref()
-                        .or(part.content.as_ref())
-                        .and_then(|s| normalize_non_empty_text(s.clone()))
-                    {
+                    if let Some(text) = part.extract_text_ref() {
                         out.push_str(&text);
                     }
                 }
@@ -773,6 +786,28 @@ mod tests {
         let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
         let token = parsed.choices.iter().find_map(extract_stream_text);
         assert_eq!(token.as_deref(), Some("안녕하세요"));
+    }
+
+    #[test]
+    fn stream_chunk_supports_nested_delta_value_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"delta":{"content":{"value":"hello from delta value"}}}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed.choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("hello from delta value"));
+    }
+
+    #[test]
+    fn stream_chunk_supports_nested_message_value_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"message":{"role":"assistant","content":{"value":"hello from message value"}}}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed.choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("hello from message value"));
     }
 
     #[test]

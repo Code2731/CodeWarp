@@ -543,7 +543,10 @@ fn humanize_inference_spawn_error(program: &str, err: &std::io::Error) -> String
         );
     }
 
-    if program_name == "tabby" || program_name == "tabby.exe" {
+    if matches!(
+        program_name.as_str(),
+        "tabby" | "tabby.exe" | "tabby.cmd" | "tabby.bat"
+    ) {
         let lower = raw.to_ascii_lowercase();
         if lower.contains("access is denied")
             || raw.contains("액세스가 거부")
@@ -551,7 +554,7 @@ fn humanize_inference_spawn_error(program: &str, err: &std::io::Error) -> String
             || raw.contains("연결")
         {
             return format!(
-                "Tabby executable could not be started. The tabby.exe on PATH may not be a runnable TabbyML server CLI, or there may be a permission/alias issue: {}",
+                "Tabby executable could not be started. The tabby/tabby.exe/tabby.cmd/tabby.bat on PATH may not be a runnable TabbyML server CLI, or there may be a permission/alias issue: {}",
                 raw
             );
         }
@@ -2061,6 +2064,18 @@ mod tests {
         let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
         let msg = humanize_inference_spawn_error("xllm", &err);
         assert!(msg.starts_with("xllm: "), "got: {}", msg);
+    }
+
+    #[test]
+    fn humanize_inference_spawn_error_handles_tabby_cmd_alias() {
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Access is denied");
+        let msg = humanize_inference_spawn_error("tabby.cmd", &err);
+        assert!(
+            msg.contains("Tabby executable could not be started"),
+            "got: {}",
+            msg
+        );
+        assert!(msg.contains("tabby.cmd"), "got: {}", msg);
     }
 
     // ── is_korean_friendly ──────────────────────────────────────────

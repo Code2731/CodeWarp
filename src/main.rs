@@ -2976,12 +2976,28 @@ mod tests {
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::TabbyApi;
         app.tabby_url_input = "http://localhost:5000".into();
+        app.inference_port_input = "5000".into();
         app.inference_binary_path = r"C:\TabbyAPI\Start.bat".into();
 
         let msg = app.compose_tabby_connection_error("error sending request: Connection refused");
 
         assert!(msg.contains("TabbyAPI 서버"), "got: {}", msg);
         assert!(msg.contains("로그"), "got: {}", msg);
+        assert!(msg.contains("http://localhost:5000"), "got: {}", msg);
+    }
+
+    #[test]
+    fn tabbyapi_connection_error_detects_runtime_port_mismatch() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.tabby_url_input = "http://localhost:8080".into();
+        app.inference_port_input = "5000".into();
+        app.inference_binary_path = r"C:\TabbyAPI\Start.bat".into();
+
+        let msg = app.compose_tabby_connection_error("operation timed out");
+
+        assert!(msg.contains("Provider URL"), "got: {}", msg);
+        assert!(msg.contains("5000"), "got: {}", msg);
         assert!(msg.contains("http://localhost:5000"), "got: {}", msg);
     }
 

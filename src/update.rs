@@ -608,10 +608,14 @@ impl App {
             }
             Message::TabbyUrlChanged(v) => {
                 self.tabby_url_input = v;
+                self.tabby_connect_retry_left = 0;
+                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
                 Task::none()
             }
             Message::TabbyTokenChanged(v) => {
                 self.tabby_token_input = v;
+                self.tabby_connect_retry_left = 0;
+                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
                 Task::none()
             }
             Message::ToggleTabbyTokenVisible => {
@@ -1059,6 +1063,8 @@ impl App {
                 let _ = keystore::clear_tabby_token();
                 self.tabby_url_input.clear();
                 self.tabby_token_input.clear();
+                self.tabby_connect_retry_left = 0;
+                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
                 self.tabby_status = None;
                 self.status = "Tabby 설정 삭제됨".into();
                 // 모델 리스트에서 Tabby 항목 제거

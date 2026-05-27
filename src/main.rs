@@ -716,12 +716,30 @@ fn has_model_weight_file(dir: &std::path::Path) -> bool {
     false
 }
 
-fn is_downloaded_model_dir(path: &std::path::Path) -> bool {
-    path.is_dir() && has_model_weight_file(path)
+fn is_valid_tabbyapi_model_dir_direct(path: &std::path::Path) -> bool {
+    path.is_dir() && path.join("config.json").is_file() && has_model_weight_file(path)
 }
 
-fn is_valid_tabbyapi_model_dir(path: &std::path::Path) -> bool {
-    path.is_dir() && path.join("config.json").is_file() && has_model_weight_file(path)
+fn resolve_tabbyapi_model_dir(path: &std::path::Path) -> Option<PathBuf> {
+    if is_valid_tabbyapi_model_dir_direct(path) {
+        return Some(path.to_path_buf());
+    }
+
+    let entries = std::fs::read_dir(path).ok()?;
+    let mut candidates: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| is_valid_tabbyapi_model_dir_direct(p))
+        .collect();
+    if candidates.len() == 1 {
+        candidates.pop()
+    } else {
+        None
+    }
+}
+
+fn is_downloaded_model_dir(path: &std::path::Path) -> bool {
+    path.is_dir() && has_model_weight_file(path)
 }
 
 fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
@@ -764,10 +782,17 @@ fn exl2_repo_model_stem(repo_id: &str) -> Option<String> {
 }
 
 fn downloaded_exl2_preset_folder(dir: &str, preset: &Exl2Preset) -> Option<String> {
-    let models: Vec<String> = list_downloaded_models(std::path::Path::new(dir))
-        .into_iter()
-        .filter(|model| is_valid_tabbyapi_model_dir(&downloaded_model_path(dir, model)))
+    let root = resolve_user_path(dir);
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return None;
+    };
+    let mut models: Vec<String> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && resolve_tabbyapi_model_dir(p).is_some())
+        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
         .collect();
+    models.sort_unstable();
     if let Some(exact) = models
         .iter()
         .find(|m| m.eq_ignore_ascii_case(preset.folder_name))
@@ -3166,6 +3191,35 @@ mod tests {
         std::fs::create_dir_all(&model).unwrap();
         std::fs::write(model.join("config.json"), "{}").unwrap();
         std::fs::write(model.join("model.safetensors"), "x").unwrap();
+
+        assert_eq!(
+            downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
+                .as_deref(),
+            Some("Llama-3.2-3B-Instruct-4.0bpw")
+        );
+    }
+
+    #[test]
+    fn resolve_tabbyapi_model_dir_accepts_single_nested_child() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("Qwen2.5-Coder-7B-Instruct-exl2-4.0bpw");
+        let nested = root.join("model");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("config.json"), "{}").unwrap();
+        std::fs::write(nested.join("model.safetensors"), "x").unwrap();
+
+        let resolved = resolve_tabbyapi_model_dir(&root).expect("expected nested model dir");
+        assert_eq!(resolved, nested);
+    }
+
+    #[test]
+    fn downloaded_exl2_preset_folder_accepts_nested_model_layout() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("Llama-3.2-3B-Instruct-4.0bpw");
+        let nested = root.join("weights");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("config.json"), "{}").unwrap();
+        std::fs::write(nested.join("model.safetensors"), "x").unwrap();
 
         assert_eq!(
             downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])

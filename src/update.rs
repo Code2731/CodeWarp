@@ -144,6 +144,10 @@ fn tabbyapi_reject_tabbyml_message() -> String {
         .into()
 }
 
+fn is_tabbyml_cli_launcher_name(name: &str) -> bool {
+    matches!(name, "tabby" | "tabby.exe" | "tabby.cmd" | "tabby.bat")
+}
+
 fn tabbyapi_allowed_launcher_name(name: &str) -> bool {
     matches!(name, "start.bat" | "start.sh" | "main.py")
 }
@@ -159,7 +163,7 @@ fn validate_tabbyapi_launcher_path(path: &str) -> Result<(), String> {
         .and_then(|n| n.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if launcher_name == "tabby.exe" {
+    if is_tabbyml_cli_launcher_name(&launcher_name) {
         return Err(tabbyapi_reject_tabbyml_message());
     }
     if launcher_path.is_dir() {

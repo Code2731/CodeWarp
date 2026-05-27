@@ -3008,6 +3008,21 @@ mod tests {
     }
 
     #[test]
+    fn tabbyapi_start_rejects_tabbyml_cli_without_extension() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_selected_model = r"C:\models\Local-EXL2".into();
+        app.inference_binary_path = r"C:\tools\tabby".into();
+
+        let _ = app.update(Message::StartInference);
+
+        assert!(app.status.contains("TabbyML CLI"), "got: {}", app.status);
+        assert!(app.status.contains("EXL2"), "got: {}", app.status);
+        assert!(app.status.contains("Start.bat"), "got: {}", app.status);
+        assert!(app.inference_pid.is_none());
+    }
+
+    #[test]
     fn tabbyapi_start_rejects_missing_launcher_file_with_explicit_message() {
         let tmp = tempfile::TempDir::new().unwrap();
         let missing = tmp.path().join("Start.bat");

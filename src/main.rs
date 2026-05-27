@@ -3008,6 +3008,43 @@ mod tests {
     }
 
     #[test]
+    fn tabbyapi_start_rejects_missing_launcher_file_with_explicit_message() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let missing = tmp.path().join("Start.bat");
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_binary_path = missing.display().to_string();
+        app.inference_selected_model.clear();
+
+        let _ = app.update(Message::StartInference);
+
+        assert!(
+            app.status.contains("찾을 수 없습니다"),
+            "got: {}",
+            app.status
+        );
+        assert!(app.status.contains("Start.bat"), "got: {}", app.status);
+        assert!(app.inference_pid.is_none());
+    }
+
+    #[test]
+    fn tabbyapi_start_rejects_launcher_directory_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_binary_path = tmp.path().display().to_string();
+        app.inference_selected_model.clear();
+
+        let _ = app.update(Message::StartInference);
+
+        assert!(app.status.contains("폴더입니다"), "got: {}", app.status);
+        assert!(app.status.contains("Start.bat"), "got: {}", app.status);
+        assert!(app.inference_pid.is_none());
+    }
+
+    #[test]
     fn tabbyapi_can_start_with_launcher_without_model_path() {
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::TabbyApi;

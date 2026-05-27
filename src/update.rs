@@ -144,6 +144,45 @@ fn tabbyapi_reject_tabbyml_message() -> String {
         .into()
 }
 
+fn tabbyapi_allowed_launcher_name(name: &str) -> bool {
+    matches!(name, "start.bat" | "start.sh" | "main.py")
+}
+
+fn validate_tabbyapi_launcher_path(path: &str) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(tabbyapi_launcher_required_message());
+    }
+    let launcher_path = std::path::Path::new(trimmed);
+    let launcher_name = launcher_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if launcher_name == "tabby.exe" {
+        return Err(tabbyapi_reject_tabbyml_message());
+    }
+    if launcher_path.is_dir() {
+        return Err(format!(
+            "지정한 TabbyAPI script 경로가 폴더입니다: {}. Start.bat(Windows), start.sh(macOS/Linux), 또는 main.py 파일을 직접 지정해 주세요.",
+            launcher_path.display()
+        ));
+    }
+    if !launcher_path.is_file() {
+        return Err(format!(
+            "지정한 TabbyAPI script 파일을 찾을 수 없습니다: {}. Start.bat(Windows), start.sh(macOS/Linux), 또는 main.py 경로를 다시 지정해 주세요.",
+            launcher_path.display()
+        ));
+    }
+    if !tabbyapi_allowed_launcher_name(&launcher_name) {
+        return Err(format!(
+            "TabbyAPI script 파일명이 올바르지 않습니다: {}. Start.bat(Windows), start.sh(macOS/Linux), 또는 main.py를 지정해 주세요.",
+            launcher_path.display()
+        ));
+    }
+    Ok(())
+}
+
 fn is_tabbyapi_launcher_path(path: &str) -> bool {
     let trimmed = path.trim();
     if trimmed.is_empty() {
@@ -872,19 +911,7 @@ impl App {
                         }
                         if matches!(eng, InferenceEngine::TabbyApi) {
                             let launcher = self.inference_binary_path.trim();
-                            let launcher_name = std::path::Path::new(launcher)
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or(launcher)
-                                .to_ascii_lowercase();
-                            if launcher.is_empty() {
-                                let msg = tabbyapi_launcher_required_message();
-                                self.status = msg.clone();
-                                self.tabby_status = Some(Err(msg));
-                                return Task::none();
-                            }
-                            if launcher_name == "tabby.exe" {
-                                let msg = tabbyapi_reject_tabbyml_message();
+                            if let Err(msg) = validate_tabbyapi_launcher_path(launcher) {
                                 self.status = msg.clone();
                                 self.tabby_status = Some(Err(msg));
                                 return Task::none();

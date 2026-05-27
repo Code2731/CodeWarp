@@ -1,4 +1,4 @@
-﻿// update.rs — App update + 헬퍼 메서드 (main.rs child module)
+// update.rs — App update + 헬퍼 메서드 (main.rs child module)
 use super::*;
 use iced::widget::text_editor;
 use iced::{Subscription, Task};
@@ -263,6 +263,25 @@ fn resolve_binary_from_dir(dir: &std::path::Path, program: &str) -> Option<PathB
         } else {
             None
         }
+    }
+}
+
+fn expected_binary_name(program: &str) -> String {
+    let base = std::path::Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program);
+    #[cfg(windows)]
+    {
+        if std::path::Path::new(base).extension().is_some() {
+            base.to_string()
+        } else {
+            format!("{base}.exe")
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        base.to_string()
     }
 }
 
@@ -955,6 +974,7 @@ impl App {
                 }
 
                 // 바이너리 경로가 명시되어 있으면 PATH 의존 안 하고 절대 경로 사용
+                let program_hint = program.clone();
                 let (final_program, args, work_dir) =
                     self.resolve_runtime_spawn_command(program, args);
                 if matches!(
@@ -962,6 +982,19 @@ impl App {
                     InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer
                 ) && !runtime_command_exists(&final_program)
                 {
+                    let override_path = self.inference_binary_path.trim();
+                    if !override_path.is_empty()
+                        && std::path::Path::new(override_path).is_dir()
+                        && std::path::Path::new(&final_program)
+                            == std::path::Path::new(override_path)
+                    {
+                        let expected = expected_binary_name(&program_hint);
+                        self.status = format!(
+                            "Runtime binary path '{}' is a directory, but '{}' was not found inside it. Select the executable file directly or place '{}' in that folder.",
+                            override_path, expected, expected
+                        );
+                        return Task::none();
+                    }
                     self.status = if matches!(self.inference_engine, InferenceEngine::XLlm) {
                         "xLLM binary was not found on this machine. Set Runtime > binary path to a host xllm executable, or use Engine=Custom and run xLLM through Docker.".into()
                     } else {

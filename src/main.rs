@@ -2746,6 +2746,35 @@ mod tests {
     }
 
     #[test]
+    fn start_inference_local_engine_reports_missing_binary_inside_directory_override() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let model = tmp.path().join("Qwen--7B");
+        let runtime_dir = tmp.path().join("runtime-dir");
+        std::fs::create_dir_all(&model).unwrap();
+        std::fs::create_dir_all(&runtime_dir).unwrap();
+        std::fs::write(model.join("config.json"), "{}").unwrap();
+        std::fs::write(model.join("model.safetensors"), "x").unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::XLlm;
+        app.model_dir_input = tmp.path().display().to_string();
+        app.inference_selected_model = "Qwen--7B".into();
+        app.inference_binary_path = runtime_dir.display().to_string();
+
+        let _ = app.update(Message::StartInference);
+
+        #[cfg(windows)]
+        let expected_binary = "xllm.exe";
+        #[cfg(not(windows))]
+        let expected_binary = "xllm";
+
+        assert!(app.status.contains("is a directory"), "got: {}", app.status);
+        assert!(app.status.contains(expected_binary), "got: {}", app.status);
+        assert!(app.status.contains(&runtime_dir.display().to_string()));
+        assert!(app.inference_pid.is_none());
+    }
+
+    #[test]
     fn can_start_inference_tabby_requires_model_id() {
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::TabbyMl;

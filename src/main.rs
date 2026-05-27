@@ -3199,6 +3199,29 @@ mod tests {
     }
 
     #[test]
+    fn non_tabby_runtime_directory_override_resolves_engine_binary() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let runtime_dir = tmp.path().join("runtime");
+        std::fs::create_dir_all(&runtime_dir).unwrap();
+        #[cfg(windows)]
+        let bin = runtime_dir.join("xllm.exe");
+        #[cfg(not(windows))]
+        let bin = runtime_dir.join("xllm");
+        std::fs::write(&bin, "bin").unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::XLlm;
+        app.inference_binary_path = runtime_dir.display().to_string();
+
+        let (program, args, work_dir) =
+            app.resolve_runtime_spawn_command("xllm".into(), vec!["serve".into()]);
+
+        assert_eq!(program, bin.display().to_string());
+        assert_eq!(args, vec!["serve".to_string()]);
+        assert!(work_dir.is_none());
+    }
+
+    #[test]
     fn tabbyapi_config_points_to_selected_model_and_local_port() {
         let runtime = tempfile::TempDir::new().unwrap();
         let launcher = runtime.path().join("start.bat");

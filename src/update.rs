@@ -236,6 +236,36 @@ fn runtime_command_exists(command: &str) -> bool {
     }
 }
 
+fn resolve_binary_from_dir(dir: &std::path::Path, program: &str) -> Option<PathBuf> {
+    let base = std::path::Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program);
+
+    #[cfg(windows)]
+    {
+        let has_ext = std::path::Path::new(base).extension().is_some();
+        let mut candidates = vec![dir.join(base)];
+        if !has_ext {
+            candidates.push(dir.join(format!("{base}.exe")));
+            candidates.push(dir.join(format!("{base}.cmd")));
+            candidates.push(dir.join(format!("{base}.bat")));
+            candidates.push(dir.join(format!("{base}.com")));
+        }
+        return candidates.into_iter().find(|c| c.is_file());
+    }
+
+    #[cfg(not(windows))]
+    {
+        let candidate = dir.join(base);
+        if candidate.is_file() {
+            Some(candidate)
+        } else {
+            None
+        }
+    }
+}
+
 pub(crate) fn default_tabbyapi_runtime_dir() -> PathBuf {
     if let Ok(path) = std::env::var("CODEWARP_TABBYAPI_RUNTIME_DIR") {
         let trimmed = path.trim();
@@ -444,6 +474,10 @@ impl App {
                 program
             } else if is_tabbyapi_launcher_path(override_path) {
                 program
+            } else if std::path::Path::new(override_path).is_dir() {
+                resolve_binary_from_dir(std::path::Path::new(override_path), &program)
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| override_path.to_string())
             } else {
                 override_path.to_string()
             };

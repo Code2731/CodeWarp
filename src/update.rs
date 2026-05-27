@@ -386,10 +386,7 @@ impl App {
             InferenceEngine::Custom => !self.inference_command_input.trim().is_empty(),
             InferenceEngine::Ollama => true,
             InferenceEngine::TabbyMl => !self.inference_selected_model.trim().is_empty(),
-            InferenceEngine::TabbyApi => {
-                !self.inference_selected_model.trim().is_empty()
-                    && !self.inference_binary_path.trim().is_empty()
-            }
+            InferenceEngine::TabbyApi => !self.inference_binary_path.trim().is_empty(),
             InferenceEngine::XLlm | InferenceEngine::VLlm | InferenceEngine::LlamaServer => {
                 self.has_selected_local_model_available()
             }
@@ -731,7 +728,7 @@ impl App {
                     }
                     eng => {
                         let model = self.inference_selected_model.trim().to_string();
-                        if model.is_empty() {
+                        if model.is_empty() && !matches!(eng, InferenceEngine::TabbyApi) {
                             let msg = if matches!(eng, InferenceEngine::TabbyApi) {
                                 "TabbyAPI 모델 경로가 비어 있습니다. Models 탭에서 다운로드된 모델을 선택하거나 Runtime의 EXL2 model folder path에 모델 폴더를 지정해 주세요."
                             } else {
@@ -763,26 +760,31 @@ impl App {
                                 self.tabby_status = Some(Err(msg));
                                 return Task::none();
                             }
-                            let model_path = std::path::Path::new(&model);
-                            let Some(resolved_model_path) = resolve_tabbyapi_model_dir(model_path)
-                            else {
-                                let msg = format!(
-                                    "TabbyAPI 모델 폴더가 완전하지 않습니다: {} (config.json과 실제 모델 가중치 파일이 필요합니다.)",
-                                    model_path.display()
-                                );
-                                self.status = msg.clone();
-                                self.tabby_status = Some(Err(msg));
-                                return Task::none();
-                            };
-                            let resolved_model = resolved_model_path.display().to_string();
-                            if let Err(e) =
-                                write_tabbyapi_config_for_launcher(launcher, &resolved_model, port)
-                            {
-                                self.status = e.clone();
-                                self.tabby_status = Some(Err(e));
-                                return Task::none();
+                            if !model.is_empty() {
+                                let model_path = std::path::Path::new(&model);
+                                let Some(resolved_model_path) =
+                                    resolve_tabbyapi_model_dir(model_path)
+                                else {
+                                    let msg = format!(
+                                        "TabbyAPI 모델 폴더가 완전하지 않습니다: {} (config.json과 실제 모델 가중치 파일이 필요합니다.)",
+                                        model_path.display()
+                                    );
+                                    self.status = msg.clone();
+                                    self.tabby_status = Some(Err(msg));
+                                    return Task::none();
+                                };
+                                let resolved_model = resolved_model_path.display().to_string();
+                                if let Err(e) = write_tabbyapi_config_for_launcher(
+                                    launcher,
+                                    &resolved_model,
+                                    port,
+                                ) {
+                                    self.status = e.clone();
+                                    self.tabby_status = Some(Err(e));
+                                    return Task::none();
+                                }
+                                self.inference_selected_model = resolved_model;
                             }
-                            self.inference_selected_model = resolved_model;
                         }
                         if matches!(eng, InferenceEngine::TabbyMl)
                             && std::path::Path::new(&model).exists()

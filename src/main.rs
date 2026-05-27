@@ -2946,18 +2946,14 @@ mod tests {
     }
 
     #[test]
-    fn tabbyapi_start_button_can_show_missing_model_error() {
+    fn tabbyapi_can_start_with_launcher_without_model_path() {
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::TabbyApi;
         app.inference_selected_model.clear();
         app.inference_binary_path = r"C:\TabbyAPI\Start.bat".into();
 
+        assert!(app.can_start_inference());
         assert!(app.can_attempt_start_inference());
-
-        let _ = app.update(Message::StartInference);
-
-        assert!(app.status.contains("모델 경로"), "got: {}", app.status);
-        assert!(app.inference_pid.is_none());
     }
 
     #[test]

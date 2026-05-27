@@ -3008,6 +3008,62 @@ mod tests {
     }
 
     #[test]
+    fn tabbyapi_binary_picker_rejects_tabby_cli_cmd() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let picked = tmp.path().join("tabby.cmd");
+        std::fs::write(&picked, "@echo off").unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_binary_path.clear();
+
+        let _ = app.update(Message::InferenceBinaryPicked(Some(picked)));
+
+        assert!(app.status.contains("TabbyML CLI"), "got: {}", app.status);
+        assert!(app.inference_binary_path.is_empty());
+    }
+
+    #[test]
+    fn tabbyapi_binary_picker_rejects_wrong_script_name() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let picked = tmp.path().join("launcher.bat");
+        std::fs::write(&picked, "@echo off").unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_binary_path.clear();
+
+        let _ = app.update(Message::InferenceBinaryPicked(Some(picked)));
+
+        assert!(
+            app.status.contains("파일명이 올바르지"),
+            "got: {}",
+            app.status
+        );
+        assert!(app.inference_binary_path.is_empty());
+    }
+
+    #[test]
+    fn tabbyapi_binary_picker_accepts_start_bat() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let picked = tmp.path().join("Start.bat");
+        std::fs::write(&picked, "@echo off").unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_binary_path.clear();
+
+        let _ = app.update(Message::InferenceBinaryPicked(Some(picked.clone())));
+
+        assert_eq!(app.inference_binary_path, picked.display().to_string());
+        assert!(
+            app.status.contains("script 경로 저장됨"),
+            "got: {}",
+            app.status
+        );
+    }
+
+    #[test]
     fn tabbyapi_start_rejects_tabbyml_cli_without_extension() {
         let (mut app, _) = App::new();
         app.inference_engine = InferenceEngine::TabbyApi;

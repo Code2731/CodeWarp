@@ -795,13 +795,7 @@ impl App {
                 if let Some(path) = maybe {
                     let s = path.display().to_string();
                     if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
-                        let launcher_name = path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or_default()
-                            .to_ascii_lowercase();
-                        if launcher_name == "tabby.exe" {
-                            let msg = tabbyapi_reject_tabbyml_message();
+                        if let Err(msg) = validate_tabbyapi_launcher_path(&s) {
                             self.status = msg.clone();
                             self.tabby_status = Some(Err(msg));
                             return Task::none();

@@ -1310,6 +1310,8 @@ struct App {
     inference_log: std::collections::VecDeque<String>,
     /// 마지막 ping 결과 — None=미시도, Some(Ok)=정상, Some(Err)=실패 사유.
     tabby_status: Option<Result<String, String>>,
+    /// Runtime 시작 직후 연결 테스트 자동 재시도 남은 횟수.
+    tabby_connect_retry_left: u8,
     status: String,
     busy: bool,
 
@@ -1806,6 +1808,7 @@ impl App {
             inference_pid: None,
             inference_log: std::collections::VecDeque::new(),
             tabby_status: None,
+            tabby_connect_retry_left: 0,
             status,
             busy: false,
             models: Vec::new(),
@@ -3025,6 +3028,42 @@ mod tests {
         assert!(msg.contains("Provider URL"), "got: {}", msg);
         assert!(msg.contains("5000"), "got: {}", msg);
         assert!(msg.contains("http://localhost:5000"), "got: {}", msg);
+    }
+
+    #[test]
+    fn tabby_models_loaded_error_decrements_auto_retry_while_runtime_alive() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_pid = Some(42);
+        app.inference_binary_path = r"C:\TabbyAPI\Start.bat".into();
+        app.tabby_url_input = "http://localhost:5000".into();
+        app.tabby_connect_retry_left = 2;
+
+        let _ = app.update(Message::TabbyModelsLoaded(
+            Err("operation timed out".into()),
+        ));
+
+        assert_eq!(app.tabby_connect_retry_left, 1);
+        assert!(app.status.contains("자동 재시도"), "got: {}", app.status);
+        app.inference_pid = None;
+    }
+
+    #[test]
+    fn tabby_models_loaded_error_without_retry_budget_reports_failure() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_pid = Some(42);
+        app.inference_binary_path = r"C:\TabbyAPI\Start.bat".into();
+        app.tabby_url_input = "http://localhost:5000".into();
+        app.tabby_connect_retry_left = 0;
+
+        let _ = app.update(Message::TabbyModelsLoaded(
+            Err("operation timed out".into()),
+        ));
+
+        assert_eq!(app.tabby_connect_retry_left, 0);
+        assert!(app.status.contains("연결 실패"), "got: {}", app.status);
+        app.inference_pid = None;
     }
 
     #[cfg(windows)]

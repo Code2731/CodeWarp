@@ -8,6 +8,8 @@ const HF_HINT_MARKERS: [&str; 3] = [
     "fallback lookup failed:",
     "requested revision:",
 ];
+const TABBY_CONNECT_RETRIES_AFTER_START: u8 = 3;
+const TABBY_CONNECT_RETRY_DELAY_SECS: u64 = 4;
 
 fn starts_with_ascii_case_insensitive(text: &str, prefix: &str) -> bool {
     text.to_ascii_lowercase()
@@ -933,6 +935,7 @@ impl App {
                     return Task::none();
                 }
                 self.inference_log.clear();
+                self.tabby_connect_retry_left = TABBY_CONNECT_RETRIES_AFTER_START;
                 self.status = format!("실행 시작: {} {}", final_program, args.join(" "));
                 Task::batch(vec![
                     Task::run(
@@ -953,6 +956,7 @@ impl App {
                     self.status = format!("inference 서버 중지 (pid {})", pid);
                     self.push_inference_log(format!("[stopped] pid {}", pid));
                 }
+                self.tabby_connect_retry_left = 0;
                 Task::none()
             }
             Message::InferenceLogLine(line) => {
@@ -981,6 +985,7 @@ impl App {
                     .cloned();
                 self.push_inference_log(format!("[exited] code {}", code));
                 self.inference_pid = None;
+                self.tabby_connect_retry_left = 0;
                 self.status = format!("inference 서버 종료 (exit {})", code);
                 // endpoint 끊김 표시
                 self.tabby_status = Some(Err("inference 서버 종료됨".into()));
@@ -1085,6 +1090,7 @@ impl App {
                     .retain(|o| o.provider != LlmProvider::OpenAICompat);
                 match r {
                     Ok(ids) => {
+                        self.tabby_connect_retry_left = 0;
                         let label = if ids.is_empty() {
                             "ok (모델 없음)".to_string()
                         } else {
@@ -1129,6 +1135,31 @@ impl App {
                     }
                     Err(e) => {
                         let actionable = self.compose_tabby_connection_error(&e);
+                        let should_retry = self.inference_pid.is_some()
+                            && self.tabby_connect_retry_left > 0
+                            && tabby_connection_error_looks_unreachable(
+                                &e,
+                                &tabby::humanize_error(&e),
+                            );
+                        if should_retry {
+                            self.tabby_connect_retry_left -= 1;
+                            let remain = self.tabby_connect_retry_left;
+                            self.status = format!(
+                                "Tabby 연결 재시도 예정: {} ({}초 뒤 자동 재시도, 남은 {}회)",
+                                actionable, TABBY_CONNECT_RETRY_DELAY_SECS, remain
+                            );
+                            self.tabby_status = Some(Err(actionable));
+                            return Task::perform(
+                                async {
+                                    tokio::time::sleep(std::time::Duration::from_secs(
+                                        TABBY_CONNECT_RETRY_DELAY_SECS,
+                                    ))
+                                    .await;
+                                },
+                                |_| Message::FetchTabbyModels,
+                            );
+                        }
+                        self.tabby_connect_retry_left = 0;
                         self.status = format!("Tabby 연결 실패: {}", actionable);
                         self.tabby_status = Some(Err(actionable));
                     }

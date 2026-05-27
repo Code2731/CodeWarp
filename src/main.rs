@@ -3024,6 +3024,23 @@ mod tests {
     }
 
     #[test]
+    fn tabbyapi_binary_picker_rejects_tabby_cli_bat() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let picked = tmp.path().join("tabby.bat");
+        std::fs::write(&picked, "@echo off").unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_binary_path.clear();
+
+        let _ = app.update(Message::InferenceBinaryPicked(Some(picked)));
+
+        assert!(app.status.contains("TabbyML CLI"), "got: {}", app.status);
+        assert!(app.status.contains("tabby.bat"), "got: {}", app.status);
+        assert!(app.inference_binary_path.is_empty());
+    }
+
+    #[test]
     fn tabbyapi_binary_picker_rejects_wrong_script_name() {
         let tmp = tempfile::TempDir::new().unwrap();
         let picked = tmp.path().join("launcher.bat");
@@ -3089,6 +3106,21 @@ mod tests {
 
         assert!(app.status.contains("TabbyML CLI"), "got: {}", app.status);
         assert!(app.status.contains("tabby.cmd"), "got: {}", app.status);
+        assert!(app.status.contains("Start.bat"), "got: {}", app.status);
+        assert!(app.inference_pid.is_none());
+    }
+
+    #[test]
+    fn tabbyapi_start_rejects_tabbyml_cli_bat_launcher() {
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_selected_model = r"C:\models\Local-EXL2".into();
+        app.inference_binary_path = r"C:\tools\tabby.bat".into();
+
+        let _ = app.update(Message::StartInference);
+
+        assert!(app.status.contains("TabbyML CLI"), "got: {}", app.status);
+        assert!(app.status.contains("tabby.bat"), "got: {}", app.status);
         assert!(app.status.contains("Start.bat"), "got: {}", app.status);
         assert!(app.inference_pid.is_none());
     }

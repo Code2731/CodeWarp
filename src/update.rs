@@ -140,7 +140,7 @@ fn tabbyapi_launcher_required_message() -> String {
 }
 
 fn tabbyapi_reject_tabbyml_message() -> String {
-    "지정한 tabby/tabby.exe/tabby.cmd(tabby CLI)는 TabbyML CLI라 EXL2 모델을 실행할 수 없습니다. TabbyAPI 프로젝트의 Start.bat, start.sh, 또는 main.py를 지정해 주세요."
+    "지정한 tabby/tabby.exe/tabby.cmd/tabby.bat(tabby CLI)는 TabbyML CLI라 EXL2 모델을 실행할 수 없습니다. TabbyAPI 프로젝트의 Start.bat, start.sh, 또는 main.py를 지정해 주세요."
         .into()
 }
 

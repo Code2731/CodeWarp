@@ -135,12 +135,12 @@ fn tabby_connection_error_looks_unreachable(raw: &str, actionable: &str) -> bool
 }
 
 fn tabbyapi_launcher_required_message() -> String {
-    "TabbyAPI 런타임 스크립트가 비어 있습니다. EXL2 모델 폴더만으로는 서버가 실행되지 않습니다. TabbyAPI 프로젝트의 Start.bat(Windows), start.sh(macOS/Linux), 또는 main.py 경로를 지정해 주세요. 해당 파일이 없다면 TabbyAPI를 먼저 설치해야 합니다."
+    "TabbyAPI 런타임 스크립트가 비어 있습니다. EXL2 모델 폴더만으로는 서버가 실행되지 않습니다. TabbyAPI 프로젝트의 Start.bat/Start.cmd(Windows), start.sh(macOS/Linux), 또는 main.py 경로를 지정해 주세요. 해당 파일이 없다면 TabbyAPI를 먼저 설치해야 합니다."
         .into()
 }
 
 fn tabbyapi_reject_tabbyml_message() -> String {
-    "지정한 tabby/tabby.exe/tabby.cmd/tabby.bat(tabby CLI)는 TabbyML CLI라 EXL2 모델을 실행할 수 없습니다. TabbyAPI 프로젝트의 Start.bat, start.sh, 또는 main.py를 지정해 주세요."
+    "지정한 tabby/tabby.exe/tabby.cmd/tabby.bat(tabby CLI)는 TabbyML CLI라 EXL2 모델을 실행할 수 없습니다. TabbyAPI 프로젝트의 Start.bat/Start.cmd, start.sh, 또는 main.py를 지정해 주세요."
         .into()
 }
 
@@ -149,7 +149,7 @@ fn is_tabbyml_cli_launcher_name(name: &str) -> bool {
 }
 
 fn tabbyapi_allowed_launcher_name(name: &str) -> bool {
-    matches!(name, "start.bat" | "start.sh" | "main.py")
+    matches!(name, "start.bat" | "start.cmd" | "start.sh" | "main.py")
 }
 
 fn validate_tabbyapi_launcher_path(path: &str) -> Result<(), String> {
@@ -168,19 +168,19 @@ fn validate_tabbyapi_launcher_path(path: &str) -> Result<(), String> {
     }
     if launcher_path.is_dir() {
         return Err(format!(
-            "지정한 TabbyAPI script 경로가 폴더입니다: {}. Start.bat(Windows), start.sh(macOS/Linux), 또는 main.py 파일을 직접 지정해 주세요.",
+            "지정한 TabbyAPI script 경로가 폴더입니다: {}. Start.bat/Start.cmd(Windows), start.sh(macOS/Linux), 또는 main.py 파일을 직접 지정해 주세요.",
             launcher_path.display()
         ));
     }
     if !launcher_path.is_file() {
         return Err(format!(
-            "지정한 TabbyAPI script 파일을 찾을 수 없습니다: {}. Start.bat(Windows), start.sh(macOS/Linux), 또는 main.py 경로를 다시 지정해 주세요.",
+            "지정한 TabbyAPI script 파일을 찾을 수 없습니다: {}. Start.bat/Start.cmd(Windows), start.sh(macOS/Linux), 또는 main.py 경로를 다시 지정해 주세요.",
             launcher_path.display()
         ));
     }
     if !tabbyapi_allowed_launcher_name(&launcher_name) {
         return Err(format!(
-            "TabbyAPI script 파일명이 올바르지 않습니다: {}. Start.bat(Windows), start.sh(macOS/Linux), 또는 main.py를 지정해 주세요.",
+            "TabbyAPI script 파일명이 올바르지 않습니다: {}. Start.bat/Start.cmd(Windows), start.sh(macOS/Linux), 또는 main.py를 지정해 주세요.",
             launcher_path.display()
         ));
     }
@@ -350,6 +350,8 @@ fn tabbyapi_launcher_candidates(runtime_dir: &std::path::Path) -> Vec<PathBuf> {
         vec![
             runtime_dir.join("start.bat"),
             runtime_dir.join("Start.bat"),
+            runtime_dir.join("start.cmd"),
+            runtime_dir.join("Start.cmd"),
             runtime_dir.join("main.py"),
         ]
     }

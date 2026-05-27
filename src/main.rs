@@ -2828,6 +2828,23 @@ mod tests {
         assert!(app.can_attempt_start_inference());
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn find_tabbyapi_launcher_accepts_start_cmd() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let launcher = tmp.path().join("Start.cmd");
+        std::fs::write(&launcher, "@echo off").unwrap();
+
+        let found = update::find_tabbyapi_launcher(tmp.path());
+        let found = found.expect("expected launcher");
+        assert_eq!(found.parent(), Some(tmp.path()));
+        let name = found
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        assert!(name.eq_ignore_ascii_case("start.cmd"), "got: {}", name);
+    }
+
     #[test]
     fn selecting_tabbyapi_runtime_sets_provider_endpoint() {
         let (mut app, _) = App::new();
@@ -3079,6 +3096,27 @@ mod tests {
     fn tabbyapi_binary_picker_accepts_start_bat() {
         let tmp = tempfile::TempDir::new().unwrap();
         let picked = tmp.path().join("Start.bat");
+        std::fs::write(&picked, "@echo off").unwrap();
+
+        let (mut app, _) = App::new();
+        app.inference_engine = InferenceEngine::TabbyApi;
+        app.inference_binary_path.clear();
+
+        let _ = app.update(Message::InferenceBinaryPicked(Some(picked.clone())));
+
+        assert_eq!(app.inference_binary_path, picked.display().to_string());
+        assert!(
+            app.status.contains("script 경로 저장됨"),
+            "got: {}",
+            app.status
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn tabbyapi_binary_picker_accepts_start_cmd() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let picked = tmp.path().join("Start.cmd");
         std::fs::write(&picked, "@echo off").unwrap();
 
         let (mut app, _) = App::new();

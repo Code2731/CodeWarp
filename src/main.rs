@@ -1312,6 +1312,8 @@ struct App {
     tabby_status: Option<Result<String, String>>,
     /// Runtime 시작 직후 연결 테스트 자동 재시도 남은 횟수.
     tabby_connect_retry_left: u8,
+    /// 자동 재시도 요청 무효화를 위한 세대 카운터.
+    tabby_retry_generation: u64,
     status: String,
     busy: bool,
 
@@ -1685,6 +1687,7 @@ enum Message {
     TabbySaved(Result<(), String>),
     ClearTabby,
     FetchTabbyModels,
+    FetchTabbyModelsRetry(u64),
     TabbyModelsLoaded(Result<Vec<String>, String>),
     // ── HF 모델 매니저 ───
     HfTokenChanged(String),
@@ -1809,6 +1812,7 @@ impl App {
             inference_log: std::collections::VecDeque::new(),
             tabby_status: None,
             tabby_connect_retry_left: 0,
+            tabby_retry_generation: 0,
             status,
             busy: false,
             models: Vec::new(),
@@ -3064,6 +3068,29 @@ mod tests {
         assert_eq!(app.tabby_connect_retry_left, 0);
         assert!(app.status.contains("연결 실패"), "got: {}", app.status);
         app.inference_pid = None;
+    }
+
+    #[test]
+    fn stale_tabby_retry_message_is_ignored() {
+        let (mut app, _) = App::new();
+        app.tabby_retry_generation = 10;
+        app.status = "keep".into();
+
+        let _ = app.update(Message::FetchTabbyModelsRetry(9));
+
+        assert_eq!(app.status, "keep");
+        assert_eq!(app.tabby_retry_generation, 10);
+    }
+
+    #[test]
+    fn manual_tabby_fetch_bumps_retry_generation() {
+        let (mut app, _) = App::new();
+        app.tabby_retry_generation = 7;
+        app.tabby_url_input = "http://localhost:5000".into();
+
+        let _ = app.update(Message::FetchTabbyModels);
+
+        assert_eq!(app.tabby_retry_generation, 8);
     }
 
     #[cfg(windows)]

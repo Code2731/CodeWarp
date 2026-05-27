@@ -1,4 +1,4 @@
-// update.rs — App update + 헬퍼 메서드 (main.rs child module)
+﻿// update.rs — App update + 헬퍼 메서드 (main.rs child module)
 use super::*;
 use iced::widget::text_editor;
 use iced::{Subscription, Task};
@@ -936,6 +936,7 @@ impl App {
                 }
                 self.inference_log.clear();
                 self.tabby_connect_retry_left = TABBY_CONNECT_RETRIES_AFTER_START;
+                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
                 self.status = format!("실행 시작: {} {}", final_program, args.join(" "));
                 Task::batch(vec![
                     Task::run(
@@ -946,7 +947,10 @@ impl App {
                         async {
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         },
-                        |_| Message::FetchTabbyModels,
+                        {
+                            let generation = self.tabby_retry_generation;
+                            move |_| Message::FetchTabbyModelsRetry(generation)
+                        },
                     ),
                 ])
             }
@@ -957,6 +961,7 @@ impl App {
                     self.push_inference_log(format!("[stopped] pid {}", pid));
                 }
                 self.tabby_connect_retry_left = 0;
+                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
                 Task::none()
             }
             Message::InferenceLogLine(line) => {
@@ -986,6 +991,7 @@ impl App {
                 self.push_inference_log(format!("[exited] code {}", code));
                 self.inference_pid = None;
                 self.tabby_connect_retry_left = 0;
+                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
                 self.status = format!("inference 서버 종료 (exit {})", code);
                 // endpoint 끊김 표시
                 self.tabby_status = Some(Err("inference 서버 종료됨".into()));
@@ -1071,6 +1077,7 @@ impl App {
                 Task::none()
             }
             Message::FetchTabbyModels => {
+                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
                 let url = self.tabby_url_input.clone();
                 if url.trim().is_empty() {
                     self.tabby_status = Some(Err("URL 비어있음".into()));
@@ -1082,6 +1089,23 @@ impl App {
                     Some(self.tabby_token_input.clone())
                 };
                 self.status = "Tabby 모델 가져오는 중…".into();
+                Task::perform(tabby::list_models(url, token), Message::TabbyModelsLoaded)
+            }
+            Message::FetchTabbyModelsRetry(generation) => {
+                if generation != self.tabby_retry_generation {
+                    return Task::none();
+                }
+                let url = self.tabby_url_input.clone();
+                if url.trim().is_empty() {
+                    self.tabby_status = Some(Err("URL 비어있음".into()));
+                    return Task::none();
+                }
+                let token = if self.tabby_token_input.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.tabby_token_input.clone())
+                };
+                self.status = "Tabby 모델 재시도 중…".into();
                 Task::perform(tabby::list_models(url, token), Message::TabbyModelsLoaded)
             }
             Message::TabbyModelsLoaded(r) => {
@@ -1156,7 +1180,10 @@ impl App {
                                     ))
                                     .await;
                                 },
-                                |_| Message::FetchTabbyModels,
+                                {
+                                    let generation = self.tabby_retry_generation;
+                                    move |_| Message::FetchTabbyModelsRetry(generation)
+                                },
                             );
                         }
                         self.tabby_connect_retry_left = 0;

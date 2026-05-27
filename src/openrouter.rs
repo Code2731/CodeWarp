@@ -224,31 +224,107 @@ impl FlexibleContentPart {
 }
 
 fn extract_non_stream_content(raw: &str) -> Option<String> {
-    let parsed: NonStreamChatResponse = serde_json::from_str(raw).ok()?;
-    parsed.choices.into_iter().find_map(|choice| {
-        choice
-            .message
-            .and_then(|message| {
-                message
-                    .content
-                    .and_then(FlexibleContent::into_text)
-                    .or_else(|| {
-                        message
-                            .reasoning_content
-                            .and_then(normalize_non_empty_text)
-                            .or_else(|| message.reasoning.and_then(normalize_non_empty_text))
-                    })
-            })
-            .or_else(|| {
-                choice.text.and_then(|text| {
-                    if text.trim().is_empty() {
-                        None
-                    } else {
-                        Some(text)
-                    }
+    if let Ok(parsed) = serde_json::from_str::<NonStreamChatResponse>(raw) {
+        let from_struct = parsed.choices.into_iter().find_map(|choice| {
+            choice
+                .message
+                .and_then(|message| {
+                    message
+                        .content
+                        .and_then(FlexibleContent::into_text)
+                        .or_else(|| {
+                            message
+                                .reasoning_content
+                                .and_then(normalize_non_empty_text)
+                                .or_else(|| message.reasoning.and_then(normalize_non_empty_text))
+                        })
                 })
-            })
-    })
+                .or_else(|| {
+                    choice.text.and_then(|text| {
+                        if text.trim().is_empty() {
+                            None
+                        } else {
+                            Some(text)
+                        }
+                    })
+                })
+        });
+        if from_struct.is_some() {
+            return from_struct;
+        }
+    }
+
+    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    extract_non_stream_content_from_value(&value)
+}
+
+fn value_to_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => normalize_non_empty_text(s.clone()),
+        serde_json::Value::Array(items) => {
+            let mut out = String::new();
+            for item in items {
+                if let Some(text) = value_to_text(item) {
+                    out.push_str(&text);
+                }
+            }
+            normalize_non_empty_text(out)
+        }
+        serde_json::Value::Object(map) => {
+            for key in ["text", "content", "value", "output_text"] {
+                if let Some(v) = map.get(key).and_then(value_to_text) {
+                    return Some(v);
+                }
+            }
+            if let Some(v) = map.get("parts").and_then(value_to_text) {
+                return Some(v);
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn extract_non_stream_content_from_value(value: &serde_json::Value) -> Option<String> {
+    if let Some(choices) = value.get("choices").and_then(|v| v.as_array()) {
+        for choice in choices {
+            if let Some(msg) = choice.get("message") {
+                if let Some(content) = msg.get("content").and_then(value_to_text) {
+                    return Some(content);
+                }
+                if let Some(reasoning) = msg.get("reasoning_content").and_then(value_to_text) {
+                    return Some(reasoning);
+                }
+                if let Some(reasoning) = msg.get("reasoning").and_then(value_to_text) {
+                    return Some(reasoning);
+                }
+            }
+            if let Some(delta) = choice.get("delta") {
+                if let Some(content) = delta.get("content").and_then(value_to_text) {
+                    return Some(content);
+                }
+                if let Some(text) = delta.get("text").and_then(value_to_text) {
+                    return Some(text);
+                }
+                if let Some(reasoning) = delta.get("reasoning_content").and_then(value_to_text) {
+                    return Some(reasoning);
+                }
+                if let Some(reasoning) = delta.get("reasoning").and_then(value_to_text) {
+                    return Some(reasoning);
+                }
+            }
+            if let Some(text) = choice.get("text").and_then(value_to_text) {
+                return Some(text);
+            }
+        }
+    }
+
+    for key in ["output_text", "response", "text"] {
+        if let Some(v) = value.get(key).and_then(value_to_text) {
+            return Some(v);
+        }
+    }
+    None
 }
 
 fn normalize_non_empty_text(text: String) -> Option<String> {
@@ -708,6 +784,27 @@ mod tests {
         assert_eq!(
             extract_non_stream_content(raw).as_deref(),
             Some("hello from reasoning")
+        );
+    }
+
+    #[test]
+    fn extract_non_stream_content_reads_nested_message_value_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"message":{"role":"assistant","content":{"value":"hello from nested value"}}}]
+        }"#;
+        assert_eq!(
+            extract_non_stream_content(raw).as_deref(),
+            Some("hello from nested value")
+        );
+    }
+
+    #[test]
+    fn extract_non_stream_content_reads_top_level_response_shape() {
+        let raw = r#"{"response":"hello from top-level response"}"#;
+        assert_eq!(
+            extract_non_stream_content(raw).as_deref(),
+            Some("hello from top-level response")
         );
     }
 

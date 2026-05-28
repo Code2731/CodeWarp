@@ -432,6 +432,21 @@ fn parse_stream_chunks(payload: &str) -> Vec<StreamChunk> {
     if let Ok(parsed) = serde_json::from_str::<StreamChunk>(trimmed) {
         return vec![parsed];
     }
+    // Accept concatenated JSON objects (with or without whitespace/newlines).
+    let mut stream_items = Vec::new();
+    let mut had_error = false;
+    for item in serde_json::Deserializer::from_str(trimmed).into_iter::<StreamChunk>() {
+        match item {
+            Ok(chunk) => stream_items.push(chunk),
+            Err(_) => {
+                had_error = true;
+                break;
+            }
+        }
+    }
+    if !stream_items.is_empty() && !had_error {
+        return stream_items;
+    }
     let mut out = Vec::new();
     for line in trimmed.lines() {
         let line = line.trim();
@@ -1039,6 +1054,21 @@ mod tests {
             .filter_map(|c| c.choices.iter().find_map(extract_stream_text))
             .collect();
         assert_eq!(tokens, vec!["hello ".to_string(), "world".to_string()]);
+    }
+
+    #[test]
+    fn parse_stream_chunks_accepts_concatenated_json_payload() {
+        let payload = concat!(
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"one "}}]}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"two"}}]}"#
+        );
+        let chunks = parse_stream_chunks(payload);
+        assert_eq!(chunks.len(), 2);
+        let tokens: Vec<String> = chunks
+            .iter()
+            .filter_map(|c| c.choices.iter().find_map(extract_stream_text))
+            .collect();
+        assert_eq!(tokens, vec!["one ".to_string(), "two".to_string()]);
     }
 }
 

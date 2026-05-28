@@ -436,11 +436,8 @@ fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
     {
         return Some(text);
     }
-    choice
-        .message
-        .as_ref()
-        .and_then(|m| m.content.as_ref())
-        .and_then(|c| match c {
+    if let Some(message) = choice.message.as_ref() {
+        if let Some(content) = message.content.as_ref().and_then(|c| match c {
             FlexibleContent::Text(s) => normalize_non_empty_text(s.clone()),
             FlexibleContent::Part(part) => part.extract_text_ref(),
             FlexibleContent::Parts(parts) => {
@@ -452,7 +449,25 @@ fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
                 }
                 normalize_non_empty_text(out)
             }
-        })
+        }) {
+            return Some(content);
+        }
+        if let Some(text) = message
+            .reasoning_content
+            .as_ref()
+            .and_then(|s| normalize_non_empty_text(s.clone()))
+        {
+            return Some(text);
+        }
+        if let Some(text) = message
+            .reasoning
+            .as_ref()
+            .and_then(|s| normalize_non_empty_text(s.clone()))
+        {
+            return Some(text);
+        }
+    }
+    None
 }
 
 fn http_client() -> Result<reqwest::Client, String> {
@@ -808,6 +823,28 @@ mod tests {
         let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
         let token = parsed.choices.iter().find_map(extract_stream_text);
         assert_eq!(token.as_deref(), Some("hello from message value"));
+    }
+
+    #[test]
+    fn stream_chunk_supports_message_reasoning_content_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"message":{"role":"assistant","reasoning_content":"reasoning from message"}}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed.choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("reasoning from message"));
+    }
+
+    #[test]
+    fn stream_chunk_supports_message_reasoning_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"message":{"role":"assistant","reasoning":"reasoning plain"}}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed.choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("reasoning plain"));
     }
 
     #[test]

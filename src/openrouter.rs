@@ -379,6 +379,44 @@ fn normalize_stream_payload_line(line: &str) -> Option<&str> {
     }
 }
 
+fn flush_pending_sse_data(pending_data: &mut String) -> Option<String> {
+    if pending_data.is_empty() {
+        return None;
+    }
+    let payload = pending_data.trim_end_matches('\n').to_string();
+    pending_data.clear();
+    if payload.trim().is_empty() {
+        None
+    } else {
+        Some(payload)
+    }
+}
+
+fn consume_sse_line(line: &str, pending_data: &mut String) -> Option<String> {
+    let trimmed = line.trim_end_matches('\r').trim();
+    if trimmed.is_empty() {
+        return flush_pending_sse_data(pending_data);
+    }
+    if let Some(data_part) = trimmed.strip_prefix("data:") {
+        pending_data.push_str(data_part.trim_start());
+        pending_data.push('\n');
+        return None;
+    }
+    // `data` without colon is valid SSE field with empty value.
+    if trimmed == "data" {
+        pending_data.push('\n');
+        return None;
+    }
+    if trimmed.starts_with(':') {
+        return None;
+    }
+    // If we are currently consuming an SSE event, ignore non-data fields.
+    if !pending_data.is_empty() {
+        return None;
+    }
+    normalize_stream_payload_line(trimmed).map(str::to_string)
+}
+
 fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
     if let Some(delta) = choice.delta.as_ref() {
         if let Some(content) = delta.content.as_ref() {
@@ -906,6 +944,37 @@ mod tests {
     fn normalize_stream_payload_line_ignores_blank_lines() {
         assert_eq!(normalize_stream_payload_line("   "), None);
     }
+
+    #[test]
+    fn consume_sse_line_joins_multiline_data_until_blank_line() {
+        let mut pending = String::new();
+        assert_eq!(consume_sse_line("data: {\"a\":1}", &mut pending), None);
+        assert_eq!(consume_sse_line("data: {\"b\":2}", &mut pending), None);
+        assert_eq!(
+            consume_sse_line("", &mut pending).as_deref(),
+            Some("{\"a\":1}\n{\"b\":2}")
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn consume_sse_line_ignores_non_data_fields_inside_event() {
+        let mut pending = String::new();
+        assert_eq!(consume_sse_line("data: hello", &mut pending), None);
+        assert_eq!(consume_sse_line("event: message", &mut pending), None);
+        assert_eq!(consume_sse_line(":keepalive", &mut pending), None);
+        assert_eq!(consume_sse_line("", &mut pending).as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn consume_sse_line_passes_jsonl_when_not_in_event() {
+        let mut pending = String::new();
+        assert_eq!(
+            consume_sse_line("{\"choices\":[]}", &mut pending).as_deref(),
+            Some("{\"choices\":[]}")
+        );
+        assert!(pending.is_empty());
+    }
 }
 
 /// OpenAI 호환 `/chat/completions` 스트림.
@@ -966,6 +1035,7 @@ pub fn chat_stream(
         let mut last_finish_reason: Option<String> = None;
         let mut generation_id: Option<String> = None;
         let mut emitted_any_token = false;
+        let mut pending_sse_data = String::new();
 
         while let Some(item) = stream.next().await {
             let chunk = match item {
@@ -987,8 +1057,8 @@ pub fn chat_stream(
                 let line = buffer[..idx].trim_end_matches('\r').to_string();
                 buffer.drain(..=idx);
 
-                let Some(payload) = normalize_stream_payload_line(&line) else { continue };
-                if payload == "[DONE]" {
+                let Some(payload) = consume_sse_line(&line, &mut pending_sse_data) else { continue };
+                if payload.trim() == "[DONE]" {
                     if !emitted_any_token {
                         if let Some(content) = extract_non_stream_content(raw_capture.trim()) {
                             if !content.is_empty() {
@@ -1025,7 +1095,7 @@ pub fn chat_stream(
                     };
                     return;
                 }
-                if let Ok(parsed) = serde_json::from_str::<StreamChunk>(payload) {
+                if let Ok(parsed) = serde_json::from_str::<StreamChunk>(&payload) {
                     if generation_id.is_none() {
                         if let Some(id) = parsed.id {
                             generation_id = Some(id);
@@ -1062,12 +1132,32 @@ pub fn chat_stream(
 
         if !buffer.trim().is_empty() {
             for line in buffer.lines() {
-                let trimmed = line.trim();
-                let Some(payload) = normalize_stream_payload_line(trimmed) else { continue };
-                if payload == "[DONE]" {
+                let Some(payload) = consume_sse_line(line, &mut pending_sse_data) else { continue };
+                if payload.trim() == "[DONE]" {
                     continue;
                 }
-                if let Ok(parsed) = serde_json::from_str::<StreamChunk>(payload) {
+                if let Ok(parsed) = serde_json::from_str::<StreamChunk>(&payload) {
+                    if generation_id.is_none() {
+                        if let Some(id) = parsed.id {
+                            generation_id = Some(id);
+                        }
+                    }
+                    for choice in parsed.choices {
+                        if let Some(reason) = choice.finish_reason.as_ref() {
+                            last_finish_reason = Some(reason.clone());
+                        }
+                        if let Some(text) = extract_stream_text(&choice) {
+                            emitted_any_token = true;
+                            yield ChatEvent::Token(text);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(payload) = flush_pending_sse_data(&mut pending_sse_data) {
+            if payload.trim() != "[DONE]" {
+                if let Ok(parsed) = serde_json::from_str::<StreamChunk>(&payload) {
                     if generation_id.is_none() {
                         if let Some(id) = parsed.id {
                             generation_id = Some(id);

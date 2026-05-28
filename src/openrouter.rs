@@ -417,6 +417,27 @@ fn consume_sse_line(line: &str, pending_data: &mut String) -> Option<String> {
     normalize_stream_payload_line(trimmed).map(str::to_string)
 }
 
+fn parse_stream_chunks(payload: &str) -> Vec<StreamChunk> {
+    let trimmed = payload.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    if let Ok(parsed) = serde_json::from_str::<StreamChunk>(trimmed) {
+        return vec![parsed];
+    }
+    let mut out = Vec::new();
+    for line in trimmed.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(parsed) = serde_json::from_str::<StreamChunk>(line) {
+            out.push(parsed);
+        }
+    }
+    out
+}
+
 fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
     if let Some(delta) = choice.delta.as_ref() {
         if let Some(content) = delta.content.as_ref() {
@@ -975,6 +996,31 @@ mod tests {
         );
         assert!(pending.is_empty());
     }
+
+    #[test]
+    fn parse_stream_chunks_accepts_single_json_payload() {
+        let payload = r#"{"id":"x","choices":[{"index":0,"delta":{"content":"hi"}}]}"#;
+        let chunks = parse_stream_chunks(payload);
+        assert_eq!(chunks.len(), 1);
+        let token = chunks[0].choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn parse_stream_chunks_accepts_multiline_json_payload() {
+        let payload = concat!(
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"hello "}}]}"#,
+            "\n",
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"world"}}]}"#
+        );
+        let chunks = parse_stream_chunks(payload);
+        assert_eq!(chunks.len(), 2);
+        let tokens: Vec<String> = chunks
+            .iter()
+            .filter_map(|c| c.choices.iter().find_map(extract_stream_text))
+            .collect();
+        assert_eq!(tokens, vec!["hello ".to_string(), "world".to_string()]);
+    }
 }
 
 /// OpenAI 호환 `/chat/completions` 스트림.
@@ -1095,7 +1141,7 @@ pub fn chat_stream(
                     };
                     return;
                 }
-                if let Ok(parsed) = serde_json::from_str::<StreamChunk>(&payload) {
+                for parsed in parse_stream_chunks(&payload) {
                     if generation_id.is_none() {
                         if let Some(id) = parsed.id {
                             generation_id = Some(id);
@@ -1136,7 +1182,7 @@ pub fn chat_stream(
                 if payload.trim() == "[DONE]" {
                     continue;
                 }
-                if let Ok(parsed) = serde_json::from_str::<StreamChunk>(&payload) {
+                for parsed in parse_stream_chunks(&payload) {
                     if generation_id.is_none() {
                         if let Some(id) = parsed.id {
                             generation_id = Some(id);
@@ -1157,7 +1203,7 @@ pub fn chat_stream(
 
         if let Some(payload) = flush_pending_sse_data(&mut pending_sse_data) {
             if payload.trim() != "[DONE]" {
-                if let Ok(parsed) = serde_json::from_str::<StreamChunk>(&payload) {
+                for parsed in parse_stream_chunks(&payload) {
                     if generation_id.is_none() {
                         if let Some(id) = parsed.id {
                             generation_id = Some(id);

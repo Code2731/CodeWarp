@@ -460,6 +460,17 @@ fn parse_stream_chunks(payload: &str) -> Vec<StreamChunk> {
     out
 }
 
+fn extract_plain_stream_token(payload: &str) -> Option<String> {
+    let text = payload.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if text.starts_with('{') || text.starts_with('[') {
+        return None;
+    }
+    Some(text.to_string())
+}
+
 fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
     if let Some(delta) = choice.delta.as_ref() {
         if let Some(content) = delta.content.as_ref() {
@@ -1070,6 +1081,23 @@ mod tests {
             .collect();
         assert_eq!(tokens, vec!["one ".to_string(), "two".to_string()]);
     }
+
+    #[test]
+    fn extract_plain_stream_token_accepts_raw_text() {
+        assert_eq!(
+            extract_plain_stream_token(" hello from sse ").as_deref(),
+            Some("hello from sse")
+        );
+    }
+
+    #[test]
+    fn extract_plain_stream_token_rejects_json_like_payload() {
+        assert_eq!(
+            extract_plain_stream_token(r#"{"choices":[]}"#).as_deref(),
+            None
+        );
+        assert_eq!(extract_plain_stream_token("[DONE]").as_deref(), None);
+    }
 }
 
 /// OpenAI 호환 `/chat/completions` 스트림.
@@ -1190,7 +1218,15 @@ pub fn chat_stream(
                     };
                     return;
                 }
-                for parsed in parse_stream_chunks(&payload) {
+                let parsed_chunks = parse_stream_chunks(&payload);
+                if parsed_chunks.is_empty() {
+                    if let Some(text) = extract_plain_stream_token(&payload) {
+                        emitted_any_token = true;
+                        yield ChatEvent::Token(text);
+                    }
+                    continue;
+                }
+                for parsed in parsed_chunks {
                     if generation_id.is_none() {
                         if let Some(id) = parsed.id {
                             generation_id = Some(id);
@@ -1231,7 +1267,15 @@ pub fn chat_stream(
                 if payload.trim() == "[DONE]" {
                     continue;
                 }
-                for parsed in parse_stream_chunks(&payload) {
+                let parsed_chunks = parse_stream_chunks(&payload);
+                if parsed_chunks.is_empty() {
+                    if let Some(text) = extract_plain_stream_token(&payload) {
+                        emitted_any_token = true;
+                        yield ChatEvent::Token(text);
+                    }
+                    continue;
+                }
+                for parsed in parsed_chunks {
                     if generation_id.is_none() {
                         if let Some(id) = parsed.id {
                             generation_id = Some(id);
@@ -1252,7 +1296,14 @@ pub fn chat_stream(
 
         if let Some(payload) = flush_pending_sse_data(&mut pending_sse_data) {
             if payload.trim() != "[DONE]" {
-                for parsed in parse_stream_chunks(&payload) {
+                let parsed_chunks = parse_stream_chunks(&payload);
+                if parsed_chunks.is_empty() {
+                    if let Some(text) = extract_plain_stream_token(&payload) {
+                        emitted_any_token = true;
+                        yield ChatEvent::Token(text);
+                    }
+                }
+                for parsed in parsed_chunks {
                     if generation_id.is_none() {
                         if let Some(id) = parsed.id {
                             generation_id = Some(id);

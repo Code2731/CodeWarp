@@ -1378,9 +1378,11 @@ impl App {
             }
             Message::SelectDownloadedModel(folder_name) => {
                 let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
-                let Some(resolved_model_path) = resolve_tabbyapi_model_dir(&model_path) else {
+                let Some(resolved_model_path) =
+                    resolve_tabbyapi_model_dir_for_folder(&model_path, &folder_name)
+                else {
                     let msg = format!(
-                        "TabbyAPI 모델 폴더가 완전하지 않습니다: {} (config.json과 실제 모델 가중치 파일이 필요합니다.)",
+                        "TabbyAPI 모델 폴더를 확정할 수 없습니다: {} (config.json+가중치 파일이 필요하며, 여러 하위 모델이면 폴더 이름에 bpw 힌트가 포함되어야 합니다.)",
                         model_path.display()
                     );
                     self.status = msg.clone();
@@ -1497,10 +1499,11 @@ impl App {
                             let folder_name = dl.folder_name.clone();
                             let model_path =
                                 downloaded_model_path(&self.model_dir_input, &folder_name);
-                            let Some(resolved_model_path) = resolve_tabbyapi_model_dir(&model_path)
+                            let Some(resolved_model_path) =
+                                resolve_tabbyapi_model_dir_for_folder(&model_path, &folder_name)
                             else {
                                 self.status = format!(
-                                    "다운로드 결과가 TabbyAPI 모델로 완전하지 않습니다: {} (config.json과 실제 모델 가중치 파일이 필요합니다.)",
+                                    "다운로드 결과에서 TabbyAPI 모델 경로를 확정할 수 없습니다: {} (config.json+가중치 파일이 필요하며, 여러 하위 모델이면 폴더 이름에 bpw 힌트가 필요합니다.)",
                                     model_path.display()
                                 );
                                 self.tabby_status = Some(Err(self.status.clone()));

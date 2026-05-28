@@ -723,22 +723,90 @@ fn is_valid_tabbyapi_model_dir_direct(path: &std::path::Path) -> bool {
     path.is_dir() && path.join("config.json").is_file() && has_model_weight_file(path)
 }
 
-fn resolve_tabbyapi_model_dir(path: &std::path::Path) -> Option<PathBuf> {
+fn tabbyapi_direct_model_children(path: &std::path::Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| is_valid_tabbyapi_model_dir_direct(p))
+        .collect()
+}
+
+fn extract_bpw_hint(text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    for (idx, _) in lower.match_indices("bpw") {
+        let mut start = idx;
+        while start > 0 {
+            let ch = bytes[start - 1];
+            if ch.is_ascii_digit() || ch == b'.' {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+        if start < idx {
+            return Some(lower[start..idx + 3].to_string());
+        }
+    }
+    None
+}
+
+fn resolve_tabbyapi_model_dir_with_hint(
+    path: &std::path::Path,
+    hint: Option<&str>,
+) -> Option<PathBuf> {
     if is_valid_tabbyapi_model_dir_direct(path) {
         return Some(path.to_path_buf());
     }
 
-    let entries = std::fs::read_dir(path).ok()?;
-    let mut candidates: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| is_valid_tabbyapi_model_dir_direct(p))
-        .collect();
-    if candidates.len() == 1 {
-        candidates.pop()
-    } else {
-        None
+    let candidates = tabbyapi_direct_model_children(path);
+    if candidates.is_empty() {
+        return None;
     }
+    if candidates.len() == 1 {
+        return candidates.into_iter().next();
+    }
+
+    if let Some(bpw_hint) = hint.and_then(extract_bpw_hint) {
+        let mut matched: Vec<PathBuf> = candidates
+            .iter()
+            .filter_map(|candidate| {
+                let name = candidate.file_name().and_then(|n| n.to_str())?;
+                if name.to_ascii_lowercase().contains(&bpw_hint) {
+                    Some(candidate.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if matched.len() == 1 {
+            return matched.pop();
+        }
+    }
+
+    None
+}
+
+fn resolve_tabbyapi_model_dir(path: &std::path::Path) -> Option<PathBuf> {
+    resolve_tabbyapi_model_dir_with_hint(path, None)
+}
+
+fn has_tabbyapi_model_dir(path: &std::path::Path) -> bool {
+    is_valid_tabbyapi_model_dir_direct(path) || !tabbyapi_direct_model_children(path).is_empty()
+}
+
+fn resolve_tabbyapi_model_dir_for_folder(
+    path: &std::path::Path,
+    folder_name: &str,
+) -> Option<PathBuf> {
+    resolve_tabbyapi_model_dir_with_hint(path, Some(folder_name))
+}
+
+fn is_downloaded_exl2_root(path: &std::path::Path) -> bool {
+    has_tabbyapi_model_dir(path)
 }
 
 fn is_downloaded_model_dir(path: &std::path::Path) -> bool {
@@ -792,7 +860,7 @@ fn downloaded_exl2_preset_folder(dir: &str, preset: &Exl2Preset) -> Option<Strin
     let mut models: Vec<String> = entries
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.is_dir() && resolve_tabbyapi_model_dir(p).is_some())
+        .filter(|p| p.is_dir() && is_downloaded_exl2_root(p))
         .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
         .collect();
     models.sort_unstable();
@@ -3649,6 +3717,24 @@ mod tests {
     }
 
     #[test]
+    fn resolve_tabbyapi_model_dir_for_folder_prefers_matching_bpw_child() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("Llama-3.2-3B-Instruct-3.5bpw");
+        let child_35 = root.join("3.5bpw");
+        let child_40 = root.join("4.0bpw");
+        std::fs::create_dir_all(&child_35).unwrap();
+        std::fs::create_dir_all(&child_40).unwrap();
+        std::fs::write(child_35.join("config.json"), "{}").unwrap();
+        std::fs::write(child_35.join("model.safetensors"), "x").unwrap();
+        std::fs::write(child_40.join("config.json"), "{}").unwrap();
+        std::fs::write(child_40.join("model.safetensors"), "x").unwrap();
+
+        let resolved = resolve_tabbyapi_model_dir_for_folder(&root, "Llama-3.2-3B-Instruct-3.5bpw")
+            .expect("expected bpw-matched nested model dir");
+        assert_eq!(resolved, child_35);
+    }
+
+    #[test]
     fn downloaded_exl2_preset_folder_accepts_nested_model_layout() {
         let tmp = tempfile::TempDir::new().unwrap();
         let root = tmp.path().join("Llama-3.2-3B-Instruct-4.0bpw");
@@ -3661,6 +3747,26 @@ mod tests {
             downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
                 .as_deref(),
             Some("Llama-3.2-3B-Instruct-4.0bpw")
+        );
+    }
+
+    #[test]
+    fn downloaded_exl2_preset_folder_accepts_root_with_multiple_nested_variants() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("Llama-3.2-3B-Instruct-3.5bpw");
+        let child_35 = root.join("3.5bpw");
+        let child_40 = root.join("4.0bpw");
+        std::fs::create_dir_all(&child_35).unwrap();
+        std::fs::create_dir_all(&child_40).unwrap();
+        std::fs::write(child_35.join("config.json"), "{}").unwrap();
+        std::fs::write(child_35.join("model.safetensors"), "x").unwrap();
+        std::fs::write(child_40.join("config.json"), "{}").unwrap();
+        std::fs::write(child_40.join("model.safetensors"), "x").unwrap();
+
+        assert_eq!(
+            downloaded_exl2_preset_folder(&tmp.path().display().to_string(), &EXL2_PRESETS[1])
+                .as_deref(),
+            Some("Llama-3.2-3B-Instruct-3.5bpw")
         );
     }
 

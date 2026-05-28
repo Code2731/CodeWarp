@@ -410,8 +410,15 @@ fn consume_sse_line(line: &str, pending_data: &mut String) -> Option<String> {
     if trimmed.starts_with(':') {
         return None;
     }
-    // If we are currently consuming an SSE event, ignore non-data fields.
     if !pending_data.is_empty() {
+        // Some non-conforming servers emit raw JSON lines inside an SSE event.
+        // Preserve them so we can still parse streamed chunks.
+        if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            pending_data.push_str(trimmed);
+            pending_data.push('\n');
+            return None;
+        }
+        // If we are currently consuming an SSE event, ignore non-data fields.
         return None;
     }
     normalize_stream_payload_line(trimmed).map(str::to_string)
@@ -993,6 +1000,18 @@ mod tests {
         assert_eq!(
             consume_sse_line("{\"choices\":[]}", &mut pending).as_deref(),
             Some("{\"choices\":[]}")
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn consume_sse_line_keeps_raw_json_lines_inside_event() {
+        let mut pending = String::new();
+        assert_eq!(consume_sse_line("data: {\"a\":1}", &mut pending), None);
+        assert_eq!(consume_sse_line("{\"b\":2}", &mut pending), None);
+        assert_eq!(
+            consume_sse_line("", &mut pending).as_deref(),
+            Some("{\"a\":1}\n{\"b\":2}")
         );
         assert!(pending.is_empty());
     }

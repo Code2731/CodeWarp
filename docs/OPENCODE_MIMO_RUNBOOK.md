@@ -36,7 +36,17 @@ MiMo is a custom provider registered through OpenCode compatibility. It is the p
 
 ## Verification
 
-### Run the full helper
+### Static routing drift check
+
+Run the offline routing checker to confirm the active OmO routing config matches `docs/OPENCODE_ROUTING.md`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\verify-opencode-routing.ps1"
+```
+
+This checker does not require `MIMO_API_KEY`, does not call providers, and does not run network requests. It compares the exact route-name set, primary model, primary variant presence/value, fallback model count/value, and fallback variant presence/value. It must not print `auth.json`, API keys, tokens, or full global config contents.
+
+### Run the runtime smoke helper
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\verify-opencode-mimo.ps1"
@@ -107,19 +117,21 @@ This is an accepted custom-provider compatibility warning. MiMo is known through
 - [ ] No secrets, API keys, or auth file contents appear in any file.
 - [ ] No global OpenCode config files were modified or committed.
 - [ ] The runbook does not duplicate the full routing matrix from `docs/OPENCODE_ROUTING.md`.
-- [ ] The helper script verifies MiMo Pro, MiMo base, GPT-5.5, Spark, and doctor.
+- [ ] The routing drift helper verifies the active routing config against `docs/OPENCODE_ROUTING.md` without provider calls.
+- [ ] The runtime helper verifies MiMo Pro, MiMo base, GPT-5.5, Spark, and doctor.
 
 ## Commit Guidance
 
-One documentation-only commit:
+When changing routing verification, keep script and documentation changes in one focused commit:
 
 ```
-Add OpenCode MiMo operational runbook
+Add OpenCode routing drift checker
 ```
 
-The commit must contain only `docs/OPENCODE_MIMO_RUNBOOK.md`. No script changes, no config changes, no other files.
+The commit may contain `scripts/verify-opencode-routing.ps1`, sanitized routing fixtures, and related docs. It must not contain global config files, secrets, auth files, or unrelated app changes.
 
 ## Related Docs
 
 - `docs/OPENCODE_ROUTING.md` -- routing matrix and policy principles
-- `scripts/verify-opencode-mimo.ps1` -- verification helper script
+- `scripts/verify-opencode-routing.ps1` -- offline routing drift checker
+- `scripts/verify-opencode-mimo.ps1` -- runtime model-stack smoke helper

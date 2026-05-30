@@ -47,7 +47,21 @@ MiMo is the primary model for the `writing` route only. It must not be promoted 
 
 ## Verification
 
-Run the repo helper script to confirm MiMo and OpenCode models resolve correctly:
+Run the offline drift checker first to confirm the active OmO routing config matches this policy matrix:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\verify-opencode-routing.ps1"
+```
+
+For fixture-based validation without touching global config, override the config path:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\verify-opencode-routing.ps1" -ConfigPath "tests\fixtures\opencode-routing\valid-oh-my-openagent.json"
+```
+
+The drift checker is static and offline. It compares the exact route-name set, primary model, primary variant presence/value, fallback model count/value, and fallback variant presence/value. It does not call `opencode`, `bunx`, provider APIs, or network services, and it must not print `auth.json`, keys, tokens, or full global config contents.
+
+Run the runtime smoke helper separately to confirm MiMo and OpenCode models resolve correctly:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\verify-opencode-mimo.ps1"
@@ -57,4 +71,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\verify-opencode-mim
 
 - [ ] No secrets or auth paths were changed.
 - [ ] No global config files were committed to this repo.
-- [ ] Helper script verifies MiMo Pro, MiMo base, GPT-5.5, and Codex Spark resolve.
+- [ ] Offline routing drift checker confirms the active OmO config matches this matrix.
+- [ ] Runtime helper script verifies MiMo Pro, MiMo base, GPT-5.5, and Codex Spark resolve.

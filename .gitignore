@@ -12,3 +12,6 @@ Thumbs.db
 
 # Claude Code local settings (per-user)
 .claude/
+
+# OhMyOpenCode/OpenAgent local state
+.omo/

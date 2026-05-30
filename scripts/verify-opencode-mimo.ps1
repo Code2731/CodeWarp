@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$ProModel = "mimo/mimo-v2.5-pro",
-    [string]$BaseModel = "mimo/mimo-v2.5"
+    [string]$BaseModel = "mimo/mimo-v2.5",
+    [string]$Gpt55Model = "openai/gpt-5.5",
+    [string]$SparkModel = "openai/gpt-5.3-codex-spark"
 )
 
 Set-StrictMode -Version Latest
@@ -76,8 +78,16 @@ Invoke-Step -Name "opencode run $BaseModel" -Action {
     Test-OpenCodeModel -Model $BaseModel -Expected "mimo-base-ok" -Title "mimo-base-smoke"
 }
 
+Invoke-Step -Name "opencode run $Gpt55Model" -Action {
+    Test-OpenCodeModel -Model $Gpt55Model -Expected "gpt55-ok" -Title "gpt55-smoke"
+}
+
+Invoke-Step -Name "opencode run $SparkModel" -Action {
+    Test-OpenCodeModel -Model $SparkModel -Expected "spark-ok" -Title "spark-smoke"
+}
+
 Invoke-Step -Name "oh-my-openagent doctor" -Action {
     Invoke-External -Command "bunx" -Args @("oh-my-openagent", "doctor")
 }
 
-Write-Host "OpenCode MiMo verification completed."
+Write-Host "OpenCode model stack verification completed."

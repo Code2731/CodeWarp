@@ -1355,6 +1355,56 @@ struct PendingToolCall {
 
 const MAX_TOOL_ROUNDS: u32 = 5;
 
+struct UiState {
+    show_settings: bool,
+    settings_tab: SettingsTab,
+    show_command_palette: bool,
+    command_palette_input: String,
+    pending_delete_session: Option<u64>,
+    expanded_confirm_idx: Option<usize>,
+}
+
+impl UiState {
+    fn new(show_settings: bool) -> Self {
+        Self {
+            show_settings,
+            settings_tab: SettingsTab::Provider,
+            show_command_palette: false,
+            command_palette_input: String::new(),
+            pending_delete_session: None,
+            expanded_confirm_idx: None,
+        }
+    }
+}
+
+struct ModelFilterState {
+    filter_coding: bool,
+    filter_reasoning: bool,
+    filter_general: bool,
+    filter_favorites_only: bool,
+    favorites: HashSet<String>,
+    sort_mode: SortMode,
+}
+
+impl ModelFilterState {
+    fn new() -> Self {
+        Self {
+            filter_coding: true,
+            filter_reasoning: true,
+            filter_general: true,
+            filter_favorites_only: false,
+            favorites: session::read_favorites().into_iter().collect(),
+            sort_mode: SortMode::Default,
+        }
+    }
+}
+
+#[derive(Default)]
+struct McpInputState {
+    name_input: String,
+    command_input: String,
+}
+
 struct App {
     has_key: bool,
     key_input: String,
@@ -1402,10 +1452,7 @@ struct App {
     /// 진행 중인 chat_stream task의 abort handle (Stop 버튼이 사용).
     abort_handle: Option<task::Handle>,
     hf_abort_handle: Option<task::Handle>,
-    /// 사이드바에서 삭제 확인 대기 중인 세션 ID (✕ → ✓/✗ 토글).
-    pending_delete_session: Option<u64>,
-    /// 인라인 confirm에서 펼친 카드 인덱스 (한 번에 하나만 펼침).
-    expanded_confirm_idx: Option<usize>,
+    ui: UiState,
 
     // ── HF 모델 매니저 ────────────────────────────────────────────
     hf_token_input: String,
@@ -1417,9 +1464,6 @@ struct App {
     hf_folder_name: Option<String>,
     /// 진행 중 다운로드 — 없으면 None
     hf_dl: Option<HfDownload>,
-
-    show_settings: bool,
-    settings_tab: SettingsTab,
 
     stream_id: ScrollId,
     follow_bottom: bool,
@@ -1446,14 +1490,7 @@ struct App {
     pending_write_calls: Vec<PendingToolCall>,
     show_write_confirm: bool,
 
-    /// 모델 카테고리/즐겨찾기 필터
-    filter_coding: bool,
-    filter_reasoning: bool,
-    filter_general: bool,
-    filter_favorites_only: bool,
-    favorites: HashSet<String>,
-    /// 모델 리스트 정렬 모드
-    sort_mode: SortMode,
+    model_filter: ModelFilterState,
     /// 에이전트 모드: Plan(읽기 전용 도구만) ↔ Build(파일/명령 실행 포함)
     agent_mode: AgentMode,
 
@@ -1468,10 +1505,6 @@ struct App {
     usage: session::UsageStore,
     /// 마지막 응답의 비용 (status bar 표시용)
     last_response_cost: Option<f64>,
-
-    /// 명령 팔레트 (Ctrl+K)
-    show_command_palette: bool,
-    command_palette_input: String,
 
     // ── 파일 컨텍스트 첨부 ────────────────────────────────────
     /// 전송 대기 중인 첨부 파일 (경로, 내용). Send 후 초기화.
@@ -1500,9 +1533,7 @@ struct App {
     mcp_servers: Vec<mcp::McpServer>,
     /// 로드된 MCP tool 목록 (모든 서버 합산)
     mcp_tools: Vec<mcp::McpTool>,
-    /// Settings MCP 섹션 입력 상태
-    mcp_name_input: String,
-    mcp_command_input: String,
+    mcp_input: McpInputState,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1899,8 +1930,7 @@ impl App {
             streaming_block_id: None,
             abort_handle: None,
             hf_abort_handle: None,
-            pending_delete_session: None,
-            expanded_confirm_idx: None,
+            ui: UiState::new(!has_key),
             hf_token_input: keystore::read_hf_token().unwrap_or_default(),
             show_hf_token: false,
             model_dir_input: keystore::read_model_dir().unwrap_or_else(|| {
@@ -1912,8 +1942,6 @@ impl App {
             hf_revision: None,
             hf_folder_name: None,
             hf_dl: None,
-            show_settings: !has_key,
-            settings_tab: SettingsTab::Provider,
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
             current_scroll_y: 0.0,
@@ -1930,12 +1958,7 @@ impl App {
             account: None,
             pending_write_calls: Vec::new(),
             show_write_confirm: false,
-            filter_coding: true,
-            filter_reasoning: true,
-            filter_general: true,
-            filter_favorites_only: false,
-            favorites: session::read_favorites().into_iter().collect(),
-            sort_mode: SortMode::Default,
+            model_filter: ModelFilterState::new(),
             agent_mode: AgentMode::Plan,
             inactive_sessions: Vec::new(),
             current_session_id: 1,
@@ -1943,8 +1966,6 @@ impl App {
             next_session_id: 1,
             usage: session::load_usage(),
             last_response_cost: None,
-            show_command_palette: false,
-            command_palette_input: String::new(),
             attached_files: Vec::new(),
             show_mention: false,
             pty_visible: false,
@@ -1953,8 +1974,7 @@ impl App {
             pty_session: None,
             mcp_servers: mcp::load_servers(),
             mcp_tools: Vec::new(),
-            mcp_name_input: String::new(),
-            mcp_command_input: String::new(),
+            mcp_input: McpInputState::default(),
             mention_query: String::new(),
             mention_candidates: Vec::new(),
             mention_selected: 0,

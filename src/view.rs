@@ -28,9 +28,9 @@ impl App {
         .into();
 
         // overlay가 필요하면 stack으로 메인 위에 띄움 (backdrop + 가운데 모달 박스)
-        let middle: Element<Message> = if self.show_command_palette {
+        let middle: Element<Message> = if self.ui.show_command_palette {
             stack![main_view, modal_overlay(self.view_command_palette())].into()
-        } else if self.show_settings {
+        } else if self.ui.show_settings {
             stack![main_view, modal_overlay(self.view_settings())].into()
         } else {
             // write_confirm은 입력창 위 인라인 패널(view_stream 안에서 처리)
@@ -79,7 +79,7 @@ impl App {
         let is_fav = self
             .selected_model
             .as_ref()
-            .map(|id| self.favorites.contains(id))
+            .map(|id| self.model_filter.favorites.contains(id))
             .unwrap_or(false);
         let fav_btn = button(text(if is_fav { "★" } else { "☆" }).size(16))
             .on_press(Message::ToggleFavorite)
@@ -87,22 +87,22 @@ impl App {
             .style(secondary_btn);
 
         let filters = row![
-            checkbox(self.filter_coding)
+            checkbox(self.model_filter.filter_coding)
                 .label("코딩")
                 .on_toggle(Message::ToggleFilterCoding)
                 .size(16)
                 .text_size(FS_BODY),
-            checkbox(self.filter_reasoning)
+            checkbox(self.model_filter.filter_reasoning)
                 .label("추론")
                 .on_toggle(Message::ToggleFilterReasoning)
                 .size(16)
                 .text_size(FS_BODY),
-            checkbox(self.filter_general)
+            checkbox(self.model_filter.filter_general)
                 .label("범용")
                 .on_toggle(Message::ToggleFilterGeneral)
                 .size(16)
                 .text_size(FS_BODY),
-            checkbox(self.filter_favorites_only)
+            checkbox(self.model_filter.filter_favorites_only)
                 .label("⭐만")
                 .on_toggle(Message::ToggleFilterFavorites)
                 .size(16)
@@ -116,7 +116,7 @@ impl App {
         .spacing(TOPBAR_ROW_SPACING)
         .align_y(Alignment::Center);
 
-        let sort_btn = button(text(self.sort_mode.label()).size(FS_BODY))
+        let sort_btn = button(text(self.model_filter.sort_mode.label()).size(FS_BODY))
             .on_press(Message::CycleSortMode)
             .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
             .style(secondary_btn);
@@ -231,7 +231,7 @@ impl App {
             } else {
                 s.title.clone()
             };
-            let is_pending = self.pending_delete_session == Some(s.id);
+            let is_pending = self.ui.pending_delete_session == Some(s.id);
             let trailing: Element<Message> = if is_pending {
                 row![
                     button(text("✓").size(11))
@@ -1015,7 +1015,7 @@ impl App {
             text("모드  Ctrl+Shift+P 계획 · Ctrl+Shift+B 빌드").size(FS_LABEL),
         ]
         .spacing(2);
-        let input = text_input("명령 검색…", &self.command_palette_input)
+        let input = text_input("명령 검색…", &self.ui.command_palette_input)
             .on_input(Message::CommandPaletteChanged)
             .on_submit(Message::ExecuteCommand(0))
             .padding(10)
@@ -1082,7 +1082,7 @@ impl App {
 
         let mut cards = column![].spacing(4);
         for (idx, tc) in self.pending_write_calls.iter().enumerate() {
-            let is_expanded = self.expanded_confirm_idx == Some(idx);
+            let is_expanded = self.ui.expanded_confirm_idx == Some(idx);
             let arrow = if is_expanded { "▾" } else { "▸" };
 
             let (summary_text, expanded_view): (String, Option<Element<Message>>) =
@@ -1393,7 +1393,7 @@ impl App {
             .on_press(Message::SetSettingsTab(tab))
             .padding([8, 8])
             .width(Length::FillPortion(1));
-            if self.settings_tab == tab {
+            if self.ui.settings_tab == tab {
                 btn.style(primary_btn)
             } else {
                 btn.style(secondary_btn)
@@ -1578,7 +1578,7 @@ impl App {
         ]
         .spacing(10);
 
-        let active_section: Element<Message> = match self.settings_tab {
+        let active_section: Element<Message> = match self.ui.settings_tab {
             SettingsTab::Provider => container(provider_section)
                 .padding([4, 4])
                 .width(Length::Fill)
@@ -1738,6 +1738,7 @@ impl App {
         let runtime_can_start = self.can_attempt_start_inference();
 
         let (active_tab_title, active_health, active_action, quick_label, quick_action) = match self
+            .ui
             .settings_tab
         {
             SettingsTab::Provider => (
@@ -1819,8 +1820,8 @@ impl App {
                     "권장 액션: 채팅에서 MCP 도구 호출이 정상 동작하는지 점검해 주세요.".to_string()
                 },
                 "서버 추가",
-                if !self.mcp_name_input.trim().is_empty()
-                    && !self.mcp_command_input.trim().is_empty()
+                if !self.mcp_input.name_input.trim().is_empty()
+                    && !self.mcp_input.command_input.trim().is_empty()
                 {
                     Some(Message::AddMcpServer)
                 } else {
@@ -2233,7 +2234,7 @@ impl App {
 
         // 추가 입력 행
         let add_row = row![
-            text_input("서버 이름 (예: filesystem)", &self.mcp_name_input)
+            text_input("서버 이름 (예: filesystem)", &self.mcp_input.name_input)
                 .on_input(Message::McpNameChanged)
                 .padding(6)
                 .size(FS_BODY)
@@ -2241,7 +2242,7 @@ impl App {
                 .width(Length::Fixed(140.0)),
             text_input(
                 "명령 (예: npx -y @modelcontextprotocol/server-filesystem /tmp)",
-                &self.mcp_command_input
+                &self.mcp_input.command_input
             )
             .on_input(Message::McpCommandChanged)
             .on_submit(Message::AddMcpServer)

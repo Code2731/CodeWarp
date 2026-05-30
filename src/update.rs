@@ -644,16 +644,16 @@ impl App {
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::OpenSettings => {
-                self.show_settings = true;
-                self.settings_tab = SettingsTab::Provider;
+                self.ui.show_settings = true;
+                self.ui.settings_tab = SettingsTab::Provider;
                 Task::none()
             }
             Message::CloseSettings => {
-                self.show_settings = false;
+                self.ui.show_settings = false;
                 Task::none()
             }
             Message::SetSettingsTab(tab) => {
-                self.settings_tab = tab;
+                self.ui.settings_tab = tab;
                 Task::none()
             }
             Message::KeyInputChanged(v) => {
@@ -675,7 +675,7 @@ impl App {
                     Ok(()) => {
                         self.has_key = true;
                         self.key_input.clear();
-                        self.show_settings = false;
+                        self.ui.show_settings = false;
                         self.status = "키 저장됨".into();
                         Task::done(Message::FetchModels)
                     }
@@ -841,7 +841,7 @@ impl App {
                             "TabbyAPI 런타임 설치/감지 완료: {} — 모델 선택 후 시작하세요.",
                             launcher.display()
                         );
-                        self.settings_tab = SettingsTab::Runtime;
+                        self.ui.settings_tab = SettingsTab::Runtime;
                     }
                     Err(e) => {
                         self.status = format!(
@@ -1236,7 +1236,7 @@ impl App {
                                 first_tabby_id = Some(id.clone());
                             }
                             let ko_friendly = is_korean_friendly(&id);
-                            let favorite = self.favorites.contains(&id);
+                            let favorite = self.model_filter.favorites.contains(&id);
                             self.model_options.push(ModelOption {
                                 id,
                                 provider: LlmProvider::OpenAICompat,
@@ -1405,7 +1405,7 @@ impl App {
                     self.openai_compat_label = "TabbyAPI".into();
                     let _ = keystore::write_openai_compat_label("TabbyAPI");
                 }
-                self.settings_tab = SettingsTab::Runtime;
+                self.ui.settings_tab = SettingsTab::Runtime;
                 self.status = format!(
                     "다운로드된 모델 선택됨: {} — Runtime에서 시작 후 연결 테스트",
                     folder_name
@@ -1730,16 +1730,16 @@ impl App {
 
             // ── MCP ───────────────────────────────────────────────────
             Message::McpNameChanged(v) => {
-                self.mcp_name_input = v;
+                self.mcp_input.name_input = v;
                 Task::none()
             }
             Message::McpCommandChanged(v) => {
-                self.mcp_command_input = v;
+                self.mcp_input.command_input = v;
                 Task::none()
             }
             Message::AddMcpServer => {
-                let name = self.mcp_name_input.trim().to_string();
-                let command = self.mcp_command_input.trim().to_string();
+                let name = self.mcp_input.name_input.trim().to_string();
+                let command = self.mcp_input.command_input.trim().to_string();
                 if name.is_empty() || command.is_empty() {
                     self.status = "MCP 서버 이름과 명령을 모두 입력하세요.".into();
                     return Task::none();
@@ -1749,8 +1749,8 @@ impl App {
                     command,
                 };
                 self.mcp_servers.push(server.clone());
-                self.mcp_name_input.clear();
-                self.mcp_command_input.clear();
+                self.mcp_input.name_input.clear();
+                self.mcp_input.command_input.clear();
                 if let Err(e) = mcp::save_servers(&self.mcp_servers) {
                     self.status = format!("MCP 저장 실패: {e}");
                     return Task::none();
@@ -1979,7 +1979,7 @@ impl App {
                         self.model_options.extend(models.iter().map(|m| {
                             let id = m.id.clone();
                             let ko_friendly = is_korean_friendly(&id);
-                            let favorite = self.favorites.contains(&id);
+                            let favorite = self.model_filter.favorites.contains(&id);
                             ModelOption {
                                 id,
                                 provider: LlmProvider::OpenRouter,
@@ -2530,15 +2530,15 @@ impl App {
                 )
             }
             Message::ApproveWrites => {
-                self.expanded_confirm_idx = None;
+                self.ui.expanded_confirm_idx = None;
                 self.continue_after_writes(true)
             }
             Message::DenyWrites => {
-                self.expanded_confirm_idx = None;
+                self.ui.expanded_confirm_idx = None;
                 self.continue_after_writes(false)
             }
             Message::ToggleConfirmExpand(idx) => {
-                self.expanded_confirm_idx = if self.expanded_confirm_idx == Some(idx) {
+                self.ui.expanded_confirm_idx = if self.ui.expanded_confirm_idx == Some(idx) {
                     None
                 } else {
                     Some(idx)
@@ -2556,7 +2556,7 @@ impl App {
                     "[denied] 사용자가 이 도구 호출을 제외했습니다.",
                 ));
                 // 펼친 인덱스 보정 (제거된 항목 이후는 한 칸 당김)
-                self.expanded_confirm_idx = match self.expanded_confirm_idx {
+                self.ui.expanded_confirm_idx = match self.ui.expanded_confirm_idx {
                     Some(e) if e == idx => None,
                     Some(e) if e > idx => Some(e - 1),
                     other => other,
@@ -2568,22 +2568,22 @@ impl App {
                 Task::none()
             }
             Message::ToggleFilterCoding(v) => {
-                self.filter_coding = v;
+                self.model_filter.filter_coding = v;
                 self.refresh_model_combo();
                 Task::none()
             }
             Message::ToggleFilterReasoning(v) => {
-                self.filter_reasoning = v;
+                self.model_filter.filter_reasoning = v;
                 self.refresh_model_combo();
                 Task::none()
             }
             Message::ToggleFilterGeneral(v) => {
-                self.filter_general = v;
+                self.model_filter.filter_general = v;
                 self.refresh_model_combo();
                 Task::none()
             }
             Message::ToggleFilterFavorites(v) => {
-                self.filter_favorites_only = v;
+                self.model_filter.filter_favorites_only = v;
                 self.refresh_model_combo();
                 Task::none()
             }
@@ -2597,7 +2597,7 @@ impl App {
                 Task::none()
             }
             Message::CycleSortMode => {
-                self.sort_mode = self.sort_mode.cycle();
+                self.model_filter.sort_mode = self.model_filter.sort_mode.cycle();
                 self.refresh_model_combo();
                 Task::none()
             }
@@ -2627,7 +2627,7 @@ impl App {
                 self.tool_round = 0;
                 self.next_block_id = 0;
                 self.input.clear();
-                self.pending_delete_session = None;
+                self.ui.pending_delete_session = None;
                 self.current_session_id = self.allocate_session_id();
                 self.current_session_title = "새 채팅".into();
                 self.status = "새 채팅".into();
@@ -2662,7 +2662,7 @@ impl App {
                 self.streaming_block_id = None;
                 self.tool_round = 0;
                 self.input.clear();
-                self.pending_delete_session = None;
+                self.ui.pending_delete_session = None;
                 self.status = "세션 전환됨".into();
                 self.save_session();
                 // 새 세션의 마지막 scroll 위치로 복원
@@ -2675,23 +2675,23 @@ impl App {
                 )
             }
             Message::OpenCommandPalette => {
-                self.show_command_palette = true;
-                self.command_palette_input.clear();
+                self.ui.show_command_palette = true;
+                self.ui.command_palette_input.clear();
                 Task::none()
             }
             Message::CloseCommandPalette => {
-                self.show_command_palette = false;
+                self.ui.show_command_palette = false;
                 Task::none()
             }
             Message::CloseAllOverlays => {
-                self.show_command_palette = false;
-                self.show_settings = false;
+                self.ui.show_command_palette = false;
+                self.ui.show_settings = false;
                 self.show_write_confirm = false;
                 self.close_mention();
                 Task::none()
             }
             Message::CommandPaletteChanged(v) => {
-                self.command_palette_input = v;
+                self.ui.command_palette_input = v;
                 Task::none()
             }
             Message::ExecuteCommand(idx) => {
@@ -2700,8 +2700,8 @@ impl App {
                     return Task::none();
                 };
                 let action = cmd.action;
-                self.show_command_palette = false;
-                self.command_palette_input.clear();
+                self.ui.show_command_palette = false;
+                self.ui.command_palette_input.clear();
                 match action {
                     PaletteAction::NewChat => Task::done(Message::NewChat),
                     PaletteAction::PlanMode => Task::done(Message::SetAgentMode(AgentMode::Plan)),
@@ -2731,7 +2731,7 @@ impl App {
                 Task::none()
             }
             Message::AskDeleteSession(id) => {
-                self.pending_delete_session = if self.pending_delete_session == Some(id) {
+                self.ui.pending_delete_session = if self.ui.pending_delete_session == Some(id) {
                     None // 같은 ✕ 다시 클릭 → 취소
                 } else {
                     Some(id)
@@ -2739,11 +2739,11 @@ impl App {
                 Task::none()
             }
             Message::CancelDeleteSession => {
-                self.pending_delete_session = None;
+                self.ui.pending_delete_session = None;
                 Task::none()
             }
             Message::DeleteSession(target_id) => {
-                self.pending_delete_session = None;
+                self.ui.pending_delete_session = None;
                 if target_id == self.current_session_id {
                     // 현재 활성을 삭제 → 빈 세션으로 대체
                     self.blocks.clear();
@@ -2759,12 +2759,12 @@ impl App {
             }
             Message::ToggleFavorite => {
                 if let Some(id) = &self.selected_model {
-                    if self.favorites.contains(id) {
-                        self.favorites.remove(id);
+                    if self.model_filter.favorites.contains(id) {
+                        self.model_filter.favorites.remove(id);
                     } else {
-                        self.favorites.insert(id.clone());
+                        self.model_filter.favorites.insert(id.clone());
                     }
-                    let favs: Vec<String> = self.favorites.iter().cloned().collect();
+                    let favs: Vec<String> = self.model_filter.favorites.iter().cloned().collect();
                     let _ = session::write_favorites(&favs);
                     self.refresh_model_combo();
                 }
@@ -2789,13 +2789,16 @@ impl App {
             .model_options
             .iter()
             .filter(|opt| {
-                if self.filter_favorites_only && !self.favorites.contains(&opt.id) {
+                if self.model_filter.filter_favorites_only
+                    && !self.model_filter.favorites.contains(&opt.id)
+                {
                     return false;
                 }
                 let cats = categorize_model(&opt.id);
-                (self.filter_coding && cats.contains(&ModelCategory::Coding))
-                    || (self.filter_reasoning && cats.contains(&ModelCategory::Reasoning))
-                    || (self.filter_general && cats.contains(&ModelCategory::General))
+                (self.model_filter.filter_coding && cats.contains(&ModelCategory::Coding))
+                    || (self.model_filter.filter_reasoning
+                        && cats.contains(&ModelCategory::Reasoning))
+                    || (self.model_filter.filter_general && cats.contains(&ModelCategory::General))
             })
             .cloned()
             .collect();
@@ -2804,7 +2807,7 @@ impl App {
         let total_price = |o: &ModelOption| -> f64 {
             o.prompt_per_million.unwrap_or(0.0) + o.completion_per_million.unwrap_or(0.0)
         };
-        match self.sort_mode {
+        match self.model_filter.sort_mode {
             SortMode::Default => {}
             SortMode::PriceAsc => opts.sort_by(|a, b| {
                 total_price(a)
@@ -2876,7 +2879,7 @@ impl App {
         self.sync_selected_model_provider();
         // favorite 필드를 현재 favorites HashSet과 동기화 (Display에 ★ 반영)
         for opt in &mut self.model_options {
-            opt.favorite = self.favorites.contains(&opt.id);
+            opt.favorite = self.model_filter.favorites.contains(&opt.id);
         }
         self.model_combo_state = combo_box::State::new(self.filtered_model_options());
     }
@@ -3443,7 +3446,7 @@ impl App {
     }
 
     pub(crate) fn filtered_palette_commands(&self) -> Vec<&'static PaletteCommand> {
-        let q = self.command_palette_input.to_lowercase();
+        let q = self.ui.command_palette_input.to_lowercase();
         if q.is_empty() {
             PALETTE_COMMANDS.iter().collect()
         } else {

@@ -895,243 +895,11 @@ impl App {
             Message::SelectDownloadedModel(folder_name) => {
                 self.select_downloaded_model(folder_name)
             }
-            Message::StartHfDownload => {
-                if self.hf_dl.is_some() {
-                    self.status = "이미 다운로드가 진행 중입니다.".into();
-                    return Task::none();
-                }
-                // 방어적으로 이전 handle이 남아 있으면 정리.
-                if let Some(h) = self.hf_abort_handle.take() {
-                    h.abort();
-                }
-                let repo = self.hf_repo_input.trim().to_string();
-                if repo.is_empty() {
-                    self.status = "HF repo ID 비어있음".into();
-                    return Task::none();
-                }
-                let mut dir = self.model_dir_input.trim().to_string();
-                if dir.is_empty() {
-                    dir = default_models_dir();
-                    self.status = format!("다운로드 경로 자동 설정: {}", dir);
-                }
-                let resolved_dir = resolve_user_path(&dir);
-                dir = resolved_dir.display().to_string();
-                self.model_dir_input = dir.clone();
-                if let Err(e) = std::fs::create_dir_all(&resolved_dir) {
-                    self.status = format!("다운로드 경로 생성 실패 ({}): {}", dir, e);
-                    return Task::none();
-                }
-                // 경로 keystore에도 반영
-                let _ = keystore::write_model_dir(&dir);
-                let token = if self.hf_token_input.trim().is_empty() {
-                    keystore::read_hf_token()
-                } else {
-                    Some(self.hf_token_input.trim().to_string())
-                };
-                let download_folder_name = self
-                    .hf_folder_name
-                    .take()
-                    .unwrap_or_else(|| repo.replace('/', "--"));
-                let revision = self.hf_revision.take();
-                self.hf_dl = Some(HfDownload {
-                    folder_name: download_folder_name.clone(),
-                    total_files: 0,
-                    file_idx: 0,
-                    file_name: String::new(),
-                    file_bytes_done: 0,
-                    file_bytes_total: None,
-                });
-                self.status = format!("다운로드 시작: {}", repo);
-                let (task, handle) = Task::run(
-                    hf::download_repo(
-                        repo,
-                        resolved_dir,
-                        token,
-                        revision,
-                        Some(download_folder_name),
-                    ),
-                    Message::HfDownloadEvent,
-                )
-                .abortable();
-                self.hf_abort_handle = Some(handle);
-                task
-            }
-            Message::HfDownloadEvent(ev) => {
-                if let Some(dl) = self.hf_dl.as_mut() {
-                    match &ev {
-                        hf::DownloadEvent::Started { total_files } => {
-                            dl.total_files = *total_files;
-                        }
-                        hf::DownloadEvent::FileStart { idx, name, size } => {
-                            dl.file_idx = *idx;
-                            dl.file_name = name.clone();
-                            dl.file_bytes_done = 0;
-                            dl.file_bytes_total = *size;
-                        }
-                        hf::DownloadEvent::FileProgress {
-                            idx,
-                            bytes_done,
-                            bytes_total,
-                        } => {
-                            dl.file_idx = *idx;
-                            dl.file_bytes_done = *bytes_done;
-                            dl.file_bytes_total = *bytes_total;
-                        }
-                        hf::DownloadEvent::FileDone => {}
-                        hf::DownloadEvent::AllDone => {
-                            let folder_name = dl.folder_name.clone();
-                            let model_path =
-                                downloaded_model_path(&self.model_dir_input, &folder_name);
-                            let Some(resolved_model_path) =
-                                resolve_tabbyapi_model_dir_for_folder(&model_path, &folder_name)
-                            else {
-                                self.status = format!(
-                                    "다운로드 결과에서 TabbyAPI 모델 경로를 확정할 수 없습니다: {} (config.json+가중치 파일이 필요하며, 여러 하위 모델이면 폴더 이름에 bpw 힌트가 필요합니다.)",
-                                    model_path.display()
-                                );
-                                self.tabby_status = Some(Err(self.status.clone()));
-                                self.hf_dl = None;
-                                self.hf_abort_handle = None;
-                                return Task::none();
-                            };
-                            self.inference_engine = InferenceEngine::TabbyApi;
-                            self.inference_selected_model =
-                                resolved_model_path.display().to_string();
-                            self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
-                            if let Some(launcher) =
-                                find_tabbyapi_launcher(&default_tabbyapi_runtime_dir())
-                            {
-                                self.inference_binary_path = launcher.display().to_string();
-                                let _ =
-                                    keystore::write_inference_binary(&self.inference_binary_path);
-                            } else {
-                                self.inference_binary_path.clear();
-                                let _ = keystore::clear_inference_binary();
-                            }
-                            self.tabby_url_input =
-                                format!("http://localhost:{}", self.inference_port_input);
-                            let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
-                            if self.openai_compat_label.trim().is_empty() {
-                                self.openai_compat_label = "TabbyAPI".into();
-                                let _ = keystore::write_openai_compat_label("TabbyAPI");
-                            }
-                            self.status = format!(
-                                "다운로드 완료: {} — Runtime에서 시작을 누른 뒤 연결 테스트",
-                                folder_name
-                            );
-                            self.hf_dl = None;
-                            self.hf_abort_handle = None;
-                        }
-                        hf::DownloadEvent::Error(e) => {
-                            self.status =
-                                format!("다운로드 실패: {}", compose_hf_download_error(e));
-                            self.hf_dl = None;
-                            self.hf_abort_handle = None;
-                        }
-                    }
-                }
-                Task::none()
-            }
-            Message::CancelHfDownload => {
-                if let Some(h) = self.hf_abort_handle.take() {
-                    h.abort();
-                }
-                self.hf_dl = None;
-                self.status = "다운로드 취소됨".into();
-                Task::none()
-            }
-            Message::RegenerateLast => {
-                if self.streaming_block_id.is_some() {
-                    return Task::none();
-                }
-                if !self.conversation.iter().any(|m| m.role == "user") {
-                    return Task::none();
-                }
-                truncate_after_last_user(&mut self.conversation);
-                let Some(idx) = last_user_block_idx(&self.blocks) else {
-                    return Task::none();
-                };
-                self.blocks.truncate(idx + 1);
-                self.tool_round = 0;
-                self.pending_tool_calls.clear();
-
-                let (base_url, api_key) = match self.resolve_provider() {
-                    Ok(v) => v,
-                    Err(e) => {
-                        self.status = e;
-                        return Task::none();
-                    }
-                };
-                let model = self.selected_model.clone().unwrap_or_default();
-                let messages = self.conversation.clone();
-
-                let ai_id = self.next_id();
-                self.blocks.push(Block {
-                    id: ai_id,
-                    body: BlockBody::Assistant(text_editor::Content::new()),
-                    view_mode: ViewMode::Raw,
-                    md_items: Vec::new(),
-                    model: self.selected_model.clone(),
-                    apply_candidates: Vec::new(),
-                });
-                self.streaming_block_id = Some(ai_id);
-                self.status = "응답 다시 생성 중…".into();
-                self.follow_bottom = true;
-
-                let (chat_task, handle) = Task::run(
-                    openrouter::chat_stream(
-                        base_url,
-                        api_key,
-                        model,
-                        messages,
-                        self.tool_definitions_for_selected_model(),
-                    ),
-                    Message::ChatChunk,
-                )
-                .abortable();
-                self.abort_handle = Some(handle);
-                Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
-            }
-            Message::ApplyChange(block_id, idx) => {
-                // 1) 먼저 candidate 정보 복사 (immutable borrow 후 종료)
-                let snapshot = self
-                    .blocks
-                    .iter()
-                    .find(|b| b.id == block_id)
-                    .and_then(|b| b.apply_candidates.get(idx))
-                    .filter(|(_, applied)| !*applied)
-                    .map(|(c, _)| (c.path.clone(), c.content.clone()));
-                let Some((path, content)) = snapshot else {
-                    return Task::none();
-                };
-                // 2) write_file dispatch (cwd 보안 검증 포함)
-                let args_json = serde_json::json!({
-                    "path": path,
-                    "content": content,
-                })
-                .to_string();
-                let result = tools::dispatch("write_file", &args_json, &self.cwd);
-                let success = !result.contains("[error]");
-                if success {
-                    if let Some(b) = self.blocks.iter_mut().find(|b| b.id == block_id) {
-                        if let Some((_, applied)) = b.apply_candidates.get_mut(idx) {
-                            *applied = true;
-                        }
-                    }
-                }
-                let summary = if success {
-                    format!("{} ({} bytes)", path, content.len())
-                } else {
-                    format!("실패: {}", path)
-                };
-                self.push_tool_result_block("apply".into(), summary, success);
-                self.status = if success {
-                    format!("적용됨: {}", path)
-                } else {
-                    result
-                };
-                Task::none()
-            }
+            Message::StartHfDownload => self.start_hf_download(),
+            Message::HfDownloadEvent(ev) => self.on_hf_download_event(ev),
+            Message::CancelHfDownload => self.cancel_hf_download(),
+            Message::RegenerateLast => self.regenerate_last(),
+            Message::ApplyChange(block_id, idx) => self.apply_change(block_id, idx),
             Message::EditLastUser => self.edit_last_user(),
 
             // ── 파일 컨텍스트 첨부 ────────────────────────────────
@@ -2604,6 +2372,239 @@ impl App {
         self.pty_session = None;
         self.push_pty_line("-- 셸 종료 --".into());
         self.status = "터미널 종료됨".into();
+        Task::none()
+    }
+
+    fn start_hf_download(&mut self) -> Task<Message> {
+        if self.hf_dl.is_some() {
+            self.status = "이미 다운로드가 진행 중입니다.".into();
+            return Task::none();
+        }
+        if let Some(h) = self.hf_abort_handle.take() {
+            h.abort();
+        }
+        let repo = self.hf_repo_input.trim().to_string();
+        if repo.is_empty() {
+            self.status = "HF repo ID 비어있음".into();
+            return Task::none();
+        }
+        let mut dir = self.model_dir_input.trim().to_string();
+        if dir.is_empty() {
+            dir = default_models_dir();
+            self.status = format!("다운로드 경로 자동 설정: {}", dir);
+        }
+        let resolved_dir = resolve_user_path(&dir);
+        dir = resolved_dir.display().to_string();
+        self.model_dir_input = dir.clone();
+        if let Err(e) = std::fs::create_dir_all(&resolved_dir) {
+            self.status = format!("다운로드 경로 생성 실패 ({}): {}", dir, e);
+            return Task::none();
+        }
+        let _ = keystore::write_model_dir(&dir);
+        let token = if self.hf_token_input.trim().is_empty() {
+            keystore::read_hf_token()
+        } else {
+            Some(self.hf_token_input.trim().to_string())
+        };
+        let download_folder_name = self
+            .hf_folder_name
+            .take()
+            .unwrap_or_else(|| repo.replace('/', "--"));
+        let revision = self.hf_revision.take();
+        self.hf_dl = Some(HfDownload {
+            folder_name: download_folder_name.clone(),
+            total_files: 0,
+            file_idx: 0,
+            file_name: String::new(),
+            file_bytes_done: 0,
+            file_bytes_total: None,
+        });
+        self.status = format!("다운로드 시작: {}", repo);
+        let (task, handle) = Task::run(
+            hf::download_repo(
+                repo,
+                resolved_dir,
+                token,
+                revision,
+                Some(download_folder_name),
+            ),
+            Message::HfDownloadEvent,
+        )
+        .abortable();
+        self.hf_abort_handle = Some(handle);
+        task
+    }
+
+    fn on_hf_download_event(&mut self, ev: hf::DownloadEvent) -> Task<Message> {
+        if let Some(dl) = self.hf_dl.as_mut() {
+            match &ev {
+                hf::DownloadEvent::Started { total_files } => {
+                    dl.total_files = *total_files;
+                }
+                hf::DownloadEvent::FileStart { idx, name, size } => {
+                    dl.file_idx = *idx;
+                    dl.file_name = name.clone();
+                    dl.file_bytes_done = 0;
+                    dl.file_bytes_total = *size;
+                }
+                hf::DownloadEvent::FileProgress {
+                    idx,
+                    bytes_done,
+                    bytes_total,
+                } => {
+                    dl.file_idx = *idx;
+                    dl.file_bytes_done = *bytes_done;
+                    dl.file_bytes_total = *bytes_total;
+                }
+                hf::DownloadEvent::FileDone => {}
+                hf::DownloadEvent::AllDone => {
+                    let folder_name = dl.folder_name.clone();
+                    let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
+                    let Some(resolved_model_path) =
+                        resolve_tabbyapi_model_dir_for_folder(&model_path, &folder_name)
+                    else {
+                        self.status = format!(
+                            "다운로드 결과에서 TabbyAPI 모델 경로를 확정할 수 없습니다: {} (config.json+가중치 파일이 필요하며, 여러 하위 모델이면 폴더 이름에 bpw 힌트가 필요합니다.)",
+                            model_path.display()
+                        );
+                        self.tabby_status = Some(Err(self.status.clone()));
+                        self.hf_dl = None;
+                        self.hf_abort_handle = None;
+                        return Task::none();
+                    };
+                    self.inference_engine = InferenceEngine::TabbyApi;
+                    self.inference_selected_model = resolved_model_path.display().to_string();
+                    self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
+                    if let Some(launcher) = find_tabbyapi_launcher(&default_tabbyapi_runtime_dir())
+                    {
+                        self.inference_binary_path = launcher.display().to_string();
+                        let _ = keystore::write_inference_binary(&self.inference_binary_path);
+                    } else {
+                        self.inference_binary_path.clear();
+                        let _ = keystore::clear_inference_binary();
+                    }
+                    self.tabby_url_input =
+                        format!("http://localhost:{}", self.inference_port_input);
+                    let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                    if self.openai_compat_label.trim().is_empty() {
+                        self.openai_compat_label = "TabbyAPI".into();
+                        let _ = keystore::write_openai_compat_label("TabbyAPI");
+                    }
+                    self.status = format!(
+                        "다운로드 완료: {} — Runtime에서 시작을 누른 뒤 연결 테스트",
+                        folder_name
+                    );
+                    self.hf_dl = None;
+                    self.hf_abort_handle = None;
+                }
+                hf::DownloadEvent::Error(e) => {
+                    self.status = format!("다운로드 실패: {}", compose_hf_download_error(e));
+                    self.hf_dl = None;
+                    self.hf_abort_handle = None;
+                }
+            }
+        }
+        Task::none()
+    }
+
+    fn cancel_hf_download(&mut self) -> Task<Message> {
+        if let Some(h) = self.hf_abort_handle.take() {
+            h.abort();
+        }
+        self.hf_dl = None;
+        self.status = "다운로드 취소됨".into();
+        Task::none()
+    }
+
+    fn regenerate_last(&mut self) -> Task<Message> {
+        if self.streaming_block_id.is_some() {
+            return Task::none();
+        }
+        if !self.conversation.iter().any(|m| m.role == "user") {
+            return Task::none();
+        }
+        truncate_after_last_user(&mut self.conversation);
+        let Some(idx) = last_user_block_idx(&self.blocks) else {
+            return Task::none();
+        };
+        self.blocks.truncate(idx + 1);
+        self.tool_round = 0;
+        self.pending_tool_calls.clear();
+
+        let (base_url, api_key) = match self.resolve_provider() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = e;
+                return Task::none();
+            }
+        };
+        let model = self.selected_model.clone().unwrap_or_default();
+        let messages = self.conversation.clone();
+
+        let ai_id = self.next_id();
+        self.blocks.push(Block {
+            id: ai_id,
+            body: BlockBody::Assistant(text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: self.selected_model.clone(),
+            apply_candidates: Vec::new(),
+        });
+        self.streaming_block_id = Some(ai_id);
+        self.status = "응답 다시 생성 중…".into();
+        self.follow_bottom = true;
+
+        let (chat_task, handle) = Task::run(
+            openrouter::chat_stream(
+                base_url,
+                api_key,
+                model,
+                messages,
+                self.tool_definitions_for_selected_model(),
+            ),
+            Message::ChatChunk,
+        )
+        .abortable();
+        self.abort_handle = Some(handle);
+        Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
+    }
+
+    fn apply_change(&mut self, block_id: u64, idx: usize) -> Task<Message> {
+        let snapshot = self
+            .blocks
+            .iter()
+            .find(|b| b.id == block_id)
+            .and_then(|b| b.apply_candidates.get(idx))
+            .filter(|(_, applied)| !*applied)
+            .map(|(c, _)| (c.path.clone(), c.content.clone()));
+        let Some((path, content)) = snapshot else {
+            return Task::none();
+        };
+        let args_json = serde_json::json!({
+            "path": path,
+            "content": content,
+        })
+        .to_string();
+        let result = tools::dispatch("write_file", &args_json, &self.cwd);
+        let success = !result.contains("[error]");
+        if success {
+            if let Some(b) = self.blocks.iter_mut().find(|b| b.id == block_id) {
+                if let Some((_, applied)) = b.apply_candidates.get_mut(idx) {
+                    *applied = true;
+                }
+            }
+        }
+        let summary = if success {
+            format!("{} ({} bytes)", path, content.len())
+        } else {
+            format!("실패: {}", path)
+        };
+        self.push_tool_result_block("apply".into(), summary, success);
+        self.status = if success {
+            format!("적용됨: {}", path)
+        } else {
+            result
+        };
         Task::none()
     }
 

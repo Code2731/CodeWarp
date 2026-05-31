@@ -646,10 +646,7 @@ impl App {
             Message::OpenSettings => self.open_settings_overlay(),
             Message::CloseSettings => self.close_settings_overlay(),
             Message::SetSettingsTab(tab) => self.set_settings_tab(tab),
-            Message::KeyInputChanged(v) => {
-                self.key_input = v;
-                Task::none()
-            }
+            Message::KeyInputChanged(v) => self.set_key_input(v),
             Message::SaveKey => {
                 let key = self.key_input.clone();
                 self.busy = true;
@@ -695,27 +692,10 @@ impl App {
                 }
                 Task::none()
             }
-            Message::TabbyUrlChanged(v) => {
-                self.tabby_url_input = v;
-                self.tabby_connect_retry_left = 0;
-                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
-                Task::none()
-            }
-            Message::TabbyTokenChanged(v) => {
-                self.tabby_token_input = v;
-                self.tabby_connect_retry_left = 0;
-                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
-                Task::none()
-            }
-            Message::ToggleTabbyTokenVisible => {
-                self.show_tabby_token = !self.show_tabby_token;
-                Task::none()
-            }
-            Message::InferenceCommandChanged(v) => {
-                self.inference_command_input = v.clone();
-                let _ = keystore::write_inference_command(&v);
-                Task::none()
-            }
+            Message::TabbyUrlChanged(v) => self.set_tabby_url(v),
+            Message::TabbyTokenChanged(v) => self.set_tabby_token(v),
+            Message::ToggleTabbyTokenVisible => self.toggle_tabby_token_visible(),
+            Message::InferenceCommandChanged(v) => self.set_inference_command(v),
             Message::SelectInferenceEngine(e) => {
                 let prev = self.inference_engine;
                 self.inference_engine = e;
@@ -740,10 +720,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::SelectInferenceModel(m) => {
-                self.inference_selected_model = m;
-                Task::none()
-            }
+            Message::SelectInferenceModel(m) => self.set_inference_model(m),
             Message::InferencePortChanged(v) => {
                 let prev_port = self.inference_port_input.trim().parse::<u16>().ok();
                 self.inference_port_input = v.clone();
@@ -1293,14 +1270,8 @@ impl App {
                 Task::none()
             }
             // ── HF 모델 매니저 ────────────────────────────────────
-            Message::HfTokenChanged(v) => {
-                self.hf_token_input = v;
-                Task::none()
-            }
-            Message::ToggleHfTokenVisible => {
-                self.show_hf_token = !self.show_hf_token;
-                Task::none()
-            }
+            Message::HfTokenChanged(v) => self.set_hf_token_input(v),
+            Message::ToggleHfTokenVisible => self.toggle_hf_token_visible(),
             Message::SaveHfToken => {
                 let t = self.hf_token_input.clone();
                 Task::perform(
@@ -1340,10 +1311,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::HfRepoChanged(v) => {
-                self.hf_repo_input = v;
-                Task::none()
-            }
+            Message::HfRepoChanged(v) => self.set_hf_repo_input(v),
             Message::UsePreset(idx) => {
                 if let Some(p) = MODEL_PRESETS.get(idx) {
                     self.hf_repo_input = p.repo_id.into();
@@ -1697,7 +1665,7 @@ impl App {
                     },
                 )
             }
-            Message::FileDragHover => Task::none(),
+            Message::FileDragHover => self.file_drag_hover(),
             Message::FileReadDone(path, content) => {
                 if !self.is_already_attached(&path) {
                     self.attached_files.push((path, content));
@@ -1713,10 +1681,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::FileAttachError(msg) => {
-                self.status = msg;
-                Task::none()
-            }
+            Message::FileAttachError(msg) => self.file_attach_error(msg),
 
             // ── MCP ───────────────────────────────────────────────────
             Message::McpNameChanged(v) => self.update_mcp_name_input(v),
@@ -1816,10 +1781,7 @@ impl App {
                 self.status = "터미널 종료됨".into();
                 Task::none()
             }
-            Message::PtyInputChanged(v) => {
-                self.pty_input = v;
-                Task::none()
-            }
+            Message::PtyInputChanged(v) => self.set_pty_input(v),
             Message::PtySend => {
                 let line = self.pty_input.trim_end().to_string();
                 if let Some(s) = &self.pty_session {
@@ -1828,17 +1790,8 @@ impl App {
                 self.pty_input.clear();
                 Task::none()
             }
-            Message::PtyCtrlC => {
-                if let Some(s) = &self.pty_session {
-                    s.ctrl_c();
-                }
-                Task::none()
-            }
-            Message::PtyClear => {
-                self.pty_output.clear();
-                Task::none()
-            }
-
+            Message::PtyCtrlC => self.pty_ctrl_c(),
+            Message::PtyClear => self.pty_clear(),
             Message::RemoveAttachment(idx) => {
                 if idx < self.attached_files.len() {
                     let removed = self.attached_files.remove(idx);
@@ -2825,6 +2778,82 @@ impl App {
             self.status = format!("작업 폴더: {}", path.display());
             self.ensure_system_message();
         }
+        Task::none()
+    }
+
+    fn set_key_input(&mut self, value: String) -> Task<Message> {
+        self.key_input = value;
+        Task::none()
+    }
+
+    fn set_tabby_url(&mut self, value: String) -> Task<Message> {
+        self.tabby_url_input = value;
+        self.tabby_connect_retry_left = 0;
+        self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
+        Task::none()
+    }
+
+    fn set_tabby_token(&mut self, value: String) -> Task<Message> {
+        self.tabby_token_input = value;
+        self.tabby_connect_retry_left = 0;
+        self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
+        Task::none()
+    }
+
+    fn toggle_tabby_token_visible(&mut self) -> Task<Message> {
+        self.show_tabby_token = !self.show_tabby_token;
+        Task::none()
+    }
+
+    fn set_inference_command(&mut self, value: String) -> Task<Message> {
+        self.inference_command_input = value.clone();
+        let _ = keystore::write_inference_command(&value);
+        Task::none()
+    }
+
+    fn set_inference_model(&mut self, value: String) -> Task<Message> {
+        self.inference_selected_model = value;
+        Task::none()
+    }
+
+    fn set_hf_token_input(&mut self, value: String) -> Task<Message> {
+        self.hf_token_input = value;
+        Task::none()
+    }
+
+    fn toggle_hf_token_visible(&mut self) -> Task<Message> {
+        self.show_hf_token = !self.show_hf_token;
+        Task::none()
+    }
+
+    fn set_hf_repo_input(&mut self, value: String) -> Task<Message> {
+        self.hf_repo_input = value;
+        Task::none()
+    }
+
+    fn set_pty_input(&mut self, value: String) -> Task<Message> {
+        self.pty_input = value;
+        Task::none()
+    }
+
+    fn pty_ctrl_c(&mut self) -> Task<Message> {
+        if let Some(s) = &self.pty_session {
+            s.ctrl_c();
+        }
+        Task::none()
+    }
+
+    fn pty_clear(&mut self) -> Task<Message> {
+        self.pty_output.clear();
+        Task::none()
+    }
+
+    fn file_drag_hover(&mut self) -> Task<Message> {
+        Task::none()
+    }
+
+    fn file_attach_error(&mut self, msg: String) -> Task<Message> {
+        self.status = msg;
         Task::none()
     }
 

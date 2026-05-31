@@ -1280,67 +1280,8 @@ impl App {
             Message::MentionConfirm => self.confirm_mention(),
             Message::MentionCandidatesLoaded(paths) => self.load_mention_candidates(paths),
 
-            Message::FetchModels => {
-                let key = match keystore::read_api_key() {
-                    Ok(k) => k,
-                    Err(e) => {
-                        self.status = e;
-                        return Task::none();
-                    }
-                };
-                self.busy = true;
-                self.status = "모델 리스트 가져오는 중…".into();
-                Task::perform(openrouter::list_models(key), Message::ModelsLoaded)
-            }
-            Message::ModelsLoaded(r) => {
-                self.busy = false;
-                match r {
-                    Ok(models) => {
-                        let n = models.len();
-                        self.model_ids = models.iter().map(|m| m.id.clone()).collect();
-                        // OpenRouter 항목만 교체, Tabby 항목 보존
-                        self.model_options
-                            .retain(|o| o.provider != LlmProvider::OpenRouter);
-                        self.model_options.extend(models.iter().map(|m| {
-                            let id = m.id.clone();
-                            let ko_friendly = is_korean_friendly(&id);
-                            let favorite = self.model_filter.favorites.contains(&id);
-                            ModelOption {
-                                id,
-                                provider: LlmProvider::OpenRouter,
-                                provider_label: String::new(),
-                                ko_friendly,
-                                favorite,
-                                context_length: m.context_length,
-                                prompt_per_million: parse_price_per_million(
-                                    m.pricing.as_ref().and_then(|p| p.prompt.as_deref()),
-                                ),
-                                completion_per_million: parse_price_per_million(
-                                    m.pricing.as_ref().and_then(|p| p.completion.as_deref()),
-                                ),
-                            }
-                        }));
-                        self.refresh_model_combo();
-                        let saved_in_list = self.selected_model_exists_in_options();
-                        if !saved_in_list && self.tabby_url_input.trim().is_empty() {
-                            self.selected_model = self.model_ids.first().cloned();
-                            self.selected_model_provider = self
-                                .selected_model
-                                .as_ref()
-                                .map(|_| LlmProvider::OpenRouter);
-                            if let Some(id) = &self.selected_model {
-                                let _ = keystore::write_selected_model(id);
-                            }
-                        }
-                        self.models = models;
-                        self.status = format!("모델 {} 로드됨", n);
-                    }
-                    Err(e) => {
-                        self.status = format!("페치 실패: {}", openrouter::humanize_error(&e))
-                    }
-                }
-                Task::none()
-            }
+            Message::FetchModels => self.fetch_models_cmd(),
+            Message::ModelsLoaded(r) => self.on_models_loaded(r),
             Message::SelectModel(opt) => self.select_model(opt),
             Message::FetchAccount => {
                 let key = match keystore::read_api_key() {
@@ -1350,30 +1291,7 @@ impl App {
                 Task::perform(openrouter::get_account_info(key), Message::AccountLoaded)
             }
             Message::AccountLoaded(r) => self.on_account_loaded(r),
-            Message::InputChanged(v) => {
-                self.input = v;
-                // @-mention 팝업 감지
-                match extract_mention_query(&self.input) {
-                    Some(q) => {
-                        self.mention_query = q.to_string();
-                        self.mention_selected = 0;
-                        if !self.show_mention {
-                            self.show_mention = true;
-                            let cwd = self.cwd.clone();
-                            return Task::perform(
-                                collect_mention_candidates(cwd),
-                                Message::MentionCandidatesLoaded,
-                            );
-                        }
-                    }
-                    None => {
-                        if self.show_mention {
-                            self.close_mention();
-                        }
-                    }
-                }
-                Task::none()
-            }
+            Message::InputChanged(v) => self.on_input_changed(v),
             Message::Send => {
                 let text = self.input.trim().to_string();
                 if text.is_empty() {
@@ -1856,26 +1774,7 @@ impl App {
             Message::CycleSortMode => self.cycle_model_sort_mode(),
             Message::SetAgentMode(mode) => self.set_agent_mode(mode),
             Message::ToggleAgentMode => self.toggle_agent_mode(),
-            Message::NewChat => {
-                self.abort_active_chat_stream(true);
-                // 현재 세션 보존 + 새 빈 세션 시작
-                self.snapshot_current_to_inactive();
-                self.blocks.clear();
-                self.conversation.clear();
-                self.pending_tool_calls.clear();
-                self.pending_write_calls.clear();
-                self.show_write_confirm = false;
-                self.streaming_block_id = None;
-                self.tool_round = 0;
-                self.next_block_id = 0;
-                self.input.clear();
-                self.ui.pending_delete_session = None;
-                self.current_session_id = self.allocate_session_id();
-                self.current_session_title = "새 채팅".into();
-                self.status = "새 채팅".into();
-                self.save_session();
-                Task::none()
-            }
+            Message::NewChat => self.new_chat(),
             Message::SwitchSession(target_id) => {
                 if target_id == self.current_session_id {
                     return Task::none();
@@ -1924,21 +1823,7 @@ impl App {
             Message::GenerationLoaded(r) => self.on_generation_loaded(r),
             Message::AskDeleteSession(id) => self.ask_delete_session(id),
             Message::CancelDeleteSession => self.cancel_delete_session(),
-            Message::DeleteSession(target_id) => {
-                self.ui.pending_delete_session = None;
-                if target_id == self.current_session_id {
-                    // 현재 활성을 삭제 → 빈 세션으로 대체
-                    self.blocks.clear();
-                    self.conversation.clear();
-                    self.next_block_id = 0;
-                    self.current_session_id = self.allocate_session_id();
-                    self.current_session_title = "새 채팅".into();
-                } else {
-                    self.inactive_sessions.retain(|s| s.id != target_id);
-                }
-                self.save_session();
-                Task::none()
-            }
+            Message::DeleteSession(target_id) => self.delete_session(target_id),
             Message::ToggleFavorite => self.toggle_favorite(),
             Message::CwdPicked(maybe_path) => self.apply_picked_cwd(maybe_path),
         }
@@ -2544,6 +2429,130 @@ impl App {
         if let Ok(data) = result {
             self.account = Some(data);
         }
+        Task::none()
+    }
+
+    fn fetch_models_cmd(&mut self) -> Task<Message> {
+        let key = match keystore::read_api_key() {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = e;
+                return Task::none();
+            }
+        };
+        self.busy = true;
+        self.status = "모델 리스트 가져오는 중…".into();
+        Task::perform(openrouter::list_models(key), Message::ModelsLoaded)
+    }
+
+    fn on_models_loaded(
+        &mut self,
+        result: Result<Vec<openrouter::OpenRouterModel>, String>,
+    ) -> Task<Message> {
+        self.busy = false;
+        match result {
+            Ok(models) => {
+                let n = models.len();
+                self.model_ids = models.iter().map(|m| m.id.clone()).collect();
+                self.model_options
+                    .retain(|o| o.provider != LlmProvider::OpenRouter);
+                self.model_options.extend(models.iter().map(|m| {
+                    let id = m.id.clone();
+                    let ko_friendly = is_korean_friendly(&id);
+                    let favorite = self.model_filter.favorites.contains(&id);
+                    ModelOption {
+                        id,
+                        provider: LlmProvider::OpenRouter,
+                        provider_label: String::new(),
+                        ko_friendly,
+                        favorite,
+                        context_length: m.context_length,
+                        prompt_per_million: parse_price_per_million(
+                            m.pricing.as_ref().and_then(|p| p.prompt.as_deref()),
+                        ),
+                        completion_per_million: parse_price_per_million(
+                            m.pricing.as_ref().and_then(|p| p.completion.as_deref()),
+                        ),
+                    }
+                }));
+                self.refresh_model_combo();
+                let saved_in_list = self.selected_model_exists_in_options();
+                if !saved_in_list && self.tabby_url_input.trim().is_empty() {
+                    self.selected_model = self.model_ids.first().cloned();
+                    self.selected_model_provider = self
+                        .selected_model
+                        .as_ref()
+                        .map(|_| LlmProvider::OpenRouter);
+                    if let Some(id) = &self.selected_model {
+                        let _ = keystore::write_selected_model(id);
+                    }
+                }
+                self.models = models;
+                self.status = format!("모델 {} 로드됨", n);
+            }
+            Err(e) => self.status = format!("페치 실패: {}", openrouter::humanize_error(&e)),
+        }
+        Task::none()
+    }
+
+    fn on_input_changed(&mut self, value: String) -> Task<Message> {
+        self.input = value;
+        match extract_mention_query(&self.input) {
+            Some(q) => {
+                self.mention_query = q.to_string();
+                self.mention_selected = 0;
+                if !self.show_mention {
+                    self.show_mention = true;
+                    let cwd = self.cwd.clone();
+                    return Task::perform(
+                        collect_mention_candidates(cwd),
+                        Message::MentionCandidatesLoaded,
+                    );
+                }
+            }
+            None => {
+                if self.show_mention {
+                    self.close_mention();
+                }
+            }
+        }
+        Task::none()
+    }
+
+    // ── Session lifecycle helpers ──────────────────────────────────
+
+    fn new_chat(&mut self) -> Task<Message> {
+        self.abort_active_chat_stream(true);
+        self.snapshot_current_to_inactive();
+        self.blocks.clear();
+        self.conversation.clear();
+        self.pending_tool_calls.clear();
+        self.pending_write_calls.clear();
+        self.show_write_confirm = false;
+        self.streaming_block_id = None;
+        self.tool_round = 0;
+        self.next_block_id = 0;
+        self.input.clear();
+        self.ui.pending_delete_session = None;
+        self.current_session_id = self.allocate_session_id();
+        self.current_session_title = "새 채팅".into();
+        self.status = "새 채팅".into();
+        self.save_session();
+        Task::none()
+    }
+
+    fn delete_session(&mut self, target_id: u64) -> Task<Message> {
+        self.ui.pending_delete_session = None;
+        if target_id == self.current_session_id {
+            self.blocks.clear();
+            self.conversation.clear();
+            self.next_block_id = 0;
+            self.current_session_id = self.allocate_session_id();
+            self.current_session_title = "새 채팅".into();
+        } else {
+            self.inactive_sessions.retain(|s| s.id != target_id);
+        }
+        self.save_session();
         Task::none()
     }
 

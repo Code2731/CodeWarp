@@ -28,6 +28,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
+use view::SIDEBAR_WIDTH;
 
 /// 모델을 어느 백엔드로 라우팅할지. OpenAICompat은 사용자 임의 endpoint
 /// (xLLM / vLLM / Tabby / llama-server / Ollama 등 — 모두 OpenAI 호환).
@@ -1437,6 +1438,7 @@ struct App {
     tabby_retry_generation: u64,
     status: String,
     busy: bool,
+    sidebar_width: f32,
 
     models: Vec<OpenRouterModel>,
     model_ids: Vec<String>,
@@ -1755,6 +1757,7 @@ enum Message {
     ToggleCompareBoth(bool),
     ToggleFavorite,
     CycleSortMode,
+    CycleSidebarWidth,
     NewChat,
     SetAgentMode(AgentMode),
     ToggleAgentMode,
@@ -1918,6 +1921,7 @@ impl App {
             tabby_retry_generation: 0,
             status,
             busy: false,
+            sidebar_width: SIDEBAR_WIDTH,
             models: Vec::new(),
             model_ids: Vec::new(),
             selected_model: saved_model,

@@ -3,6 +3,8 @@ use super::*;
 use iced::widget::text_editor;
 use iced::{Subscription, Task};
 
+use crate::view::{SIDEBAR_WIDTH, SIDEBAR_WIDTH_COMPACT, SIDEBAR_WIDTH_WIDE};
+
 const HF_HINT_MARKERS: [&str; 3] = [
     "fallback retry from",
     "fallback lookup failed:",
@@ -778,6 +780,7 @@ impl App {
             Message::ToggleFilterFavorites(v) => self.set_filter_favorites_only(v),
             Message::ToggleCompareBoth(v) => self.set_compare_both(v),
             Message::CycleSortMode => self.cycle_model_sort_mode(),
+            Message::CycleSidebarWidth => self.cycle_sidebar_width(),
             Message::SetAgentMode(mode) => self.set_agent_mode(mode),
             Message::ToggleAgentMode => self.toggle_agent_mode(),
             Message::NewChat => self.new_chat(),
@@ -858,6 +861,18 @@ impl App {
     fn cycle_model_sort_mode(&mut self) -> Task<Message> {
         self.model_filter.sort_mode = self.model_filter.sort_mode.cycle();
         self.refresh_model_combo();
+        Task::none()
+    }
+
+    fn cycle_sidebar_width(&mut self) -> Task<Message> {
+        self.sidebar_width = if (self.sidebar_width - SIDEBAR_WIDTH_COMPACT).abs() < f32::EPSILON {
+            SIDEBAR_WIDTH
+        } else if (self.sidebar_width - SIDEBAR_WIDTH).abs() < f32::EPSILON {
+            SIDEBAR_WIDTH_WIDE
+        } else {
+            SIDEBAR_WIDTH_COMPACT
+        };
+        self.status = format!("사이드바 너비: {:.0}px", self.sidebar_width);
         Task::none()
     }
 

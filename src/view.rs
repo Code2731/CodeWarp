@@ -8,7 +8,7 @@ use iced::widget::{
     text_editor, text_input, Space,
 };
 use iced::{Alignment, Element, Font, Length, Theme};
-use ui::*;
+pub(crate) use ui::*;
 
 impl App {
     pub(crate) fn view(&self) -> Element<'_, Message> {
@@ -402,12 +402,27 @@ impl App {
         ]
         .spacing(SPACE_SM);
 
+        let resize_row = row![
+            text(format!("너비 {:.0}px", self.sidebar_width)).size(FS_LABEL),
+            Space::new().width(Length::Fill),
+            button(text("◀▶").size(FS_LABEL).font(semibold_font()))
+                .on_press(Message::CycleSidebarWidth)
+                .padding([PAD_XS, PAD_MD])
+                .style(secondary_btn),
+        ]
+        .spacing(SPACE_XS)
+        .align_y(Alignment::Center);
+
         container(
-            scrollable(container(body).padding([0, SCROLL_GUTTER_PAD_X]))
-                .direction(Direction::Vertical(app_vscrollbar()))
-                .height(Length::Fill),
+            column![
+                scrollable(container(body).padding([0, SCROLL_GUTTER_PAD_X]))
+                    .direction(Direction::Vertical(app_vscrollbar()))
+                    .height(Length::Fill),
+                resize_row,
+            ]
+            .spacing(SPACE_SM),
         )
-        .width(Length::Fixed(SIDEBAR_WIDTH))
+        .width(Length::Fixed(self.sidebar_width))
         .height(Length::Fill)
         .padding(PAD_LG)
         .style(panel_style)
@@ -515,11 +530,18 @@ impl App {
         let title = text("CodeWarp").size(FS_TITLE).font(bold_font());
         let subtitle =
             text("AI 코딩 데스크톱 — Plan으로 안전하게 둘러보고, Build로 변경 적용").size(FS_BODY);
+        let about = column![
+            text("CodeWarp란?").size(FS_LABEL).font(semibold_font()),
+            text("Rust 네이티브 Iced 기반의 AI 코딩 데스크톱입니다. 프로젝트 컨텍스트, 도구 실행, 클라우드와 로컬 provider를 한 화면에서 다룹니다.")
+                .size(FS_BODY)
+                .line_height(1.35),
+        ]
+        .spacing(SPACE_XXS);
 
         let mut examples_col = column![text("다음을 시도해보세요")
             .size(FS_LABEL)
             .font(semibold_font())]
-        .spacing(6);
+        .spacing(SPACE_SM);
         for ex in EXAMPLES {
             examples_col = examples_col.push(
                 button(text(format!("▸ {}", ex)).size(FS_SUBTITLE))
@@ -539,20 +561,43 @@ impl App {
         ]
         .spacing(2);
 
-        let shortcuts = text("Ctrl+K 명령 팔레트 · Ctrl+N 새 채팅 · Ctrl+, 설정").size(FS_LABEL);
+        let shortcut_hint = |keys: &'static str, label: &'static str| {
+            container(
+                row![
+                    text(keys)
+                        .size(FS_LABEL)
+                        .font(Font::with_name("JetBrains Mono")),
+                    Space::new().width(Length::Fill),
+                    text(label).size(FS_BODY),
+                ]
+                .spacing(SPACE_SM)
+                .align_y(Alignment::Center),
+            )
+            .padding([PAD_XS, PAD_MD])
+            .style(context_item_style)
+        };
+        let shortcuts = column![
+            text("키보드 단축키").size(FS_LABEL).font(semibold_font()),
+            shortcut_hint("Ctrl+K", "명령 팔레트"),
+            shortcut_hint("Ctrl+N", "새 채팅"),
+            shortcut_hint("Ctrl+,", "설정"),
+            shortcut_hint("Ctrl+Shift+P / B", "Plan / Build 모드"),
+        ]
+        .spacing(SPACE_XS);
 
         container(
             column![
                 title,
                 subtitle,
-                Space::new().height(Length::Fixed(20.0)),
+                about,
+                Space::new().height(Length::Fixed(PANEL_SECTION_GAP_LG)),
                 examples_col,
-                Space::new().height(Length::Fixed(20.0)),
+                Space::new().height(Length::Fixed(PANEL_SECTION_GAP_LG)),
                 modes,
-                Space::new().height(Length::Fixed(14.0)),
+                Space::new().height(Length::Fixed(SPACE_SM)),
                 shortcuts,
             ]
-            .spacing(6)
+            .spacing(SPACE_SM)
             .max_width(560),
         )
         .center_x(Length::Fill)
@@ -1452,7 +1497,14 @@ impl App {
         ]
         .spacing(8);
 
-        let tabby_header = text("OpenAI 호환 endpoint").size(14).font(semibold_font());
+        let tabby_header = row![
+            text("OpenAI 호환 endpoint")
+                .size(FS_SUBTITLE)
+                .font(semibold_font()),
+            text("(선택)").size(FS_LABEL).font(semibold_font()),
+        ]
+        .spacing(SPACE_XS)
+        .align_y(Alignment::Center);
         let label_input: Element<Message> = text_input(
             "라벨 — 모델 셀렉터에 [xLLM] / [Tabby] / [Local] 같이 표시",
             &self.openai_compat_label,
@@ -1555,10 +1607,24 @@ impl App {
         tabby_presets = tabby_presets
             .push(text("저장 위치는 Models 탭의 다운로드 경로를 사용합니다.").size(FS_MICRO));
 
+        let provider_intro = column![
+            text("AI Provider").size(FS_SUBTITLE).font(bold_font()),
+            text("최소 1개 이상의 provider를 설정하세요").size(FS_LABEL),
+        ]
+        .spacing(SPACE_XXS);
+
         let provider_section = column![
+            provider_intro,
             container(
                 column![
-                    text("OpenRouter (클라우드)").size(14).font(semibold_font()),
+                    row![
+                        text("OpenRouter (클라우드)")
+                            .size(FS_SUBTITLE)
+                            .font(semibold_font()),
+                        text("(필수)").size(FS_LABEL).font(semibold_font()),
+                    ]
+                    .spacing(SPACE_XS)
+                    .align_y(Alignment::Center),
                     key_status,
                     key_input,
                     actions,

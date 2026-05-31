@@ -745,189 +745,7 @@ impl App {
             Message::FetchAccount => self.fetch_account_cmd(),
             Message::AccountLoaded(r) => self.on_account_loaded(r),
             Message::InputChanged(v) => self.on_input_changed(v),
-            Message::Send => {
-                let text = self.input.trim().to_string();
-                if text.is_empty() {
-                    return Task::none();
-                }
-                // 슬래시 커맨드 처리
-                match text.as_str() {
-                    "/plan" => {
-                        self.agent_mode = AgentMode::Plan;
-                        self.input.clear();
-                        self.status = format!("{} 모드", AgentMode::Plan.label());
-                        return Task::none();
-                    }
-                    "/build" => {
-                        self.agent_mode = AgentMode::Build;
-                        self.input.clear();
-                        self.status = format!("{} 모드", AgentMode::Build.label());
-                        return Task::none();
-                    }
-                    s if s.starts_with('/') => {
-                        self.status = format!("알 수 없는 슬래시 명령: {}", s);
-                        return Task::none();
-                    }
-                    _ => {}
-                }
-                if self.streaming_block_id.is_some() || self.compare_pending {
-                    return Task::none();
-                }
-                if self.compare_both {
-                    let (openrouter_route, tabby_route) = match self.compare_routes() {
-                        Ok(v) => v,
-                        Err(e) => {
-                            self.status = e;
-                            return Task::none();
-                        }
-                    };
-
-                    self.ensure_system_message();
-                    let user_msg = if !self.attached_files.is_empty() {
-                        let ctx = build_file_context(&self.attached_files);
-                        format!("{ctx}\n\n{text}")
-                    } else {
-                        text.clone()
-                    };
-                    self.conversation.push(ChatMessage::user(user_msg));
-                    self.attached_files.clear();
-                    self.close_mention();
-                    self.pending_tool_calls.clear();
-                    self.tool_round = 0;
-                    let messages = self.conversation.clone();
-
-                    let user_id = self.next_id();
-                    self.blocks.push(Block {
-                        id: user_id,
-                        body: BlockBody::User(text),
-                        view_mode: ViewMode::Rendered,
-                        md_items: Vec::new(),
-                        model: None,
-                        apply_candidates: Vec::new(),
-                    });
-                    let openrouter_block_id = self.next_id();
-                    self.blocks.push(Block {
-                        id: openrouter_block_id,
-                        body: BlockBody::Assistant(text_editor::Content::with_text(
-                            "OpenRouter 응답 대기 중…",
-                        )),
-                        view_mode: ViewMode::Raw,
-                        md_items: Vec::new(),
-                        model: Some(format!(
-                            "{}: {}",
-                            openrouter_route.label, openrouter_route.model
-                        )),
-                        apply_candidates: Vec::new(),
-                    });
-                    let tabby_block_id = self.next_id();
-                    self.blocks.push(Block {
-                        id: tabby_block_id,
-                        body: BlockBody::Assistant(text_editor::Content::with_text(
-                            "Tabby 응답 대기 중…",
-                        )),
-                        view_mode: ViewMode::Raw,
-                        md_items: Vec::new(),
-                        model: Some(format!("{}: {}", tabby_route.label, tabby_route.model)),
-                        apply_candidates: Vec::new(),
-                    });
-
-                    self.input.clear();
-                    self.compare_pending = true;
-                    self.status = "Compare 응답 생성 중…".into();
-                    self.follow_bottom = true;
-
-                    let openrouter_messages = messages.clone();
-                    let tabby_messages = messages;
-                    let task = Task::perform(
-                        async move {
-                            let openrouter = collect_chat_text(
-                                openrouter_route.base_url,
-                                openrouter_route.api_key,
-                                openrouter_route.model,
-                                openrouter_messages,
-                            );
-                            let tabby = collect_chat_text(
-                                tabby_route.base_url,
-                                tabby_route.api_key,
-                                tabby_route.model,
-                                tabby_messages,
-                            );
-                            tokio::join!(openrouter, tabby)
-                        },
-                        move |(openrouter_result, tabby_result)| Message::CompareResponsesLoaded {
-                            openrouter_block_id,
-                            tabby_block_id,
-                            openrouter_result,
-                            tabby_result,
-                        },
-                    );
-                    return Task::batch(vec![snap_to_end(self.stream_id.clone()), task]);
-                }
-                let (base_url, api_key) = match self.resolve_provider() {
-                    Ok(v) => v,
-                    Err(e) => {
-                        self.status = e;
-                        return Task::none();
-                    }
-                };
-                let Some(model) = self.selected_model.clone() else {
-                    self.status = "모델을 먼저 선택해주세요.".into();
-                    return Task::none();
-                };
-
-                // 새 turn 시작: system 메시지(cwd 안내) 보장 → user 메시지 push.
-                self.ensure_system_message();
-                // 첨부 파일이 있으면 user 메시지 앞에 파일 컨텍스트를 붙임
-                let user_msg = if !self.attached_files.is_empty() {
-                    let ctx = build_file_context(&self.attached_files);
-                    format!("{ctx}\n\n{text}")
-                } else {
-                    text.clone()
-                };
-                self.conversation.push(ChatMessage::user(user_msg));
-                self.attached_files.clear();
-                self.close_mention();
-                self.pending_tool_calls.clear();
-                self.tool_round = 0;
-                let messages = self.conversation.clone();
-
-                let user_id = self.next_id();
-                self.blocks.push(Block {
-                    id: user_id,
-                    body: BlockBody::User(text),
-                    view_mode: ViewMode::Rendered,
-                    md_items: Vec::new(),
-                    model: None,
-                    apply_candidates: Vec::new(),
-                });
-                let ai_id = self.next_id();
-                self.blocks.push(Block {
-                    id: ai_id,
-                    body: BlockBody::Assistant(text_editor::Content::new()),
-                    view_mode: ViewMode::Raw,
-                    md_items: Vec::new(),
-                    model: self.selected_model.clone(),
-                    apply_candidates: Vec::new(),
-                });
-                self.streaming_block_id = Some(ai_id);
-                self.input.clear();
-                self.status = "응답 생성 중…".into();
-                self.follow_bottom = true; // 새 메시지 전송 시 follow ON
-
-                let (chat_task, handle) = Task::run(
-                    openrouter::chat_stream(
-                        base_url,
-                        api_key,
-                        model,
-                        messages,
-                        self.tool_definitions_for_selected_model(),
-                    ),
-                    Message::ChatChunk,
-                )
-                .abortable();
-                self.abort_handle = Some(handle);
-                Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
-            }
+            Message::Send => self.send_message(),
             Message::StopStream => self.stop_stream(),
             Message::CopyBlock(id) => self.copy_block(id),
             Message::CopyText(text) => iced::clipboard::write(text),
@@ -942,137 +760,7 @@ impl App {
                 openrouter_result,
                 tabby_result,
             ),
-            Message::ChatChunk(event) => {
-                let Some(ai_id) = self.streaming_block_id else {
-                    return Task::none();
-                };
-                match event {
-                    ChatEvent::Token(t) => {
-                        self.append_assistant_block_text(ai_id, &t);
-                    }
-                    ChatEvent::ToolCallDelta {
-                        index,
-                        id,
-                        name,
-                        arguments,
-                    } => {
-                        let i = index as usize;
-                        while self.pending_tool_calls.len() <= i {
-                            self.pending_tool_calls.push(PendingToolCall::default());
-                        }
-                        let tc = &mut self.pending_tool_calls[i];
-                        if let Some(id) = id {
-                            tc.id = id;
-                        }
-                        if let Some(name) = name {
-                            tc.name = name;
-                        }
-                        if let Some(args) = arguments {
-                            tc.arguments.push_str(&args);
-                        }
-                    }
-                    ChatEvent::Done {
-                        finish_reason,
-                        generation_id,
-                    } => {
-                        // 현재 assistant block에 누적된 텍스트
-                        let assistant_text = self
-                            .blocks
-                            .iter()
-                            .find(|b| b.id == ai_id)
-                            .and_then(|b| match &b.body {
-                                BlockBody::Assistant(c) => Some(c.text()),
-                                _ => None,
-                            })
-                            .unwrap_or_default();
-
-                        let has_tools = !self.pending_tool_calls.is_empty()
-                            && (finish_reason.as_deref() == Some("tool_calls")
-                                || finish_reason.is_none());
-
-                        if has_tools && self.tool_round < MAX_TOOL_ROUNDS {
-                            return self.run_tool_round(assistant_text);
-                        }
-
-                        // 정상 종료 (또는 라운드 한도 초과)
-                        if self.tool_round >= MAX_TOOL_ROUNDS && !self.pending_tool_calls.is_empty()
-                        {
-                            self.status = format!("최대 도구 라운드 {} 초과", MAX_TOOL_ROUNDS);
-                        } else {
-                            self.status = "준비됨".into();
-                        }
-                        if !assistant_text.is_empty() {
-                            self.conversation
-                                .push(ChatMessage::assistant(assistant_text.clone()));
-                        } else {
-                            self.status =
-                                "[WARN] 모델이 빈 응답을 반환했습니다. Provider/Runtime 로그를 확인해 주세요.".into();
-                            if let Some(b) = self.blocks.iter().find(|b| b.id == ai_id) {
-                                if b.body.to_text().trim().is_empty() {
-                                    self.append_assistant_block_text(
-                                        ai_id,
-                                        "[WARN] empty response",
-                                    );
-                                }
-                            }
-                        }
-                        // Apply 후보 추출
-                        let candidates = parse_apply_candidates(&assistant_text);
-                        if !candidates.is_empty() {
-                            if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
-                                b.apply_candidates =
-                                    candidates.into_iter().map(|c| (c, false)).collect();
-                            }
-                        }
-                        self.streaming_block_id = None;
-                        self.abort_handle = None;
-                        self.pending_tool_calls.clear();
-                        self.maybe_update_title();
-                        self.save_session();
-                        if let Some(id) = generation_id {
-                            if let Ok(api_key) = keystore::read_api_key() {
-                                return Task::perform(
-                                    openrouter::get_generation(api_key, id),
-                                    Message::GenerationLoaded,
-                                );
-                            }
-                        }
-                    }
-                    ChatEvent::Error(e) => {
-                        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
-                            if let BlockBody::Assistant(content) = &mut b.body {
-                                let prefix = if content.text().is_empty() {
-                                    ""
-                                } else {
-                                    "\n\n"
-                                };
-                                let msg = format!("{}[ERROR] {}", prefix, e);
-                                let mut raw = content.text();
-                                raw.push_str(&msg);
-                                *content = text_editor::Content::with_text(&raw);
-                                b.md_items = markdown::parse(&raw).collect();
-                            }
-                        }
-                        self.streaming_block_id = None;
-                        self.abort_handle = None;
-                        self.pending_tool_calls.clear();
-                        let humanized = openrouter::humanize_error(&e);
-                        if e.contains("OpenRouter 401") || e.contains("OpenRouter 402") {
-                            self.status = format!(
-                                "[WARN] {} | Open Settings and check API key / credits",
-                                humanized
-                            );
-                        } else {
-                            self.status = format!("[ERROR] {}", humanized);
-                        }
-                    }
-                }
-                if self.follow_bottom {
-                    snap_to_end(self.stream_id.clone())
-                } else {
-                    Task::none()
-                }
-            }
+            Message::ChatChunk(event) => self.on_chat_chunk(event),
             Message::StreamScrolled(viewport) => self.on_stream_scrolled(&viewport),
             Message::EditorAction(id, action) => self.on_editor_action(id, action),
             Message::ToggleBlockView(id) => self.toggle_block_view(id),
@@ -2407,6 +2095,308 @@ impl App {
             result
         };
         Task::none()
+    }
+
+    fn send_message(&mut self) -> Task<Message> {
+        let text = self.input.trim().to_string();
+        if text.is_empty() {
+            return Task::none();
+        }
+        match text.as_str() {
+            "/plan" => {
+                self.agent_mode = AgentMode::Plan;
+                self.input.clear();
+                self.status = format!("{} 모드", AgentMode::Plan.label());
+                return Task::none();
+            }
+            "/build" => {
+                self.agent_mode = AgentMode::Build;
+                self.input.clear();
+                self.status = format!("{} 모드", AgentMode::Build.label());
+                return Task::none();
+            }
+            s if s.starts_with('/') => {
+                self.status = format!("알 수 없는 슬래시 명령: {}", s);
+                return Task::none();
+            }
+            _ => {}
+        }
+        if self.streaming_block_id.is_some() || self.compare_pending {
+            return Task::none();
+        }
+        if self.compare_both {
+            let (openrouter_route, tabby_route) = match self.compare_routes() {
+                Ok(v) => v,
+                Err(e) => {
+                    self.status = e;
+                    return Task::none();
+                }
+            };
+
+            self.ensure_system_message();
+            let user_msg = if !self.attached_files.is_empty() {
+                let ctx = build_file_context(&self.attached_files);
+                format!("{ctx}\n\n{text}")
+            } else {
+                text.clone()
+            };
+            self.conversation.push(ChatMessage::user(user_msg));
+            self.attached_files.clear();
+            self.close_mention();
+            self.pending_tool_calls.clear();
+            self.tool_round = 0;
+            let messages = self.conversation.clone();
+
+            let user_id = self.next_id();
+            self.blocks.push(Block {
+                id: user_id,
+                body: BlockBody::User(text),
+                view_mode: ViewMode::Rendered,
+                md_items: Vec::new(),
+                model: None,
+                apply_candidates: Vec::new(),
+            });
+            let openrouter_block_id = self.next_id();
+            self.blocks.push(Block {
+                id: openrouter_block_id,
+                body: BlockBody::Assistant(text_editor::Content::with_text(
+                    "OpenRouter 응답 대기 중…",
+                )),
+                view_mode: ViewMode::Raw,
+                md_items: Vec::new(),
+                model: Some(format!(
+                    "{}: {}",
+                    openrouter_route.label, openrouter_route.model
+                )),
+                apply_candidates: Vec::new(),
+            });
+            let tabby_block_id = self.next_id();
+            self.blocks.push(Block {
+                id: tabby_block_id,
+                body: BlockBody::Assistant(text_editor::Content::with_text("Tabby 응답 대기 중…")),
+                view_mode: ViewMode::Raw,
+                md_items: Vec::new(),
+                model: Some(format!("{}: {}", tabby_route.label, tabby_route.model)),
+                apply_candidates: Vec::new(),
+            });
+
+            self.input.clear();
+            self.compare_pending = true;
+            self.status = "Compare 응답 생성 중…".into();
+            self.follow_bottom = true;
+
+            let openrouter_messages = messages.clone();
+            let tabby_messages = messages;
+            let task = Task::perform(
+                async move {
+                    let openrouter = collect_chat_text(
+                        openrouter_route.base_url,
+                        openrouter_route.api_key,
+                        openrouter_route.model,
+                        openrouter_messages,
+                    );
+                    let tabby = collect_chat_text(
+                        tabby_route.base_url,
+                        tabby_route.api_key,
+                        tabby_route.model,
+                        tabby_messages,
+                    );
+                    tokio::join!(openrouter, tabby)
+                },
+                move |(openrouter_result, tabby_result)| Message::CompareResponsesLoaded {
+                    openrouter_block_id,
+                    tabby_block_id,
+                    openrouter_result,
+                    tabby_result,
+                },
+            );
+            return Task::batch(vec![snap_to_end(self.stream_id.clone()), task]);
+        }
+        let (base_url, api_key) = match self.resolve_provider() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = e;
+                return Task::none();
+            }
+        };
+        let Some(model) = self.selected_model.clone() else {
+            self.status = "모델을 먼저 선택해주세요.".into();
+            return Task::none();
+        };
+
+        self.ensure_system_message();
+        let user_msg = if !self.attached_files.is_empty() {
+            let ctx = build_file_context(&self.attached_files);
+            format!("{ctx}\n\n{text}")
+        } else {
+            text.clone()
+        };
+        self.conversation.push(ChatMessage::user(user_msg));
+        self.attached_files.clear();
+        self.close_mention();
+        self.pending_tool_calls.clear();
+        self.tool_round = 0;
+        let messages = self.conversation.clone();
+
+        let user_id = self.next_id();
+        self.blocks.push(Block {
+            id: user_id,
+            body: BlockBody::User(text),
+            view_mode: ViewMode::Rendered,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+        let ai_id = self.next_id();
+        self.blocks.push(Block {
+            id: ai_id,
+            body: BlockBody::Assistant(text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: self.selected_model.clone(),
+            apply_candidates: Vec::new(),
+        });
+        self.streaming_block_id = Some(ai_id);
+        self.input.clear();
+        self.status = "응답 생성 중…".into();
+        self.follow_bottom = true;
+
+        let (chat_task, handle) = Task::run(
+            openrouter::chat_stream(
+                base_url,
+                api_key,
+                model,
+                messages,
+                self.tool_definitions_for_selected_model(),
+            ),
+            Message::ChatChunk,
+        )
+        .abortable();
+        self.abort_handle = Some(handle);
+        Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
+    }
+
+    fn on_chat_chunk(&mut self, event: ChatEvent) -> Task<Message> {
+        let Some(ai_id) = self.streaming_block_id else {
+            return Task::none();
+        };
+        match event {
+            ChatEvent::Token(t) => {
+                self.append_assistant_block_text(ai_id, &t);
+            }
+            ChatEvent::ToolCallDelta {
+                index,
+                id,
+                name,
+                arguments,
+            } => {
+                let i = index as usize;
+                while self.pending_tool_calls.len() <= i {
+                    self.pending_tool_calls.push(PendingToolCall::default());
+                }
+                let tc = &mut self.pending_tool_calls[i];
+                if let Some(id) = id {
+                    tc.id = id;
+                }
+                if let Some(name) = name {
+                    tc.name = name;
+                }
+                if let Some(args) = arguments {
+                    tc.arguments.push_str(&args);
+                }
+            }
+            ChatEvent::Done {
+                finish_reason,
+                generation_id,
+            } => {
+                let assistant_text = self
+                    .blocks
+                    .iter()
+                    .find(|b| b.id == ai_id)
+                    .and_then(|b| match &b.body {
+                        BlockBody::Assistant(c) => Some(c.text()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+
+                let has_tools = !self.pending_tool_calls.is_empty()
+                    && (finish_reason.as_deref() == Some("tool_calls") || finish_reason.is_none());
+
+                if has_tools && self.tool_round < MAX_TOOL_ROUNDS {
+                    return self.run_tool_round(assistant_text);
+                }
+
+                if self.tool_round >= MAX_TOOL_ROUNDS && !self.pending_tool_calls.is_empty() {
+                    self.status = format!("최대 도구 라운드 {} 초과", MAX_TOOL_ROUNDS);
+                } else {
+                    self.status = "준비됨".into();
+                }
+                if !assistant_text.is_empty() {
+                    self.conversation
+                        .push(ChatMessage::assistant(assistant_text.clone()));
+                } else {
+                    self.status =
+                        "[WARN] 모델이 빈 응답을 반환했습니다. Provider/Runtime 로그를 확인해 주세요.".into();
+                    if let Some(b) = self.blocks.iter().find(|b| b.id == ai_id) {
+                        if b.body.to_text().trim().is_empty() {
+                            self.append_assistant_block_text(ai_id, "[WARN] empty response");
+                        }
+                    }
+                }
+                let candidates = parse_apply_candidates(&assistant_text);
+                if !candidates.is_empty() {
+                    if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
+                        b.apply_candidates = candidates.into_iter().map(|c| (c, false)).collect();
+                    }
+                }
+                self.streaming_block_id = None;
+                self.abort_handle = None;
+                self.pending_tool_calls.clear();
+                self.maybe_update_title();
+                self.save_session();
+                if let Some(id) = generation_id {
+                    if let Ok(api_key) = keystore::read_api_key() {
+                        return Task::perform(
+                            openrouter::get_generation(api_key, id),
+                            Message::GenerationLoaded,
+                        );
+                    }
+                }
+            }
+            ChatEvent::Error(e) => {
+                if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
+                    if let BlockBody::Assistant(content) = &mut b.body {
+                        let prefix = if content.text().is_empty() {
+                            ""
+                        } else {
+                            "\n\n"
+                        };
+                        let msg = format!("{}[ERROR] {}", prefix, e);
+                        let mut raw = content.text();
+                        raw.push_str(&msg);
+                        *content = text_editor::Content::with_text(&raw);
+                        b.md_items = markdown::parse(&raw).collect();
+                    }
+                }
+                self.streaming_block_id = None;
+                self.abort_handle = None;
+                self.pending_tool_calls.clear();
+                let humanized = openrouter::humanize_error(&e);
+                if e.contains("OpenRouter 401") || e.contains("OpenRouter 402") {
+                    self.status = format!(
+                        "[WARN] {} | Open Settings and check API key / credits",
+                        humanized
+                    );
+                } else {
+                    self.status = format!("[ERROR] {}", humanized);
+                }
+            }
+        }
+        if self.follow_bottom {
+            snap_to_end(self.stream_id.clone())
+        } else {
+            Task::none()
+        }
     }
 
     // ── MCP server helpers ────────────────────────────────────────

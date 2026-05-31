@@ -1160,20 +1160,8 @@ impl App {
             // ── HF 모델 매니저 ────────────────────────────────────
             Message::HfTokenChanged(v) => self.set_hf_token_input(v),
             Message::ToggleHfTokenVisible => self.toggle_hf_token_visible(),
-            Message::SaveHfToken => {
-                let t = self.hf_token_input.clone();
-                Task::perform(
-                    async move { keystore::write_hf_token(&t) },
-                    Message::HfTokenSaved,
-                )
-            }
-            Message::HfTokenSaved(r) => {
-                match r {
-                    Ok(()) => self.status = "HF 토큰 저장됨".into(),
-                    Err(e) => self.status = format!("HF 토큰 저장 실패: {}", e),
-                }
-                Task::none()
-            }
+            Message::SaveHfToken => self.save_hf_token(),
+            Message::HfTokenSaved(r) => self.on_hf_token_saved(r),
             Message::ModelDirChanged(v) => self.set_model_dir(v),
             Message::PickModelDir => Task::perform(
                 async {
@@ -1195,28 +1183,8 @@ impl App {
                 Task::none()
             }
             Message::HfRepoChanged(v) => self.set_hf_repo_input(v),
-            Message::UsePreset(idx) => {
-                if let Some(p) = MODEL_PRESETS.get(idx) {
-                    self.hf_repo_input = p.repo_id.into();
-                    self.hf_revision = None;
-                    self.hf_folder_name = None;
-                }
-                Task::none()
-            }
-            Message::DownloadExl2Preset(idx) => {
-                if let Some(p) = EXL2_PRESETS.get(idx) {
-                    self.hf_repo_input = p.repo_id.into();
-                    self.hf_revision = Some(p.revision.into());
-                    self.hf_folder_name = Some(p.folder_name.into());
-                    self.status = format!(
-                        "프리셋 다운로드 시작 준비: {} ({} @ {})",
-                        p.label, p.repo_id, p.revision
-                    );
-                    return Task::done(Message::StartHfDownload);
-                }
-                self.status = format!("잘못된 프리셋 인덱스: {}", idx);
-                Task::none()
-            }
+            Message::UsePreset(idx) => self.apply_model_preset(idx),
+            Message::DownloadExl2Preset(idx) => self.prepare_exl2_preset_download(idx),
             Message::SelectDownloadedModel(folder_name) => {
                 let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
                 let Some(resolved_model_path) =
@@ -1549,21 +1517,7 @@ impl App {
                 )
             }
             Message::FileDragHover => self.file_drag_hover(),
-            Message::FileReadDone(path, content) => {
-                if !self.is_already_attached(&path) {
-                    self.attached_files.push((path, content));
-                    let current_total = self.total_attached_bytes();
-                    self.status = format!(
-                        "Attached ({} files): {}/{}",
-                        self.attached_files.len(),
-                        fmt_bytes(current_total),
-                        fmt_bytes(MAX_ATTACH_BYTES)
-                    );
-                } else {
-                    self.status = format!("Already attached: {}", path.display());
-                }
-                Task::none()
-            }
+            Message::FileReadDone(path, content) => self.on_file_read_done(path, content),
             Message::FileAttachError(msg) => self.file_attach_error(msg),
 
             // ── MCP ───────────────────────────────────────────────────
@@ -1601,31 +1555,13 @@ impl App {
                     },
                 )
             }
-            Message::RemoveMcpServer(idx) => {
-                if idx < self.mcp_servers.len() {
-                    let removed = self.mcp_servers.remove(idx);
-                    self.mcp_tools.retain(|t| t.server_name != removed.name);
-                    let _ = mcp::save_servers(&self.mcp_servers);
-                    self.status = format!("MCP 서버 제거됨: {}", removed.name);
-                }
-                Task::none()
-            }
+            Message::RemoveMcpServer(idx) => self.remove_mcp_server(idx),
             Message::McpToolsLoaded(server_name, tools) => {
-                self.mcp_tools.retain(|t| t.server_name != server_name);
-                let count = tools.len();
-                self.mcp_tools.extend(tools);
-                self.status = format!("MCP [{server_name}] tool {count}개 로드 완료");
-                Task::none()
+                self.on_mcp_tools_loaded(server_name, tools)
             }
-            Message::McpToolsFailed(msg) => {
-                self.status = format!("MCP tool 로드 실패: {msg}");
-                Task::none()
-            }
+            Message::McpToolsFailed(msg) => self.on_mcp_tools_failed(msg),
             Message::McpToolResult(tool_call_id, result) => {
-                self.conversation
-                    .push(ChatMessage::tool_result(&tool_call_id, result));
-                self.tool_round += 1;
-                self.kick_chat_stream()
+                self.on_mcp_tool_result(tool_call_id, result)
             }
 
             // ── PTY 터미널 ─────────────────────────────────────────
@@ -1731,12 +1667,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::SelectModel(opt) => {
-                let _ = keystore::write_selected_model(&opt.id);
-                self.selected_model_provider = Some(opt.provider);
-                self.selected_model = Some(opt.id);
-                Task::none()
-            }
+            Message::SelectModel(opt) => self.select_model(opt),
             Message::FetchAccount => {
                 let key = match keystore::read_api_key() {
                     Ok(k) => k,
@@ -1744,12 +1675,7 @@ impl App {
                 };
                 Task::perform(openrouter::get_account_info(key), Message::AccountLoaded)
             }
-            Message::AccountLoaded(r) => {
-                if let Ok(data) = r {
-                    self.account = Some(data);
-                }
-                Task::none()
-            }
+            Message::AccountLoaded(r) => self.on_account_loaded(r),
             Message::InputChanged(v) => {
                 self.input = v;
                 // @-mention 팝업 감지
@@ -2244,14 +2170,8 @@ impl App {
                     },
                 )
             }
-            Message::ApproveWrites => {
-                self.ui.expanded_confirm_idx = None;
-                self.continue_after_writes(true)
-            }
-            Message::DenyWrites => {
-                self.ui.expanded_confirm_idx = None;
-                self.continue_after_writes(false)
-            }
+            Message::ApproveWrites => self.approve_pending_writes(),
+            Message::DenyWrites => self.deny_pending_writes(),
             Message::ToggleConfirmExpand(idx) => self.toggle_write_confirm_expand(idx),
             Message::DiscardWriteCall(idx) => {
                 if idx >= self.pending_write_calls.len() {
@@ -2896,6 +2816,135 @@ impl App {
     fn load_mention_candidates(&mut self, paths: Vec<std::path::PathBuf>) -> Task<Message> {
         self.mention_candidates = paths;
         Task::none()
+    }
+
+    // ── Write confirm helpers ────────────────────────────────────
+
+    fn approve_pending_writes(&mut self) -> Task<Message> {
+        self.ui.expanded_confirm_idx = None;
+        self.continue_after_writes(true)
+    }
+
+    fn deny_pending_writes(&mut self) -> Task<Message> {
+        self.ui.expanded_confirm_idx = None;
+        self.continue_after_writes(false)
+    }
+
+    // ── HF token helpers ─────────────────────────────────────────
+
+    fn save_hf_token(&mut self) -> Task<Message> {
+        let t = self.hf_token_input.clone();
+        Task::perform(
+            async move { keystore::write_hf_token(&t) },
+            Message::HfTokenSaved,
+        )
+    }
+
+    fn on_hf_token_saved(&mut self, result: Result<(), String>) -> Task<Message> {
+        match result {
+            Ok(()) => self.status = "HF 토큰 저장됨".into(),
+            Err(e) => self.status = format!("HF 토큰 저장 실패: {}", e),
+        }
+        Task::none()
+    }
+
+    // ── HF preset helpers ────────────────────────────────────────
+
+    fn apply_model_preset(&mut self, idx: usize) -> Task<Message> {
+        if let Some(p) = MODEL_PRESETS.get(idx) {
+            self.hf_repo_input = p.repo_id.into();
+            self.hf_revision = None;
+            self.hf_folder_name = None;
+        }
+        Task::none()
+    }
+
+    fn prepare_exl2_preset_download(&mut self, idx: usize) -> Task<Message> {
+        if let Some(p) = EXL2_PRESETS.get(idx) {
+            self.hf_repo_input = p.repo_id.into();
+            self.hf_revision = Some(p.revision.into());
+            self.hf_folder_name = Some(p.folder_name.into());
+            self.status = format!(
+                "프리셋 다운로드 시작 준비: {} ({} @ {})",
+                p.label, p.repo_id, p.revision
+            );
+            return Task::done(Message::StartHfDownload);
+        }
+        self.status = format!("잘못된 프리셋 인덱스: {}", idx);
+        Task::none()
+    }
+
+    // ── File attachment result helpers ────────────────────────────
+
+    fn on_file_read_done(&mut self, path: std::path::PathBuf, content: String) -> Task<Message> {
+        if !self.is_already_attached(&path) {
+            self.attached_files.push((path, content));
+            let current_total = self.total_attached_bytes();
+            self.status = format!(
+                "Attached ({} files): {}/{}",
+                self.attached_files.len(),
+                fmt_bytes(current_total),
+                fmt_bytes(MAX_ATTACH_BYTES)
+            );
+        } else {
+            self.status = format!("Already attached: {}", path.display());
+        }
+        Task::none()
+    }
+
+    // ── Model select / account helpers ────────────────────────────
+
+    fn select_model(&mut self, opt: ModelOption) -> Task<Message> {
+        let _ = keystore::write_selected_model(&opt.id);
+        self.selected_model_provider = Some(opt.provider);
+        self.selected_model = Some(opt.id);
+        Task::none()
+    }
+
+    fn on_account_loaded(
+        &mut self,
+        result: Result<openrouter::AuthKeyData, String>,
+    ) -> Task<Message> {
+        if let Ok(data) = result {
+            self.account = Some(data);
+        }
+        Task::none()
+    }
+
+    // ── MCP server helpers ────────────────────────────────────────
+
+    fn remove_mcp_server(&mut self, idx: usize) -> Task<Message> {
+        if idx < self.mcp_servers.len() {
+            let removed = self.mcp_servers.remove(idx);
+            self.mcp_tools.retain(|t| t.server_name != removed.name);
+            let _ = mcp::save_servers(&self.mcp_servers);
+            self.status = format!("MCP 서버 제거됨: {}", removed.name);
+        }
+        Task::none()
+    }
+
+    fn on_mcp_tools_loaded(
+        &mut self,
+        server_name: String,
+        tools: Vec<mcp::McpTool>,
+    ) -> Task<Message> {
+        self.mcp_tools.retain(|t| t.server_name != server_name);
+        let count = tools.len();
+        self.mcp_tools.extend(tools);
+        self.status = format!("MCP [{server_name}] tool {count}개 로드 완료");
+        Task::none()
+    }
+
+    fn on_mcp_tools_failed(&mut self, msg: String) -> Task<Message> {
+        self.status = format!("MCP tool 로드 실패: {msg}");
+        Task::none()
+    }
+
+    fn on_mcp_tool_result(&mut self, tool_call_id: String, result: String) -> Task<Message> {
+        self.conversation
+            .push(ChatMessage::tool_result(&tool_call_id, result));
+        self.tool_round += 1;
+        self.kick_chat_stream()
     }
 
     /// 현재 활성 필터/정렬을 적용해 model_options을 좁힌 결과.

@@ -365,7 +365,7 @@ impl App {
                 context_header,
                 context_actions(self.attached_files.len()),
                 scrollable(context_list)
-                    .direction(Direction::Vertical(vscrollbar()))
+                    .direction(Direction::Vertical(app_vscrollbar()))
                     .height(Length::Fixed(CONTEXT_LIST_HEIGHT)),
             ]
             .spacing(SPACE_SM)
@@ -380,7 +380,7 @@ impl App {
             Space::new().height(Length::Fixed(8.0)),
             text("채팅").size(FS_LABEL).font(semibold_font()),
             scrollable(sessions_col)
-                .direction(Direction::Vertical(vscrollbar(),))
+                .direction(Direction::Vertical(app_vscrollbar(),))
                 .height(Length::Fixed(220.0)),
             Space::new().height(Length::Fixed(14.0)),
             text("모델 사용량 (누적)")
@@ -404,7 +404,7 @@ impl App {
 
         container(
             scrollable(container(body).padding([0, SCROLL_GUTTER_PAD_X]))
-                .direction(Direction::Vertical(vscrollbar()))
+                .direction(Direction::Vertical(app_vscrollbar()))
                 .height(Length::Fill),
         )
         .width(Length::Fixed(SIDEBAR_WIDTH))
@@ -495,7 +495,7 @@ impl App {
 
         container(
             scrollable(container(body).padding([0, SCROLL_GUTTER_PAD_X]))
-                .direction(Direction::Vertical(vscrollbar()))
+                .direction(Direction::Vertical(app_vscrollbar()))
                 .height(Length::Fill),
         )
         .width(Length::Fixed(RIGHT_PANEL_WIDTH))
@@ -802,7 +802,7 @@ impl App {
             scrollable(container(col).padding([0, SCROLL_GUTTER_PAD_X]))
                 .id(self.stream_id.clone())
                 .on_scroll(Message::StreamScrolled)
-                .direction(Direction::Vertical(vscrollbar()))
+                .direction(Direction::Vertical(app_vscrollbar()))
                 .height(Length::Fill)
                 .into()
         };
@@ -877,7 +877,7 @@ impl App {
                 }
                 container(
                     scrollable(list)
-                        .direction(Direction::Vertical(vscrollbar()))
+                        .direction(Direction::Vertical(app_vscrollbar()))
                         .height(Length::Shrink),
                 )
                 .padding([4, 0])
@@ -1061,7 +1061,7 @@ impl App {
             input,
             Space::new().height(Length::Fixed(8.0)),
             scrollable(list)
-                .direction(Direction::Vertical(vscrollbar(),))
+                .direction(Direction::Vertical(app_vscrollbar(),))
                 .height(Length::Fixed(320.0)),
             Space::new().height(Length::Fixed(8.0)),
             row![
@@ -1174,7 +1174,7 @@ impl App {
             column![
                 header,
                 Space::new().height(Length::Fixed(4.0)),
-                container(scrollable(cards).direction(Direction::Vertical(vscrollbar(),)))
+                container(scrollable(cards).direction(Direction::Vertical(app_vscrollbar(),)))
                     .max_height(140.0),
                 Space::new().height(Length::Fixed(6.0)),
                 actions,
@@ -1302,7 +1302,7 @@ impl App {
 
         container(
             scrollable(col)
-                .direction(Direction::Vertical(vscrollbar()))
+                .direction(Direction::Vertical(app_vscrollbar()))
                 .height(Length::Fill),
         )
         .padding(20)
@@ -1938,7 +1938,7 @@ impl App {
         let body = column![
             header,
             scrollable(scroll_body)
-                .direction(Direction::Vertical(vscrollbar()))
+                .direction(Direction::Vertical(app_vscrollbar()))
                 .height(Length::Fill)
                 .width(Length::Fill),
         ]
@@ -2538,7 +2538,7 @@ impl App {
             );
         }
         let output_area = scrollable(container(out_col).padding([0, SCROLL_GUTTER_PAD_X]))
-            .direction(Direction::Vertical(vscrollbar()))
+            .direction(Direction::Vertical(app_vscrollbar()))
             .height(Length::Fixed(200.0))
             .width(Length::Fill);
 
@@ -2603,9 +2603,10 @@ impl App {
             Some(c) if c > 0.0 => format!("최근: ${:.4}", c),
             _ => String::new(),
         };
-        let busy_prefix: Element<Message> = if self.streaming_block_id.is_some() {
-            text("▶ ")
+        let streaming_indicator: Element<Message> = if self.streaming_block_id.is_some() {
+            text("▶ 응답 생성 중...")
                 .size(FS_LABEL)
+                .font(semibold_font())
                 .style(|theme: &Theme| iced::widget::text::Style {
                     color: Some(theme.extended_palette().primary.base.color),
                 })
@@ -2633,22 +2634,8 @@ impl App {
         } else {
             text(&self.status).size(FS_LABEL).into()
         };
-        let streaming_hint: Element<Message> = if self.streaming_block_id.is_some() {
-            text("STREAMING")
-                .size(FS_MICRO)
-                .style(|theme: &Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().primary.base.color),
-                })
-                .into()
-        } else {
-            Space::new()
-                .width(Length::Shrink)
-                .height(Length::Shrink)
-                .into()
-        };
         let mut bar = row![
-            busy_prefix,
-            streaming_hint,
+            streaming_indicator,
             status_text,
             Space::new().width(Length::Fill),
         ]

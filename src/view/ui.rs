@@ -1,3 +1,4 @@
+use iced::widget::scrollable::Scrollbar;
 use iced::widget::{button, container, text_input};
 use iced::{font, Border, Color, Font, Theme};
 
@@ -30,6 +31,8 @@ pub(crate) const STATUSBAR_ROW_SPACING: f32 = 8.0;
 pub(crate) const STATUSBAR_PAD_Y: u16 = 4;
 pub(crate) const STATUSBAR_PAD_X: u16 = 14;
 pub(crate) const SCROLL_GUTTER_PAD_X: u16 = 12;
+const VSCROLLBAR_WIDTH: u32 = 10;
+const VSCROLLBAR_MARGIN: u32 = 2;
 const BORDER_WIDTH: f32 = 1.0;
 const PANEL_RADIUS: f32 = 12.0;
 const CONTROL_RADIUS: f32 = 10.0;
@@ -46,6 +49,13 @@ fn with_alpha(color: Color, alpha: f32) -> Color {
 
 fn disabled_text_color() -> Color {
     Color::from_rgba(0.92, 0.94, 0.98, 0.75)
+}
+
+pub(crate) fn app_vscrollbar() -> Scrollbar {
+    Scrollbar::new()
+        .width(VSCROLLBAR_WIDTH)
+        .scroller_width(VSCROLLBAR_WIDTH)
+        .margin(VSCROLLBAR_MARGIN)
 }
 
 pub(crate) fn panel_style(theme: &Theme) -> container::Style {

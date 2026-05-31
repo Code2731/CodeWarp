@@ -1283,13 +1283,7 @@ impl App {
             Message::FetchModels => self.fetch_models_cmd(),
             Message::ModelsLoaded(r) => self.on_models_loaded(r),
             Message::SelectModel(opt) => self.select_model(opt),
-            Message::FetchAccount => {
-                let key = match keystore::read_api_key() {
-                    Ok(k) => k,
-                    Err(_) => return Task::none(),
-                };
-                Task::perform(openrouter::get_account_info(key), Message::AccountLoaded)
-            }
+            Message::FetchAccount => self.fetch_account_cmd(),
             Message::AccountLoaded(r) => self.on_account_loaded(r),
             Message::InputChanged(v) => self.on_input_changed(v),
             Message::Send => {
@@ -1656,112 +1650,13 @@ impl App {
                     Task::none()
                 }
             }
-            Message::StreamScrolled(viewport) => {
-                // 사용자가 거의 끝까지 내려가 있으면 follow ON, 아니면 OFF
-                let rel = viewport.relative_offset();
-                self.follow_bottom = rel.y > 0.95;
-                self.current_scroll_y = viewport.absolute_offset().y;
-                Task::none()
-            }
-            Message::EditorAction(id, action) => {
-                // read-only: Edit 액션은 무시 (사용자 키보드 입력 차단), 나머지(선택/스크롤)는 처리
-                if action.is_edit() {
-                    return Task::none();
-                }
-                if let Some(b) = self.blocks.iter_mut().find(|b| b.id == id) {
-                    if let BlockBody::Assistant(content) = &mut b.body {
-                        content.perform(action);
-                    }
-                }
-                Task::none()
-            }
-            Message::ToggleBlockView(id) => {
-                if let Some(b) = self.blocks.iter_mut().find(|b| b.id == id) {
-                    b.view_mode = match b.view_mode {
-                        ViewMode::Rendered => ViewMode::Raw,
-                        ViewMode::Raw => ViewMode::Rendered,
-                    };
-                }
-                Task::none()
-            }
-            Message::LinkClicked(uri) => {
-                let url = uri.to_string();
-                let lower = url.to_ascii_lowercase();
-                if lower.starts_with("javascript:") {
-                    self.status = "차단된 링크 스킴입니다.".into();
-                    return Task::none();
-                }
-                match webbrowser::open(&url) {
-                    Ok(_) => {
-                        self.status = format!("브라우저에서 열기: {}", url);
-                    }
-                    Err(e) => {
-                        self.status = format!("링크 열기 실패: {}", e);
-                    }
-                }
-                Task::none()
-            }
-            Message::PickCwd => Task::perform(
-                async {
-                    rfd::AsyncFileDialog::new()
-                        .set_title("작업 폴더 선택")
-                        .pick_folder()
-                        .await
-                        .map(|h| h.path().to_path_buf())
-                },
-                Message::CwdPicked,
-            ),
-            Message::PickAttachment => Task::perform(
-                {
-                    let cwd = self.cwd.clone();
-                    async move {
-                        rfd::AsyncFileDialog::new()
-                            .set_title("而⑦뀓?ㅽ듃 ?뚯씪 ?좏깮")
-                            .set_directory(cwd)
-                            .pick_file()
-                            .await
-                            .map(|h| h.path().to_path_buf())
-                    }
-                },
-                Message::AttachmentPicked,
-            ),
-            Message::AttachmentPicked(maybe_path) => {
-                let Some(path) = maybe_path else {
-                    return Task::none();
-                };
-                if self.is_already_attached(&path) {
-                    self.status = format!("Already attached: {}", path.display());
-                    return Task::none();
-                }
-                let existing_total = self.total_attached_bytes();
-                Task::perform(
-                    async move {
-                        let content = tokio::fs::read_to_string(&path)
-                            .await
-                            .map_err(|e| format!("File read failed: {e}"))?;
-                        if content.len() > MAX_ATTACH_BYTES as usize {
-                            return Err(format!(
-                                "Attachment too large (max {}): {}",
-                                fmt_bytes(MAX_ATTACH_BYTES),
-                                path.display()
-                            ));
-                        }
-                        let next_total = existing_total + content.len() as u64;
-                        if next_total > MAX_ATTACH_BYTES {
-                            return Err(format!(
-                                "Attachment limit exceeded: {} / {}",
-                                fmt_bytes(next_total),
-                                fmt_bytes(MAX_ATTACH_BYTES)
-                            ));
-                        }
-                        Ok((path, content))
-                    },
-                    |r| match r {
-                        Ok((p, s)) => Message::FileReadDone(p, s),
-                        Err(msg) => Message::FileAttachError(msg),
-                    },
-                )
-            }
+            Message::StreamScrolled(viewport) => self.on_stream_scrolled(&viewport),
+            Message::EditorAction(id, action) => self.on_editor_action(id, action),
+            Message::ToggleBlockView(id) => self.toggle_block_view(id),
+            Message::LinkClicked(uri) => self.on_link_clicked(&uri),
+            Message::PickCwd => self.pick_cwd(),
+            Message::PickAttachment => self.pick_attachment(),
+            Message::AttachmentPicked(maybe_path) => self.on_attachment_picked(maybe_path),
             Message::ApproveWrites => self.approve_pending_writes(),
             Message::DenyWrites => self.deny_pending_writes(),
             Message::ToggleConfirmExpand(idx) => self.toggle_write_confirm_expand(idx),
@@ -1775,46 +1670,7 @@ impl App {
             Message::SetAgentMode(mode) => self.set_agent_mode(mode),
             Message::ToggleAgentMode => self.toggle_agent_mode(),
             Message::NewChat => self.new_chat(),
-            Message::SwitchSession(target_id) => {
-                if target_id == self.current_session_id {
-                    return Task::none();
-                }
-                let Some(idx) = self
-                    .inactive_sessions
-                    .iter()
-                    .position(|s| s.id == target_id)
-                else {
-                    return Task::none();
-                };
-                self.abort_active_chat_stream(true);
-                // 현재 활성을 inactive로 보관
-                self.snapshot_current_to_inactive();
-                // target 활성화
-                let target = self.inactive_sessions.remove(idx);
-                self.current_session_id = target.id;
-                self.current_session_title = target.title;
-                self.conversation = target.conversation;
-                self.next_block_id = target.next_block_id;
-                self.blocks = target.blocks.into_iter().map(persisted_to_block).collect();
-                self.current_scroll_y = target.scroll_y;
-                self.pending_tool_calls.clear();
-                self.pending_write_calls.clear();
-                self.show_write_confirm = false;
-                self.streaming_block_id = None;
-                self.tool_round = 0;
-                self.input.clear();
-                self.ui.pending_delete_session = None;
-                self.status = "세션 전환됨".into();
-                self.save_session();
-                // 새 세션의 마지막 scroll 위치로 복원
-                iced::widget::operation::scroll_to(
-                    self.stream_id.clone(),
-                    iced::widget::scrollable::AbsoluteOffset {
-                        x: 0.0,
-                        y: target.scroll_y,
-                    },
-                )
-            }
+            Message::SwitchSession(target_id) => self.switch_session(target_id),
             Message::OpenCommandPalette => self.open_command_palette(),
             Message::CloseCommandPalette => self.close_command_palette(),
             Message::CloseAllOverlays => self.close_all_overlays(),
@@ -2554,6 +2410,172 @@ impl App {
         }
         self.save_session();
         Task::none()
+    }
+
+    fn switch_session(&mut self, target_id: u64) -> Task<Message> {
+        if target_id == self.current_session_id {
+            return Task::none();
+        }
+        let Some(idx) = self
+            .inactive_sessions
+            .iter()
+            .position(|s| s.id == target_id)
+        else {
+            return Task::none();
+        };
+        self.abort_active_chat_stream(true);
+        self.snapshot_current_to_inactive();
+        let target = self.inactive_sessions.remove(idx);
+        self.current_session_id = target.id;
+        self.current_session_title = target.title;
+        self.conversation = target.conversation;
+        self.next_block_id = target.next_block_id;
+        self.blocks = target.blocks.into_iter().map(persisted_to_block).collect();
+        self.current_scroll_y = target.scroll_y;
+        self.pending_tool_calls.clear();
+        self.pending_write_calls.clear();
+        self.show_write_confirm = false;
+        self.streaming_block_id = None;
+        self.tool_round = 0;
+        self.input.clear();
+        self.ui.pending_delete_session = None;
+        self.status = "세션 전환됨".into();
+        self.save_session();
+        iced::widget::operation::scroll_to(
+            self.stream_id.clone(),
+            iced::widget::scrollable::AbsoluteOffset {
+                x: 0.0,
+                y: target.scroll_y,
+            },
+        )
+    }
+
+    fn fetch_account_cmd(&mut self) -> Task<Message> {
+        let key = match keystore::read_api_key() {
+            Ok(k) => k,
+            Err(_) => return Task::none(),
+        };
+        Task::perform(openrouter::get_account_info(key), Message::AccountLoaded)
+    }
+
+    fn on_stream_scrolled(
+        &mut self,
+        viewport: &iced::widget::scrollable::Viewport,
+    ) -> Task<Message> {
+        let rel = viewport.relative_offset();
+        self.follow_bottom = rel.y > 0.95;
+        self.current_scroll_y = viewport.absolute_offset().y;
+        Task::none()
+    }
+
+    fn on_editor_action(
+        &mut self,
+        id: u64,
+        action: iced::widget::text_editor::Action,
+    ) -> Task<Message> {
+        if action.is_edit() {
+            return Task::none();
+        }
+        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == id) {
+            if let BlockBody::Assistant(content) = &mut b.body {
+                content.perform(action);
+            }
+        }
+        Task::none()
+    }
+
+    fn toggle_block_view(&mut self, id: u64) -> Task<Message> {
+        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == id) {
+            b.view_mode = match b.view_mode {
+                ViewMode::Rendered => ViewMode::Raw,
+                ViewMode::Raw => ViewMode::Rendered,
+            };
+        }
+        Task::none()
+    }
+
+    fn on_link_clicked(&mut self, uri: &markdown::Uri) -> Task<Message> {
+        let url = uri.to_string();
+        let lower = url.to_ascii_lowercase();
+        if lower.starts_with("javascript:") {
+            self.status = "차단된 링크 스킴입니다.".into();
+            return Task::none();
+        }
+        match webbrowser::open(&url) {
+            Ok(_) => {
+                self.status = format!("브라우저에서 열기: {}", url);
+            }
+            Err(e) => {
+                self.status = format!("링크 열기 실패: {}", e);
+            }
+        }
+        Task::none()
+    }
+
+    fn pick_cwd(&self) -> Task<Message> {
+        Task::perform(
+            async {
+                rfd::AsyncFileDialog::new()
+                    .set_title("작업 폴더 선택")
+                    .pick_folder()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            },
+            Message::CwdPicked,
+        )
+    }
+
+    fn pick_attachment(&self) -> Task<Message> {
+        let cwd = self.cwd.clone();
+        Task::perform(
+            async move {
+                rfd::AsyncFileDialog::new()
+                    .set_title("첨부 파일 선택")
+                    .set_directory(cwd)
+                    .pick_file()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            },
+            Message::AttachmentPicked,
+        )
+    }
+
+    fn on_attachment_picked(&mut self, maybe_path: Option<std::path::PathBuf>) -> Task<Message> {
+        let Some(path) = maybe_path else {
+            return Task::none();
+        };
+        if self.is_already_attached(&path) {
+            self.status = format!("Already attached: {}", path.display());
+            return Task::none();
+        }
+        let existing_total = self.total_attached_bytes();
+        Task::perform(
+            async move {
+                let content = tokio::fs::read_to_string(&path)
+                    .await
+                    .map_err(|e| format!("File read failed: {e}"))?;
+                if content.len() > MAX_ATTACH_BYTES as usize {
+                    return Err(format!(
+                        "Attachment too large (max {}): {}",
+                        fmt_bytes(MAX_ATTACH_BYTES),
+                        path.display()
+                    ));
+                }
+                let next_total = existing_total + content.len() as u64;
+                if next_total > MAX_ATTACH_BYTES {
+                    return Err(format!(
+                        "Attachment limit exceeded: {} / {}",
+                        fmt_bytes(next_total),
+                        fmt_bytes(MAX_ATTACH_BYTES)
+                    ));
+                }
+                Ok((path, content))
+            },
+            |r| match r {
+                Ok((p, s)) => Message::FileReadDone(p, s),
+                Err(msg) => Message::FileAttachError(msg),
+            },
+        )
     }
 
     // ── MCP server helpers ────────────────────────────────────────

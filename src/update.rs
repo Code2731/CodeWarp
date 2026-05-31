@@ -647,51 +647,10 @@ impl App {
             Message::CloseSettings => self.close_settings_overlay(),
             Message::SetSettingsTab(tab) => self.set_settings_tab(tab),
             Message::KeyInputChanged(v) => self.set_key_input(v),
-            Message::SaveKey => {
-                let key = self.key_input.clone();
-                self.busy = true;
-                self.status = "키 저장 중…".into();
-                Task::perform(
-                    async move { keystore::write_api_key(&key) },
-                    Message::KeySaved,
-                )
-            }
-            Message::KeySaved(r) => {
-                self.busy = false;
-                match r {
-                    Ok(()) => {
-                        self.has_key = true;
-                        self.key_input.clear();
-                        self.ui.show_settings = false;
-                        self.status = "키 저장됨".into();
-                        Task::done(Message::FetchModels)
-                    }
-                    Err(e) => {
-                        self.status = format!("저장 실패: {}", e);
-                        Task::none()
-                    }
-                }
-            }
-            Message::ClearKey => {
-                self.busy = true;
-                Task::perform(async { keystore::delete_api_key() }, Message::KeyCleared)
-            }
-            Message::KeyCleared(r) => {
-                self.busy = false;
-                match r {
-                    Ok(()) => {
-                        self.has_key = false;
-                        self.models.clear();
-                        self.model_ids.clear();
-                        self.selected_model = None;
-                        self.selected_model_provider = None;
-                        let _ = keystore::clear_selected_model();
-                        self.status = "키 삭제됨".into();
-                    }
-                    Err(e) => self.status = format!("삭제 실패: {}", e),
-                }
-                Task::none()
-            }
+            Message::SaveKey => self.save_api_key(),
+            Message::KeySaved(r) => self.on_key_saved(r),
+            Message::ClearKey => self.clear_api_key(),
+            Message::KeyCleared(r) => self.on_key_cleared(r),
             Message::TabbyUrlChanged(v) => self.set_tabby_url(v),
             Message::TabbyTokenChanged(v) => self.set_tabby_token(v),
             Message::ToggleTabbyTokenVisible => self.toggle_tabby_token_visible(),
@@ -746,11 +705,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::InferenceBinaryChanged(v) => {
-                self.inference_binary_path = v.clone();
-                let _ = keystore::write_inference_binary(&v);
-                Task::none()
-            }
+            Message::InferenceBinaryChanged(v) => self.set_inference_binary(v),
             Message::PickInferenceBinary => Task::perform(
                 async {
                     rfd::AsyncFileDialog::new()
@@ -1079,77 +1034,10 @@ impl App {
                 self.refresh_model_combo();
                 Task::none()
             }
-            Message::OpenAICompatLabelChanged(v) => {
-                self.openai_compat_label = v;
-                let _ = keystore::write_openai_compat_label(&self.openai_compat_label);
-                // 라벨이 바뀌면 기존 OpenAICompat 모델 옵션의 라벨도 갱신
-                let new_label = self.openai_compat_label.clone();
-                for opt in &mut self.model_options {
-                    if opt.provider == LlmProvider::OpenAICompat {
-                        opt.provider_label = new_label.clone();
-                    }
-                }
-                self.refresh_model_combo();
-                Task::none()
-            }
-            Message::SaveTabby => {
-                let url = self.tabby_url_input.clone();
-                let token = self.tabby_token_input.clone();
-                self.busy = true;
-                self.status = "Tabby 설정 저장 중…".into();
-                Task::perform(
-                    async move {
-                        keystore::write_tabby_base_url(&url)?;
-                        keystore::write_tabby_token(&token)?;
-                        Ok(())
-                    },
-                    Message::TabbySaved,
-                )
-            }
-            Message::TabbySaved(r) => {
-                self.busy = false;
-                match r {
-                    Ok(()) => {
-                        self.status = "Tabby 설정 저장됨".into();
-                        // 저장 직후 자동 모델 fetch (= 연결 테스트 겸용)
-                        if !self.tabby_url_input.trim().is_empty() {
-                            return Task::done(Message::FetchTabbyModels);
-                        }
-                    }
-                    Err(e) => self.status = format!("Tabby 저장 실패: {}", e),
-                }
-                Task::none()
-            }
-            Message::ClearTabby => {
-                let _ = keystore::clear_tabby_base_url();
-                let _ = keystore::clear_tabby_token();
-                self.tabby_url_input.clear();
-                self.tabby_token_input.clear();
-                self.tabby_connect_retry_left = 0;
-                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
-                self.tabby_status = None;
-                self.status = "Tabby 설정 삭제됨".into();
-                // 모델 리스트에서 Tabby 항목 제거
-                self.model_options
-                    .retain(|o| o.provider != LlmProvider::OpenAICompat);
-                self.refresh_model_combo();
-                // 선택된 모델이 Tabby였다면 해제
-                if let Some(sel) = self.selected_model.clone() {
-                    if !self.model_options.iter().any(|o| o.id == sel) {
-                        if let Some(first) = self.model_options.first() {
-                            self.selected_model = Some(first.id.clone());
-                            self.selected_model_provider = Some(first.provider);
-                        } else {
-                            self.selected_model = None;
-                            self.selected_model_provider = None;
-                        }
-                        if let Some(id) = &self.selected_model {
-                            let _ = keystore::write_selected_model(id);
-                        }
-                    }
-                }
-                Task::none()
-            }
+            Message::OpenAICompatLabelChanged(v) => self.set_openai_compat_label(v),
+            Message::SaveTabby => self.save_tabby_settings(),
+            Message::TabbySaved(r) => self.on_tabby_saved(r),
+            Message::ClearTabby => self.clear_tabby_settings(),
             Message::FetchTabbyModels => {
                 self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
                 let url = self.tabby_url_input.clone();
@@ -1286,12 +1174,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::ModelDirChanged(v) => {
-                self.model_dir_input = v.clone();
-                let _ = keystore::write_model_dir(&v);
-                self.sync_selected_local_model_for_model_dir();
-                Task::none()
-            }
+            Message::ModelDirChanged(v) => self.set_model_dir(v),
             Message::PickModelDir => Task::perform(
                 async {
                     rfd::AsyncFileDialog::new()
@@ -1746,13 +1629,7 @@ impl App {
             }
 
             // ── PTY 터미널 ─────────────────────────────────────────
-            Message::PtyToggle => {
-                self.pty_visible = !self.pty_visible;
-                if self.pty_visible && self.pty_session.is_none() {
-                    return Task::done(Message::PtyStart);
-                }
-                Task::none()
-            }
+            Message::PtyToggle => self.toggle_pty(),
             Message::PtyStart => match pty::spawn_pty(&self.cwd) {
                 Ok((session, stream)) => {
                     self.pty_session = Some(session);
@@ -1782,115 +1659,16 @@ impl App {
                 Task::none()
             }
             Message::PtyInputChanged(v) => self.set_pty_input(v),
-            Message::PtySend => {
-                let line = self.pty_input.trim_end().to_string();
-                if let Some(s) = &self.pty_session {
-                    s.write_line(&line);
-                }
-                self.pty_input.clear();
-                Task::none()
-            }
+            Message::PtySend => self.send_pty_input(),
             Message::PtyCtrlC => self.pty_ctrl_c(),
             Message::PtyClear => self.pty_clear(),
-            Message::RemoveAttachment(idx) => {
-                if idx < self.attached_files.len() {
-                    let removed = self.attached_files.remove(idx);
-                    let removed_name = removed
-                        .0
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| removed.0.display().to_string());
-                    self.status = format!(
-                        "Removed attachment: {} ({} left)",
-                        removed_name,
-                        self.attached_files.len()
-                    );
-                }
-                Task::none()
-            }
-            Message::ClearAttachments => {
-                if !self.attached_files.is_empty() {
-                    let removed_count = self.attached_files.len();
-                    let removed_bytes: u64 = self
-                        .attached_files
-                        .iter()
-                        .map(|(_, content)| content.len() as u64)
-                        .sum();
-                    self.attached_files.clear();
-                    self.status = format!(
-                        "Cleared attachments: {} files ({})",
-                        removed_count,
-                        fmt_bytes(removed_bytes)
-                    );
-                }
-                Task::none()
-            }
+            Message::RemoveAttachment(idx) => self.remove_attachment(idx),
+            Message::ClearAttachments => self.clear_attachments(),
 
             // ── @-mention ─────────────────────────────────────────
-            Message::MentionMove(delta) => {
-                if !self.show_mention || self.mention_candidates.is_empty() {
-                    return Task::none();
-                }
-                let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
-                let n = filtered.len();
-                if n == 0 {
-                    return Task::none();
-                }
-                self.mention_selected =
-                    (self.mention_selected as i64 + delta as i64).rem_euclid(n as i64) as usize;
-                Task::none()
-            }
-            Message::MentionConfirm => {
-                if !self.show_mention {
-                    return Task::none();
-                }
-                let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
-                let Some(chosen) = filtered.into_iter().nth(self.mention_selected) else {
-                    return Task::none();
-                };
-                // input에서 '@query' 제거
-                if let Some(at_pos) = self.input.rfind('@') {
-                    self.input.truncate(at_pos);
-                }
-                self.close_mention();
-                if self.is_already_attached(&chosen) {
-                    self.status = format!("Already attached: {}", chosen.display());
-                    return Task::none();
-                }
-                let full_path = self.cwd.join(&chosen);
-                let existing_total = self.total_attached_bytes();
-                Task::perform(
-                    async move {
-                        let content = tokio::fs::read_to_string(&full_path)
-                            .await
-                            .map_err(|e| format!("File read failed: {e}"))?;
-                        if content.len() > MAX_ATTACH_BYTES as usize {
-                            return Err(format!(
-                                "Attachment too large (max {}): {}",
-                                fmt_bytes(MAX_ATTACH_BYTES),
-                                chosen.display()
-                            ));
-                        }
-                        let next_total = existing_total + content.len() as u64;
-                        if next_total > MAX_ATTACH_BYTES {
-                            return Err(format!(
-                                "Attachment limit exceeded: {} / {}",
-                                fmt_bytes(next_total),
-                                fmt_bytes(MAX_ATTACH_BYTES)
-                            ));
-                        }
-                        Ok((chosen, content))
-                    },
-                    |r| match r {
-                        Ok((p, s)) => Message::FileReadDone(p, s),
-                        Err(msg) => Message::FileAttachError(msg),
-                    },
-                )
-            }
-            Message::MentionCandidatesLoaded(paths) => {
-                self.mention_candidates = paths;
-                Task::none()
-            }
+            Message::MentionMove(delta) => self.move_mention_selection(delta),
+            Message::MentionConfirm => self.confirm_mention(),
+            Message::MentionCandidatesLoaded(paths) => self.load_mention_candidates(paths),
 
             Message::FetchModels => {
                 let key = match keystore::read_api_key() {
@@ -2854,6 +2632,269 @@ impl App {
 
     fn file_attach_error(&mut self, msg: String) -> Task<Message> {
         self.status = msg;
+        Task::none()
+    }
+
+    // ── Key persistence helpers ──────────────────────────────────
+
+    fn save_api_key(&mut self) -> Task<Message> {
+        let key = self.key_input.clone();
+        self.busy = true;
+        self.status = "키 저장 중…".into();
+        Task::perform(
+            async move { keystore::write_api_key(&key) },
+            Message::KeySaved,
+        )
+    }
+
+    fn on_key_saved(&mut self, result: Result<(), String>) -> Task<Message> {
+        self.busy = false;
+        match result {
+            Ok(()) => {
+                self.has_key = true;
+                self.key_input.clear();
+                self.ui.show_settings = false;
+                self.status = "키 저장됨".into();
+                Task::done(Message::FetchModels)
+            }
+            Err(e) => {
+                self.status = format!("저장 실패: {}", e);
+                Task::none()
+            }
+        }
+    }
+
+    fn clear_api_key(&mut self) -> Task<Message> {
+        self.busy = true;
+        Task::perform(async { keystore::delete_api_key() }, Message::KeyCleared)
+    }
+
+    fn on_key_cleared(&mut self, result: Result<(), String>) -> Task<Message> {
+        self.busy = false;
+        match result {
+            Ok(()) => {
+                self.has_key = false;
+                self.models.clear();
+                self.model_ids.clear();
+                self.selected_model = None;
+                self.selected_model_provider = None;
+                let _ = keystore::clear_selected_model();
+                self.status = "키 삭제됨".into();
+            }
+            Err(e) => self.status = format!("삭제 실패: {}", e),
+        }
+        Task::none()
+    }
+
+    // ── Tabby connection helpers ──────────────────────────────────
+
+    fn set_openai_compat_label(&mut self, value: String) -> Task<Message> {
+        self.openai_compat_label = value;
+        let _ = keystore::write_openai_compat_label(&self.openai_compat_label);
+        let new_label = self.openai_compat_label.clone();
+        for opt in &mut self.model_options {
+            if opt.provider == LlmProvider::OpenAICompat {
+                opt.provider_label = new_label.clone();
+            }
+        }
+        self.refresh_model_combo();
+        Task::none()
+    }
+
+    fn save_tabby_settings(&mut self) -> Task<Message> {
+        let url = self.tabby_url_input.clone();
+        let token = self.tabby_token_input.clone();
+        self.busy = true;
+        self.status = "Tabby 설정 저장 중…".into();
+        Task::perform(
+            async move {
+                keystore::write_tabby_base_url(&url)?;
+                keystore::write_tabby_token(&token)?;
+                Ok(())
+            },
+            Message::TabbySaved,
+        )
+    }
+
+    fn on_tabby_saved(&mut self, result: Result<(), String>) -> Task<Message> {
+        self.busy = false;
+        match result {
+            Ok(()) => {
+                self.status = "Tabby 설정 저장됨".into();
+                if !self.tabby_url_input.trim().is_empty() {
+                    return Task::done(Message::FetchTabbyModels);
+                }
+            }
+            Err(e) => self.status = format!("Tabby 저장 실패: {}", e),
+        }
+        Task::none()
+    }
+
+    fn clear_tabby_settings(&mut self) -> Task<Message> {
+        let _ = keystore::clear_tabby_base_url();
+        let _ = keystore::clear_tabby_token();
+        self.tabby_url_input.clear();
+        self.tabby_token_input.clear();
+        self.tabby_connect_retry_left = 0;
+        self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
+        self.tabby_status = None;
+        self.status = "Tabby 설정 삭제됨".into();
+        self.model_options
+            .retain(|o| o.provider != LlmProvider::OpenAICompat);
+        self.refresh_model_combo();
+        if let Some(sel) = self.selected_model.clone() {
+            if !self.model_options.iter().any(|o| o.id == sel) {
+                if let Some(first) = self.model_options.first() {
+                    self.selected_model = Some(first.id.clone());
+                    self.selected_model_provider = Some(first.provider);
+                } else {
+                    self.selected_model = None;
+                    self.selected_model_provider = None;
+                }
+                if let Some(id) = &self.selected_model {
+                    let _ = keystore::write_selected_model(id);
+                }
+            }
+        }
+        Task::none()
+    }
+
+    // ── Inference/Model dir helpers ───────────────────────────────
+
+    fn set_inference_binary(&mut self, value: String) -> Task<Message> {
+        self.inference_binary_path = value.clone();
+        let _ = keystore::write_inference_binary(&value);
+        Task::none()
+    }
+
+    fn set_model_dir(&mut self, value: String) -> Task<Message> {
+        self.model_dir_input = value.clone();
+        let _ = keystore::write_model_dir(&value);
+        self.sync_selected_local_model_for_model_dir();
+        Task::none()
+    }
+
+    // ── PTY helpers ───────────────────────────────────────────────
+
+    fn toggle_pty(&mut self) -> Task<Message> {
+        self.pty_visible = !self.pty_visible;
+        if self.pty_visible && self.pty_session.is_none() {
+            return Task::done(Message::PtyStart);
+        }
+        Task::none()
+    }
+
+    fn send_pty_input(&mut self) -> Task<Message> {
+        let line = self.pty_input.trim_end().to_string();
+        if let Some(s) = &self.pty_session {
+            s.write_line(&line);
+        }
+        self.pty_input.clear();
+        Task::none()
+    }
+
+    // ── Attachment helpers ────────────────────────────────────────
+
+    fn remove_attachment(&mut self, idx: usize) -> Task<Message> {
+        if idx < self.attached_files.len() {
+            let removed = self.attached_files.remove(idx);
+            let removed_name = removed
+                .0
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| removed.0.display().to_string());
+            self.status = format!(
+                "Removed attachment: {} ({} left)",
+                removed_name,
+                self.attached_files.len()
+            );
+        }
+        Task::none()
+    }
+
+    fn clear_attachments(&mut self) -> Task<Message> {
+        if !self.attached_files.is_empty() {
+            let removed_count = self.attached_files.len();
+            let removed_bytes: u64 = self
+                .attached_files
+                .iter()
+                .map(|(_, content)| content.len() as u64)
+                .sum();
+            self.attached_files.clear();
+            self.status = format!(
+                "Cleared attachments: {} files ({})",
+                removed_count,
+                fmt_bytes(removed_bytes)
+            );
+        }
+        Task::none()
+    }
+
+    // ── Mention helpers ───────────────────────────────────────────
+
+    fn move_mention_selection(&mut self, delta: i32) -> Task<Message> {
+        if !self.show_mention || self.mention_candidates.is_empty() {
+            return Task::none();
+        }
+        let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
+        let n = filtered.len();
+        if n == 0 {
+            return Task::none();
+        }
+        self.mention_selected =
+            (self.mention_selected as i64 + delta as i64).rem_euclid(n as i64) as usize;
+        Task::none()
+    }
+
+    fn confirm_mention(&mut self) -> Task<Message> {
+        if !self.show_mention {
+            return Task::none();
+        }
+        let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
+        let Some(chosen) = filtered.into_iter().nth(self.mention_selected) else {
+            return Task::none();
+        };
+        if let Some(at_pos) = self.input.rfind('@') {
+            self.input.truncate(at_pos);
+        }
+        self.close_mention();
+        if self.is_already_attached(&chosen) {
+            self.status = format!("Already attached: {}", chosen.display());
+            return Task::none();
+        }
+        let full_path = self.cwd.join(&chosen);
+        let existing_total = self.total_attached_bytes();
+        Task::perform(
+            async move {
+                let content = tokio::fs::read_to_string(&full_path)
+                    .await
+                    .map_err(|e| format!("File read failed: {e}"))?;
+                if content.len() > MAX_ATTACH_BYTES as usize {
+                    return Err(format!(
+                        "Attachment too large (max {}): {}",
+                        fmt_bytes(MAX_ATTACH_BYTES),
+                        chosen.display()
+                    ));
+                }
+                let next_total = existing_total + content.len() as u64;
+                if next_total > MAX_ATTACH_BYTES {
+                    return Err(format!(
+                        "Attachment limit exceeded: {} / {}",
+                        fmt_bytes(next_total),
+                        fmt_bytes(MAX_ATTACH_BYTES)
+                    ));
+                }
+                Ok((chosen, content))
+            },
+            |r| match r {
+                Ok((p, s)) => Message::FileReadDone(p, s),
+                Err(msg) => Message::FileAttachError(msg),
+            },
+        )
+    }
+
+    fn load_mention_candidates(&mut self, paths: Vec<std::path::PathBuf>) -> Task<Message> {
+        self.mention_candidates = paths;
         Task::none()
     }
 

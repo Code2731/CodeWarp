@@ -659,56 +659,10 @@ impl App {
             Message::SelectInferenceModel(m) => self.set_inference_model(m),
             Message::InferencePortChanged(v) => self.set_inference_port(v),
             Message::InferenceBinaryChanged(v) => self.set_inference_binary(v),
-            Message::PickInferenceBinary => Task::perform(
-                async {
-                    rfd::AsyncFileDialog::new()
-                        .set_title("inference 엔진 바이너리/스크립트 선택")
-                        .pick_file()
-                        .await
-                        .map(|h| h.path().to_path_buf())
-                },
-                Message::InferenceBinaryPicked,
-            ),
+            Message::PickInferenceBinary => self.pick_inference_binary(),
             Message::InferenceBinaryPicked(maybe) => self.on_inference_binary_picked(maybe),
-            Message::InstallTabbyApiRuntime => {
-                self.busy = true;
-                let runtime_dir = default_tabbyapi_runtime_dir();
-                self.status = format!("TabbyAPI 런타임 설치 중: {}", runtime_dir.display());
-                Task::perform(
-                    install_tabbyapi_runtime(runtime_dir),
-                    Message::TabbyApiRuntimeInstalled,
-                )
-            }
-            Message::TabbyApiRuntimeInstalled(result) => {
-                self.busy = false;
-                match result {
-                    Ok(launcher) => {
-                        let s = launcher.display().to_string();
-                        self.inference_engine = InferenceEngine::TabbyApi;
-                        self.inference_binary_path = s.clone();
-                        self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
-                        self.tabby_url_input =
-                            format!("http://localhost:{}", TABBY_API_DEFAULT_PORT);
-                        self.openai_compat_label = "TabbyAPI".into();
-                        let _ = keystore::write_inference_binary(&s);
-                        let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
-                        let _ = keystore::write_openai_compat_label("TabbyAPI");
-                        self.status = format!(
-                            "TabbyAPI 런타임 설치/감지 완료: {} — 모델 선택 후 시작하세요.",
-                            launcher.display()
-                        );
-                        self.ui.settings_tab = SettingsTab::Runtime;
-                    }
-                    Err(e) => {
-                        self.status = format!(
-                            "TabbyAPI 런타임 설치 실패: {}. Git/Python 설치와 네트워크를 확인해 주세요.",
-                            e
-                        );
-                        self.tabby_status = Some(Err(self.status.clone()));
-                    }
-                }
-                Task::none()
-            }
+            Message::InstallTabbyApiRuntime => self.install_tabbyapi_runtime_cmd(),
+            Message::TabbyApiRuntimeInstalled(result) => self.on_tabbyapi_runtime_installed(result),
             Message::StartInference => {
                 if self.inference_pid.is_some() {
                     self.status = "이미 실행 중".into();
@@ -2859,6 +2813,62 @@ impl App {
             } else {
                 "바이너리 경로 저장됨".into()
             };
+        }
+        Task::none()
+    }
+
+    fn pick_inference_binary(&self) -> Task<Message> {
+        Task::perform(
+            async {
+                rfd::AsyncFileDialog::new()
+                    .set_title("inference 엔진 바이너리/스크립트 선택")
+                    .pick_file()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            },
+            Message::InferenceBinaryPicked,
+        )
+    }
+
+    fn install_tabbyapi_runtime_cmd(&mut self) -> Task<Message> {
+        self.busy = true;
+        let runtime_dir = default_tabbyapi_runtime_dir();
+        self.status = format!("TabbyAPI 런타임 설치 중: {}", runtime_dir.display());
+        Task::perform(
+            install_tabbyapi_runtime(runtime_dir),
+            Message::TabbyApiRuntimeInstalled,
+        )
+    }
+
+    fn on_tabbyapi_runtime_installed(
+        &mut self,
+        result: Result<std::path::PathBuf, String>,
+    ) -> Task<Message> {
+        self.busy = false;
+        match result {
+            Ok(launcher) => {
+                let s = launcher.display().to_string();
+                self.inference_engine = InferenceEngine::TabbyApi;
+                self.inference_binary_path = s.clone();
+                self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
+                self.tabby_url_input = format!("http://localhost:{}", TABBY_API_DEFAULT_PORT);
+                self.openai_compat_label = "TabbyAPI".into();
+                let _ = keystore::write_inference_binary(&s);
+                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                let _ = keystore::write_openai_compat_label("TabbyAPI");
+                self.status = format!(
+                    "TabbyAPI 런타임 설치/감지 완료: {} — 모델 선택 후 시작하세요.",
+                    launcher.display()
+                );
+                self.ui.settings_tab = SettingsTab::Runtime;
+            }
+            Err(e) => {
+                self.status = format!(
+                    "TabbyAPI 런타임 설치 실패: {}. Git/Python 설치와 네트워크를 확인해 주세요.",
+                    e
+                );
+                self.tabby_status = Some(Err(self.status.clone()));
+            }
         }
         Task::none()
     }

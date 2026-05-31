@@ -1132,64 +1132,10 @@ impl App {
                 };
                 Task::none()
             }
-            Message::EditLastUser => {
-                if self.streaming_block_id.is_some() {
-                    return Task::none();
-                }
-                let Some(idx) = last_user_block_idx(&self.blocks) else {
-                    return Task::none();
-                };
-                let user_text = match &self.blocks[idx].body {
-                    BlockBody::User(s) => s.clone(),
-                    _ => return Task::none(),
-                };
-                // blocks: 마지막 user 위치부터 끝까지 제거
-                self.blocks.truncate(idx);
-                // conversation: 마지막 user 다음 다 제거 → 그 user도 pop
-                truncate_after_last_user(&mut self.conversation);
-                self.conversation.pop();
-                self.tool_round = 0;
-                self.pending_tool_calls.clear();
-                self.input = user_text;
-                self.status = "편집 모드 — 수정 후 Enter".into();
-                Task::none()
-            }
+            Message::EditLastUser => self.edit_last_user(),
 
             // ── 파일 컨텍스트 첨부 ────────────────────────────────
-            Message::FileDropped(path) => {
-                if self.is_already_attached(&path) {
-                    self.status = format!("Already attached: {}", path.display());
-                    return Task::none();
-                }
-                let existing_total = self.total_attached_bytes();
-                Task::perform(
-                    async move {
-                        let content = tokio::fs::read_to_string(&path)
-                            .await
-                            .map_err(|e| format!("File read failed: {e}"))?;
-                        if content.len() > MAX_ATTACH_BYTES as usize {
-                            return Err(format!(
-                                "Attachment too large (max {}): {}",
-                                fmt_bytes(MAX_ATTACH_BYTES),
-                                path.display()
-                            ));
-                        }
-                        let next_total = existing_total + content.len() as u64;
-                        if next_total > MAX_ATTACH_BYTES {
-                            return Err(format!(
-                                "Attachment limit exceeded: {} / {}",
-                                fmt_bytes(next_total),
-                                fmt_bytes(MAX_ATTACH_BYTES)
-                            ));
-                        }
-                        Ok((path, content))
-                    },
-                    |r| match r {
-                        Ok((p, s)) => Message::FileReadDone(p, s),
-                        Err(msg) => Message::FileAttachError(msg),
-                    },
-                )
-            }
+            Message::FileDropped(path) => self.on_file_dropped(path),
             Message::FileDragHover => self.file_drag_hover(),
             Message::FileReadDone(path, content) => self.on_file_read_done(path, content),
             Message::FileAttachError(msg) => self.file_attach_error(msg),
@@ -1197,38 +1143,7 @@ impl App {
             // ── MCP ───────────────────────────────────────────────────
             Message::McpNameChanged(v) => self.update_mcp_name_input(v),
             Message::McpCommandChanged(v) => self.update_mcp_command_input(v),
-            Message::AddMcpServer => {
-                let name = self.mcp_input.name_input.trim().to_string();
-                let command = self.mcp_input.command_input.trim().to_string();
-                if name.is_empty() || command.is_empty() {
-                    self.status = "MCP 서버 이름과 명령을 모두 입력하세요.".into();
-                    return Task::none();
-                }
-                let server = mcp::McpServer {
-                    name: name.clone(),
-                    command,
-                };
-                self.mcp_servers.push(server.clone());
-                self.mcp_input.name_input.clear();
-                self.mcp_input.command_input.clear();
-                if let Err(e) = mcp::save_servers(&self.mcp_servers) {
-                    self.status = format!("MCP 저장 실패: {e}");
-                    return Task::none();
-                }
-                self.status = format!("MCP 서버 추가됨: {name} — tool 목록 로드 중…");
-                Task::perform(
-                    async move {
-                        mcp::list_tools(&server)
-                            .await
-                            .map(|tools| (name.clone(), tools))
-                            .map_err(|e| format!("[{name}] {e}"))
-                    },
-                    |r| match r {
-                        Ok((name, tools)) => Message::McpToolsLoaded(name, tools),
-                        Err(msg) => Message::McpToolsFailed(msg),
-                    },
-                )
-            }
+            Message::AddMcpServer => self.add_mcp_server(),
             Message::RemoveMcpServer(idx) => self.remove_mcp_server(idx),
             Message::McpToolsLoaded(server_name, tools) => {
                 self.on_mcp_tools_loaded(server_name, tools)
@@ -1240,34 +1155,9 @@ impl App {
 
             // ── PTY 터미널 ─────────────────────────────────────────
             Message::PtyToggle => self.toggle_pty(),
-            Message::PtyStart => match pty::spawn_pty(&self.cwd) {
-                Ok((session, stream)) => {
-                    self.pty_session = Some(session);
-                    self.pty_output.clear();
-                    self.status = "터미널 시작됨".into();
-                    Task::run(stream, |event| match event {
-                        pty::PtyEvent::Line(l) => Message::PtyLine(l),
-                        pty::PtyEvent::Exited => Message::PtyExited,
-                    })
-                }
-                Err(e) => {
-                    self.status = format!("터미널 시작 실패: {e}");
-                    Task::none()
-                }
-            },
-            Message::PtyLine(line) => {
-                let clean = pty::strip_ansi(&line);
-                if !clean.trim().is_empty() {
-                    self.push_pty_line(clean);
-                }
-                Task::none()
-            }
-            Message::PtyExited => {
-                self.pty_session = None;
-                self.push_pty_line("-- 셸 종료 --".into());
-                self.status = "터미널 종료됨".into();
-                Task::none()
-            }
+            Message::PtyStart => self.pty_start(),
+            Message::PtyLine(line) => self.on_pty_line(line),
+            Message::PtyExited => self.on_pty_exited(),
             Message::PtyInputChanged(v) => self.set_pty_input(v),
             Message::PtySend => self.send_pty_input(),
             Message::PtyCtrlC => self.pty_ctrl_c(),
@@ -1469,56 +1359,20 @@ impl App {
                 self.abort_handle = Some(handle);
                 Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
             }
-            Message::StopStream => {
-                self.abort_active_chat_stream(true);
-                self.compare_pending = false;
-                self.status = "중지됨".into();
-                self.maybe_update_title();
-                self.save_session();
-                Task::none()
-            }
-            Message::CopyBlock(id) => {
-                if let Some(b) = self.blocks.iter().find(|b| b.id == id) {
-                    return iced::clipboard::write(b.body.to_text());
-                }
-                Task::none()
-            }
+            Message::StopStream => self.stop_stream(),
+            Message::CopyBlock(id) => self.copy_block(id),
             Message::CopyText(text) => iced::clipboard::write(text),
             Message::CompareResponsesLoaded {
                 openrouter_block_id,
                 tabby_block_id,
                 openrouter_result,
                 tabby_result,
-            } => {
-                if !self.compare_pending {
-                    return Task::none();
-                }
-                let openrouter_text = match openrouter_result {
-                    Ok(text) if !text.trim().is_empty() => text,
-                    Ok(_) => "[OpenRouter] 빈 응답".into(),
-                    Err(e) => format!("[ERROR] {}", openrouter::humanize_error(&e)),
-                };
-                let tabby_text = match tabby_result {
-                    Ok(text) if !text.trim().is_empty() => text,
-                    Ok(_) => "[Tabby] 빈 응답".into(),
-                    Err(e) => format!("[ERROR] {}", tabby::humanize_error(&e)),
-                };
-                self.fill_assistant_block(openrouter_block_id, openrouter_text.clone());
-                self.fill_assistant_block(tabby_block_id, tabby_text.clone());
-                self.conversation.push(ChatMessage::assistant(format!(
-                    "[OpenRouter]\n{}\n\n[Tabby]\n{}",
-                    openrouter_text, tabby_text
-                )));
-                self.compare_pending = false;
-                self.status = "Compare 응답 완료".into();
-                self.maybe_update_title();
-                self.save_session();
-                if self.follow_bottom {
-                    snap_to_end(self.stream_id.clone())
-                } else {
-                    Task::none()
-                }
-            }
+            } => self.on_compare_responses_loaded(
+                openrouter_block_id,
+                tabby_block_id,
+                openrouter_result,
+                tabby_result,
+            ),
             Message::ChatChunk(event) => {
                 let Some(ai_id) = self.streaming_block_id else {
                     return Task::none();
@@ -2576,6 +2430,181 @@ impl App {
                 Err(msg) => Message::FileAttachError(msg),
             },
         )
+    }
+
+    fn stop_stream(&mut self) -> Task<Message> {
+        self.abort_active_chat_stream(true);
+        self.compare_pending = false;
+        self.status = "중지됨".into();
+        self.maybe_update_title();
+        self.save_session();
+        Task::none()
+    }
+
+    fn copy_block(&self, id: u64) -> Task<Message> {
+        if let Some(b) = self.blocks.iter().find(|b| b.id == id) {
+            return iced::clipboard::write(b.body.to_text());
+        }
+        Task::none()
+    }
+
+    fn edit_last_user(&mut self) -> Task<Message> {
+        if self.streaming_block_id.is_some() {
+            return Task::none();
+        }
+        let Some(idx) = last_user_block_idx(&self.blocks) else {
+            return Task::none();
+        };
+        let user_text = match &self.blocks[idx].body {
+            BlockBody::User(s) => s.clone(),
+            _ => return Task::none(),
+        };
+        self.blocks.truncate(idx);
+        truncate_after_last_user(&mut self.conversation);
+        self.conversation.pop();
+        self.tool_round = 0;
+        self.pending_tool_calls.clear();
+        self.input = user_text;
+        self.status = "편집 모드 — 수정 후 Enter".into();
+        Task::none()
+    }
+
+    fn on_compare_responses_loaded(
+        &mut self,
+        openrouter_block_id: u64,
+        tabby_block_id: u64,
+        openrouter_result: Result<String, String>,
+        tabby_result: Result<String, String>,
+    ) -> Task<Message> {
+        if !self.compare_pending {
+            return Task::none();
+        }
+        let openrouter_text = match openrouter_result {
+            Ok(text) if !text.trim().is_empty() => text,
+            Ok(_) => "[OpenRouter] 빈 응답".into(),
+            Err(e) => format!("[ERROR] {}", openrouter::humanize_error(&e)),
+        };
+        let tabby_text = match tabby_result {
+            Ok(text) if !text.trim().is_empty() => text,
+            Ok(_) => "[Tabby] 빈 응답".into(),
+            Err(e) => format!("[ERROR] {}", tabby::humanize_error(&e)),
+        };
+        self.fill_assistant_block(openrouter_block_id, openrouter_text.clone());
+        self.fill_assistant_block(tabby_block_id, tabby_text.clone());
+        self.conversation.push(ChatMessage::assistant(format!(
+            "[OpenRouter]\n{}\n\n[Tabby]\n{}",
+            openrouter_text, tabby_text
+        )));
+        self.compare_pending = false;
+        self.status = "Compare 응답 완료".into();
+        self.maybe_update_title();
+        self.save_session();
+        if self.follow_bottom {
+            snap_to_end(self.stream_id.clone())
+        } else {
+            Task::none()
+        }
+    }
+
+    fn on_file_dropped(&mut self, path: std::path::PathBuf) -> Task<Message> {
+        if self.is_already_attached(&path) {
+            self.status = format!("Already attached: {}", path.display());
+            return Task::none();
+        }
+        let existing_total = self.total_attached_bytes();
+        Task::perform(
+            async move {
+                let content = tokio::fs::read_to_string(&path)
+                    .await
+                    .map_err(|e| format!("File read failed: {e}"))?;
+                if content.len() > MAX_ATTACH_BYTES as usize {
+                    return Err(format!(
+                        "Attachment too large (max {}): {}",
+                        fmt_bytes(MAX_ATTACH_BYTES),
+                        path.display()
+                    ));
+                }
+                let next_total = existing_total + content.len() as u64;
+                if next_total > MAX_ATTACH_BYTES {
+                    return Err(format!(
+                        "Attachment limit exceeded: {} / {}",
+                        fmt_bytes(next_total),
+                        fmt_bytes(MAX_ATTACH_BYTES)
+                    ));
+                }
+                Ok((path, content))
+            },
+            |r| match r {
+                Ok((p, s)) => Message::FileReadDone(p, s),
+                Err(msg) => Message::FileAttachError(msg),
+            },
+        )
+    }
+
+    fn add_mcp_server(&mut self) -> Task<Message> {
+        let name = self.mcp_input.name_input.trim().to_string();
+        let command = self.mcp_input.command_input.trim().to_string();
+        if name.is_empty() || command.is_empty() {
+            self.status = "MCP 서버 이름과 명령을 모두 입력하세요.".into();
+            return Task::none();
+        }
+        let server = mcp::McpServer {
+            name: name.clone(),
+            command,
+        };
+        self.mcp_servers.push(server.clone());
+        self.mcp_input.name_input.clear();
+        self.mcp_input.command_input.clear();
+        if let Err(e) = mcp::save_servers(&self.mcp_servers) {
+            self.status = format!("MCP 저장 실패: {e}");
+            return Task::none();
+        }
+        self.status = format!("MCP 서버 추가됨: {name} — tool 목록 로드 중…");
+        Task::perform(
+            async move {
+                mcp::list_tools(&server)
+                    .await
+                    .map(|tools| (name.clone(), tools))
+                    .map_err(|e| format!("[{name}] {e}"))
+            },
+            |r| match r {
+                Ok((name, tools)) => Message::McpToolsLoaded(name, tools),
+                Err(msg) => Message::McpToolsFailed(msg),
+            },
+        )
+    }
+
+    fn pty_start(&mut self) -> Task<Message> {
+        match pty::spawn_pty(&self.cwd) {
+            Ok((session, stream)) => {
+                self.pty_session = Some(session);
+                self.pty_output.clear();
+                self.status = "터미널 시작됨".into();
+                Task::run(stream, |event| match event {
+                    pty::PtyEvent::Line(l) => Message::PtyLine(l),
+                    pty::PtyEvent::Exited => Message::PtyExited,
+                })
+            }
+            Err(e) => {
+                self.status = format!("터미널 시작 실패: {e}");
+                Task::none()
+            }
+        }
+    }
+
+    fn on_pty_line(&mut self, line: String) -> Task<Message> {
+        let clean = pty::strip_ansi(&line);
+        if !clean.trim().is_empty() {
+            self.push_pty_line(clean);
+        }
+        Task::none()
+    }
+
+    fn on_pty_exited(&mut self) -> Task<Message> {
+        self.pty_session = None;
+        self.push_pty_line("-- 셸 종료 --".into());
+        self.status = "터미널 종료됨".into();
+        Task::none()
     }
 
     // ── MCP server helpers ────────────────────────────────────────

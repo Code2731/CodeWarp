@@ -655,56 +655,9 @@ impl App {
             Message::TabbyTokenChanged(v) => self.set_tabby_token(v),
             Message::ToggleTabbyTokenVisible => self.toggle_tabby_token_visible(),
             Message::InferenceCommandChanged(v) => self.set_inference_command(v),
-            Message::SelectInferenceEngine(e) => {
-                let prev = self.inference_engine;
-                self.inference_engine = e;
-                self.inference_port_input = e.default_port().to_string();
-                if !prev.shares_model_namespace(e) {
-                    self.inference_selected_model.clear();
-                }
-                match e {
-                    InferenceEngine::TabbyApi => {
-                        self.tabby_url_input = format!("http://localhost:{}", e.default_port());
-                        let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
-                        self.openai_compat_label = "TabbyAPI".into();
-                        let _ = keystore::write_openai_compat_label("TabbyAPI");
-                    }
-                    InferenceEngine::TabbyMl => {
-                        self.tabby_url_input = format!("http://localhost:{}", e.default_port());
-                        let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
-                        self.openai_compat_label = "TabbyML".into();
-                        let _ = keystore::write_openai_compat_label("TabbyML");
-                    }
-                    _ => {}
-                }
-                Task::none()
-            }
+            Message::SelectInferenceEngine(e) => self.select_inference_engine(e),
             Message::SelectInferenceModel(m) => self.set_inference_model(m),
-            Message::InferencePortChanged(v) => {
-                let prev_port = self.inference_port_input.trim().parse::<u16>().ok();
-                self.inference_port_input = v.clone();
-                if let Ok(new_port) = v.trim().parse::<u16>() {
-                    if matches!(
-                        self.inference_engine,
-                        InferenceEngine::XLlm
-                            | InferenceEngine::VLlm
-                            | InferenceEngine::LlamaServer
-                            | InferenceEngine::TabbyMl
-                            | InferenceEngine::TabbyApi
-                    ) {
-                        let current_url = self.tabby_url_input.trim();
-                        let current_url_port = extract_loopback_port(current_url);
-                        let should_sync = current_url.is_empty()
-                            || (is_loopback_url(current_url)
-                                && (current_url_port == prev_port || current_url_port.is_none()));
-                        if should_sync {
-                            self.tabby_url_input = format!("http://localhost:{}", new_port);
-                            let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
-                        }
-                    }
-                }
-                Task::none()
-            }
+            Message::InferencePortChanged(v) => self.set_inference_port(v),
             Message::InferenceBinaryChanged(v) => self.set_inference_binary(v),
             Message::PickInferenceBinary => Task::perform(
                 async {
@@ -716,26 +669,7 @@ impl App {
                 },
                 Message::InferenceBinaryPicked,
             ),
-            Message::InferenceBinaryPicked(maybe) => {
-                if let Some(path) = maybe {
-                    let s = path.display().to_string();
-                    if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
-                        if let Err(msg) = validate_tabbyapi_launcher_path(&s) {
-                            self.status = msg.clone();
-                            self.tabby_status = Some(Err(msg));
-                            return Task::none();
-                        }
-                    }
-                    let _ = keystore::write_inference_binary(&s);
-                    self.inference_binary_path = s;
-                    self.status = if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
-                        "TabbyAPI script 경로 저장됨".into()
-                    } else {
-                        "바이너리 경로 저장됨".into()
-                    };
-                }
-                Task::none()
-            }
+            Message::InferenceBinaryPicked(maybe) => self.on_inference_binary_picked(maybe),
             Message::InstallTabbyApiRuntime => {
                 self.busy = true;
                 let runtime_dir = default_tabbyapi_runtime_dir();
@@ -982,125 +916,9 @@ impl App {
             Message::SaveTabby => self.save_tabby_settings(),
             Message::TabbySaved(r) => self.on_tabby_saved(r),
             Message::ClearTabby => self.clear_tabby_settings(),
-            Message::FetchTabbyModels => {
-                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
-                let url = self.tabby_url_input.clone();
-                if url.trim().is_empty() {
-                    self.tabby_status = Some(Err("URL 비어있음".into()));
-                    return Task::none();
-                }
-                let token = if self.tabby_token_input.trim().is_empty() {
-                    None
-                } else {
-                    Some(self.tabby_token_input.clone())
-                };
-                self.status = "Tabby 모델 가져오는 중…".into();
-                Task::perform(tabby::list_models(url, token), Message::TabbyModelsLoaded)
-            }
-            Message::FetchTabbyModelsRetry(generation) => {
-                if generation != self.tabby_retry_generation {
-                    return Task::none();
-                }
-                let url = self.tabby_url_input.clone();
-                if url.trim().is_empty() {
-                    self.tabby_status = Some(Err("URL 비어있음".into()));
-                    return Task::none();
-                }
-                let token = if self.tabby_token_input.trim().is_empty() {
-                    None
-                } else {
-                    Some(self.tabby_token_input.clone())
-                };
-                self.status = "Tabby 모델 재시도 중…".into();
-                Task::perform(tabby::list_models(url, token), Message::TabbyModelsLoaded)
-            }
-            Message::TabbyModelsLoaded(r) => {
-                // 기존 Tabby 항목 제거 후 새로 채움 (성공/실패 모두 동일하게 비움)
-                self.model_options
-                    .retain(|o| o.provider != LlmProvider::OpenAICompat);
-                match r {
-                    Ok(ids) => {
-                        self.tabby_connect_retry_left = 0;
-                        let label = if ids.is_empty() {
-                            "ok (모델 없음)".to_string()
-                        } else {
-                            format!("{}개", ids.len())
-                        };
-                        self.status = format!("Tabby 연결됨 — {}", label);
-                        self.tabby_status = Some(Ok(label));
-                        let provider_label = self.openai_compat_label.clone();
-                        let mut first_tabby_id: Option<String> = None;
-                        for id in ids {
-                            if first_tabby_id.is_none() {
-                                first_tabby_id = Some(id.clone());
-                            }
-                            let ko_friendly = is_korean_friendly(&id);
-                            let favorite = self.model_filter.favorites.contains(&id);
-                            self.model_options.push(ModelOption {
-                                id,
-                                provider: LlmProvider::OpenAICompat,
-                                provider_label: provider_label.clone(),
-                                ko_friendly,
-                                favorite,
-                                context_length: None,
-                                prompt_per_million: Some(0.0),
-                                completion_per_million: Some(0.0),
-                            });
-                        }
-                        if let Some(id) = first_tabby_id {
-                            let selected_is_tabby = self
-                                .selected_model
-                                .as_deref()
-                                .map(|selected| {
-                                    self.model_options.iter().any(|o| {
-                                        o.provider == LlmProvider::OpenAICompat && o.id == selected
-                                    })
-                                })
-                                .unwrap_or(false);
-                            if !selected_is_tabby {
-                                self.selected_model = Some(id.clone());
-                                self.selected_model_provider = Some(LlmProvider::OpenAICompat);
-                                let _ = keystore::write_selected_model(&id);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        let actionable = self.compose_tabby_connection_error(&e);
-                        let should_retry = self.inference_pid.is_some()
-                            && self.tabby_connect_retry_left > 0
-                            && tabby_connection_error_looks_unreachable(
-                                &e,
-                                &tabby::humanize_error(&e),
-                            );
-                        if should_retry {
-                            self.tabby_connect_retry_left -= 1;
-                            let remain = self.tabby_connect_retry_left;
-                            self.status = format!(
-                                "Tabby 연결 재시도 예정: {} ({}초 뒤 자동 재시도, 남은 {}회)",
-                                actionable, TABBY_CONNECT_RETRY_DELAY_SECS, remain
-                            );
-                            self.tabby_status = Some(Err(actionable));
-                            return Task::perform(
-                                async {
-                                    tokio::time::sleep(std::time::Duration::from_secs(
-                                        TABBY_CONNECT_RETRY_DELAY_SECS,
-                                    ))
-                                    .await;
-                                },
-                                {
-                                    let generation = self.tabby_retry_generation;
-                                    move |_| Message::FetchTabbyModelsRetry(generation)
-                                },
-                            );
-                        }
-                        self.tabby_connect_retry_left = 0;
-                        self.status = format!("Tabby 연결 실패: {}", actionable);
-                        self.tabby_status = Some(Err(actionable));
-                    }
-                }
-                self.refresh_model_combo();
-                Task::none()
-            }
+            Message::FetchTabbyModels => self.fetch_tabby_models(),
+            Message::FetchTabbyModelsRetry(generation) => self.retry_fetch_tabby_models(generation),
+            Message::TabbyModelsLoaded(r) => self.on_tabby_models_loaded(r),
             // ── HF 모델 매니저 ────────────────────────────────────
             Message::HfTokenChanged(v) => self.set_hf_token_input(v),
             Message::ToggleHfTokenVisible => self.toggle_hf_token_visible(),
@@ -2965,6 +2783,203 @@ impl App {
         if self.pending_write_calls.is_empty() {
             return self.continue_after_writes(true);
         }
+        Task::none()
+    }
+
+    // ── Inference engine config helpers ───────────────────────────
+
+    fn select_inference_engine(&mut self, engine: InferenceEngine) -> Task<Message> {
+        let prev = self.inference_engine;
+        self.inference_engine = engine;
+        self.inference_port_input = engine.default_port().to_string();
+        if !prev.shares_model_namespace(engine) {
+            self.inference_selected_model.clear();
+        }
+        match engine {
+            InferenceEngine::TabbyApi => {
+                self.tabby_url_input = format!("http://localhost:{}", engine.default_port());
+                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                self.openai_compat_label = "TabbyAPI".into();
+                let _ = keystore::write_openai_compat_label("TabbyAPI");
+            }
+            InferenceEngine::TabbyMl => {
+                self.tabby_url_input = format!("http://localhost:{}", engine.default_port());
+                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                self.openai_compat_label = "TabbyML".into();
+                let _ = keystore::write_openai_compat_label("TabbyML");
+            }
+            _ => {}
+        }
+        Task::none()
+    }
+
+    fn set_inference_port(&mut self, value: String) -> Task<Message> {
+        let prev_port = self.inference_port_input.trim().parse::<u16>().ok();
+        self.inference_port_input = value.clone();
+        if let Ok(new_port) = value.trim().parse::<u16>() {
+            if matches!(
+                self.inference_engine,
+                InferenceEngine::XLlm
+                    | InferenceEngine::VLlm
+                    | InferenceEngine::LlamaServer
+                    | InferenceEngine::TabbyMl
+                    | InferenceEngine::TabbyApi
+            ) {
+                let current_url = self.tabby_url_input.trim();
+                let current_url_port = extract_loopback_port(current_url);
+                let should_sync = current_url.is_empty()
+                    || (is_loopback_url(current_url)
+                        && (current_url_port == prev_port || current_url_port.is_none()));
+                if should_sync {
+                    self.tabby_url_input = format!("http://localhost:{}", new_port);
+                    let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                }
+            }
+        }
+        Task::none()
+    }
+
+    fn on_inference_binary_picked(
+        &mut self,
+        maybe_path: Option<std::path::PathBuf>,
+    ) -> Task<Message> {
+        if let Some(path) = maybe_path {
+            let s = path.display().to_string();
+            if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
+                if let Err(msg) = validate_tabbyapi_launcher_path(&s) {
+                    self.status = msg.clone();
+                    self.tabby_status = Some(Err(msg));
+                    return Task::none();
+                }
+            }
+            let _ = keystore::write_inference_binary(&s);
+            self.inference_binary_path = s;
+            self.status = if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
+                "TabbyAPI script 경로 저장됨".into()
+            } else {
+                "바이너리 경로 저장됨".into()
+            };
+        }
+        Task::none()
+    }
+
+    // ── Tabby model fetch helpers ─────────────────────────────────
+
+    fn fetch_tabby_models(&mut self) -> Task<Message> {
+        self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
+        let url = self.tabby_url_input.clone();
+        if url.trim().is_empty() {
+            self.tabby_status = Some(Err("URL 비어있음".into()));
+            return Task::none();
+        }
+        let token = if self.tabby_token_input.trim().is_empty() {
+            None
+        } else {
+            Some(self.tabby_token_input.clone())
+        };
+        self.status = "Tabby 모델 가져오는 중…".into();
+        Task::perform(tabby::list_models(url, token), Message::TabbyModelsLoaded)
+    }
+
+    fn retry_fetch_tabby_models(&mut self, generation: u64) -> Task<Message> {
+        if generation != self.tabby_retry_generation {
+            return Task::none();
+        }
+        let url = self.tabby_url_input.clone();
+        if url.trim().is_empty() {
+            self.tabby_status = Some(Err("URL 비어있음".into()));
+            return Task::none();
+        }
+        let token = if self.tabby_token_input.trim().is_empty() {
+            None
+        } else {
+            Some(self.tabby_token_input.clone())
+        };
+        self.status = "Tabby 모델 재시도 중…".into();
+        Task::perform(tabby::list_models(url, token), Message::TabbyModelsLoaded)
+    }
+
+    fn on_tabby_models_loaded(&mut self, result: Result<Vec<String>, String>) -> Task<Message> {
+        self.model_options
+            .retain(|o| o.provider != LlmProvider::OpenAICompat);
+        match result {
+            Ok(ids) => {
+                self.tabby_connect_retry_left = 0;
+                let label = if ids.is_empty() {
+                    "ok (모델 없음)".to_string()
+                } else {
+                    format!("{}개", ids.len())
+                };
+                self.status = format!("Tabby 연결됨 — {}", label);
+                self.tabby_status = Some(Ok(label));
+                let provider_label = self.openai_compat_label.clone();
+                let mut first_tabby_id: Option<String> = None;
+                for id in ids {
+                    if first_tabby_id.is_none() {
+                        first_tabby_id = Some(id.clone());
+                    }
+                    let ko_friendly = is_korean_friendly(&id);
+                    let favorite = self.model_filter.favorites.contains(&id);
+                    self.model_options.push(ModelOption {
+                        id,
+                        provider: LlmProvider::OpenAICompat,
+                        provider_label: provider_label.clone(),
+                        ko_friendly,
+                        favorite,
+                        context_length: None,
+                        prompt_per_million: Some(0.0),
+                        completion_per_million: Some(0.0),
+                    });
+                }
+                if let Some(id) = first_tabby_id {
+                    let selected_is_tabby = self
+                        .selected_model
+                        .as_deref()
+                        .map(|selected| {
+                            self.model_options.iter().any(|o| {
+                                o.provider == LlmProvider::OpenAICompat && o.id == selected
+                            })
+                        })
+                        .unwrap_or(false);
+                    if !selected_is_tabby {
+                        self.selected_model = Some(id.clone());
+                        self.selected_model_provider = Some(LlmProvider::OpenAICompat);
+                        let _ = keystore::write_selected_model(&id);
+                    }
+                }
+            }
+            Err(e) => {
+                let actionable = self.compose_tabby_connection_error(&e);
+                let should_retry = self.inference_pid.is_some()
+                    && self.tabby_connect_retry_left > 0
+                    && tabby_connection_error_looks_unreachable(&e, &tabby::humanize_error(&e));
+                if should_retry {
+                    self.tabby_connect_retry_left -= 1;
+                    let remain = self.tabby_connect_retry_left;
+                    self.status = format!(
+                        "Tabby 연결 재시도 예정: {} ({}초 뒤 자동 재시도, 남은 {}회)",
+                        actionable, TABBY_CONNECT_RETRY_DELAY_SECS, remain
+                    );
+                    self.tabby_status = Some(Err(actionable));
+                    return Task::perform(
+                        async {
+                            tokio::time::sleep(std::time::Duration::from_secs(
+                                TABBY_CONNECT_RETRY_DELAY_SECS,
+                            ))
+                            .await;
+                        },
+                        {
+                            let generation = self.tabby_retry_generation;
+                            move |_| Message::FetchTabbyModelsRetry(generation)
+                        },
+                    );
+                }
+                self.tabby_connect_retry_left = 0;
+                self.status = format!("Tabby 연결 실패: {}", actionable);
+                self.tabby_status = Some(Err(actionable));
+            }
+        }
+        self.refresh_model_combo();
         Task::none()
     }
 

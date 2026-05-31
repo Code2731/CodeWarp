@@ -754,7 +754,12 @@ impl App {
                         let p = theme.extended_palette();
                         let (bg, fg, border) = if is_user {
                             (
-                                p.primary.weak.color,
+                                iced::Color::from_rgba(
+                                    p.primary.weak.color.r,
+                                    p.primary.weak.color.g,
+                                    p.primary.weak.color.b,
+                                    0.35,
+                                ),
                                 p.background.base.text,
                                 p.primary.strong.color,
                             )
@@ -764,14 +769,19 @@ impl App {
                                     p.danger.weak.color.r,
                                     p.danger.weak.color.g,
                                     p.danger.weak.color.b,
-                                    0.22,
+                                    0.30,
                                 ),
                                 p.background.base.text,
                                 p.danger.strong.color,
                             )
                         } else {
                             (
-                                p.background.weak.color,
+                                iced::Color::from_rgba(
+                                    p.background.weak.color.r,
+                                    p.background.weak.color.g,
+                                    p.background.weak.color.b,
+                                    0.70,
+                                ),
                                 p.background.base.text,
                                 p.background.strong.color,
                             )

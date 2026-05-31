@@ -975,65 +975,9 @@ impl App {
                     ),
                 ])
             }
-            Message::StopInference => {
-                if let Some(pid) = self.inference_pid.take() {
-                    kill_pid(pid);
-                    self.status = format!("inference 서버 중지 (pid {})", pid);
-                    self.push_inference_log(format!("[stopped] pid {}", pid));
-                }
-                self.tabby_connect_retry_left = 0;
-                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
-                Task::none()
-            }
-            Message::InferenceLogLine(line) => {
-                if line.starts_with("[pid:") {
-                    if let Some(pid) = line
-                        .strip_prefix("[pid:")
-                        .and_then(|r| r.split(']').next())
-                        .and_then(|s| s.trim().parse::<u32>().ok())
-                    {
-                        self.inference_pid = Some(pid);
-                    }
-                }
-                if let Some(detail) = line.strip_prefix("[spawn 실패] ") {
-                    self.status = detail.to_string();
-                    self.tabby_status = Some(Err(detail.to_string()));
-                }
-                self.push_inference_log(line);
-                Task::none()
-            }
-            Message::InferenceExited(code) => {
-                let last_error = self
-                    .inference_log
-                    .iter()
-                    .rev()
-                    .find(|line| line.starts_with("[spawn 실패]") || line.starts_with("[err]"))
-                    .cloned();
-                self.push_inference_log(format!("[exited] code {}", code));
-                self.inference_pid = None;
-                self.tabby_connect_retry_left = 0;
-                self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
-                self.status = format!("inference 서버 종료 (exit {})", code);
-                // endpoint 끊김 표시
-                self.tabby_status = Some(Err("inference 서버 종료됨".into()));
-                let status = if code == -1 {
-                    last_error
-                        .and_then(|line| line.strip_prefix("[spawn 실패] ").map(str::to_string))
-                        .unwrap_or_else(|| "inference 서버 시작 실패".into())
-                } else if code == 0 {
-                    format!("inference 서버 종료 (exit {})", code)
-                } else if let Some(line) = last_error {
-                    format!("inference 서버 종료 (exit {}) — {}", code, line)
-                } else {
-                    format!("inference 서버 종료 (exit {})", code)
-                };
-                self.status = status.clone();
-                self.tabby_status = Some(Err(status));
-                self.model_options
-                    .retain(|o| o.provider != LlmProvider::OpenAICompat);
-                self.refresh_model_combo();
-                Task::none()
-            }
+            Message::StopInference => self.stop_inference(),
+            Message::InferenceLogLine(line) => self.on_inference_log_line(line),
+            Message::InferenceExited(code) => self.on_inference_exited(code),
             Message::OpenAICompatLabelChanged(v) => self.set_openai_compat_label(v),
             Message::SaveTabby => self.save_tabby_settings(),
             Message::TabbySaved(r) => self.on_tabby_saved(r),
@@ -1172,54 +1116,12 @@ impl App {
                 },
                 Message::ModelDirPicked,
             ),
-            Message::ModelDirPicked(maybe) => {
-                if let Some(path) = maybe {
-                    let s = path.display().to_string();
-                    let _ = keystore::write_model_dir(&s);
-                    self.model_dir_input = s;
-                    self.sync_selected_local_model_for_model_dir();
-                    self.status = "모델 다운로드 경로 저장됨".into();
-                }
-                Task::none()
-            }
+            Message::ModelDirPicked(maybe) => self.on_model_dir_picked(maybe),
             Message::HfRepoChanged(v) => self.set_hf_repo_input(v),
             Message::UsePreset(idx) => self.apply_model_preset(idx),
             Message::DownloadExl2Preset(idx) => self.prepare_exl2_preset_download(idx),
             Message::SelectDownloadedModel(folder_name) => {
-                let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
-                let Some(resolved_model_path) =
-                    resolve_tabbyapi_model_dir_for_folder(&model_path, &folder_name)
-                else {
-                    let msg = format!(
-                        "TabbyAPI 모델 폴더를 확정할 수 없습니다: {} (config.json+가중치 파일이 필요하며, 여러 하위 모델이면 폴더 이름에 bpw 힌트가 포함되어야 합니다.)",
-                        model_path.display()
-                    );
-                    self.status = msg.clone();
-                    self.tabby_status = Some(Err(msg));
-                    return Task::none();
-                };
-                self.inference_engine = InferenceEngine::TabbyApi;
-                self.inference_selected_model = resolved_model_path.display().to_string();
-                self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
-                if let Some(launcher) = find_tabbyapi_launcher(&default_tabbyapi_runtime_dir()) {
-                    self.inference_binary_path = launcher.display().to_string();
-                    let _ = keystore::write_inference_binary(&self.inference_binary_path);
-                } else {
-                    self.inference_binary_path.clear();
-                    let _ = keystore::clear_inference_binary();
-                }
-                self.tabby_url_input = format!("http://localhost:{}", self.inference_port_input);
-                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
-                if self.openai_compat_label.trim().is_empty() {
-                    self.openai_compat_label = "TabbyAPI".into();
-                    let _ = keystore::write_openai_compat_label("TabbyAPI");
-                }
-                self.ui.settings_tab = SettingsTab::Runtime;
-                self.status = format!(
-                    "다운로드된 모델 선택됨: {} — Runtime에서 시작 후 연결 테스트",
-                    folder_name
-                );
-                Task::none()
+                self.select_downloaded_model(folder_name)
             }
             Message::StartHfDownload => {
                 if self.hf_dl.is_some() {
@@ -2173,28 +2075,7 @@ impl App {
             Message::ApproveWrites => self.approve_pending_writes(),
             Message::DenyWrites => self.deny_pending_writes(),
             Message::ToggleConfirmExpand(idx) => self.toggle_write_confirm_expand(idx),
-            Message::DiscardWriteCall(idx) => {
-                if idx >= self.pending_write_calls.len() {
-                    return Task::none();
-                }
-                let tc = self.pending_write_calls.remove(idx);
-                self.push_tool_result_block(tc.name.clone(), "discarded".into(), false);
-                self.conversation.push(ChatMessage::tool_result(
-                    &tc.id,
-                    "[denied] 사용자가 이 도구 호출을 제외했습니다.",
-                ));
-                // 펼친 인덱스 보정 (제거된 항목 이후는 한 칸 당김)
-                self.ui.expanded_confirm_idx = match self.ui.expanded_confirm_idx {
-                    Some(e) if e == idx => None,
-                    Some(e) if e > idx => Some(e - 1),
-                    other => other,
-                };
-                // 모든 항목이 제거됐다면 자동 진행 (= 모두 거부와 동일)
-                if self.pending_write_calls.is_empty() {
-                    return self.continue_after_writes(true);
-                }
-                Task::none()
-            }
+            Message::DiscardWriteCall(idx) => self.discard_write_call(idx),
             Message::ToggleFilterCoding(v) => self.set_filter_coding(v),
             Message::ToggleFilterReasoning(v) => self.set_filter_reasoning(v),
             Message::ToggleFilterGeneral(v) => self.set_filter_general(v),
@@ -2268,24 +2149,7 @@ impl App {
             Message::CloseAllOverlays => self.close_all_overlays(),
             Message::CommandPaletteChanged(v) => self.update_command_palette_input(v),
             Message::ExecuteCommand(idx) => self.execute_palette_command(idx),
-            Message::GenerationLoaded(r) => {
-                if let Ok(data) = r {
-                    let cost = data.total_cost.unwrap_or(0.0);
-                    self.last_response_cost = Some(cost);
-                    let model_id = data.model.clone().unwrap_or_default();
-                    if !model_id.is_empty() {
-                        let entry = self.usage.by_model.entry(model_id).or_default();
-                        entry.total_cost += cost;
-                        entry.prompt_tokens += data.native_tokens_prompt.unwrap_or(0);
-                        entry.completion_tokens += data.native_tokens_completion.unwrap_or(0);
-                        entry.call_count += 1;
-                    }
-                    let _ = session::save_usage(&self.usage);
-                    // 사용 후 잔액 갱신을 위해 account 다시 fetch
-                    return Task::done(Message::FetchAccount);
-                }
-                Task::none()
-            }
+            Message::GenerationLoaded(r) => self.on_generation_loaded(r),
             Message::AskDeleteSession(id) => self.ask_delete_session(id),
             Message::CancelDeleteSession => self.cancel_delete_session(),
             Message::DeleteSession(target_id) => {
@@ -2945,6 +2809,163 @@ impl App {
             .push(ChatMessage::tool_result(&tool_call_id, result));
         self.tool_round += 1;
         self.kick_chat_stream()
+    }
+
+    // ── Inference lifecycle helpers ────────────────────────────────
+
+    fn stop_inference(&mut self) -> Task<Message> {
+        if let Some(pid) = self.inference_pid.take() {
+            kill_pid(pid);
+            self.status = format!("inference 서버 중지 (pid {})", pid);
+            self.push_inference_log(format!("[stopped] pid {}", pid));
+        }
+        self.tabby_connect_retry_left = 0;
+        self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
+        Task::none()
+    }
+
+    fn on_inference_log_line(&mut self, line: String) -> Task<Message> {
+        if line.starts_with("[pid:") {
+            if let Some(pid) = line
+                .strip_prefix("[pid:")
+                .and_then(|r| r.split(']').next())
+                .and_then(|s| s.trim().parse::<u32>().ok())
+            {
+                self.inference_pid = Some(pid);
+            }
+        }
+        if let Some(detail) = line.strip_prefix("[spawn 실패] ") {
+            self.status = detail.to_string();
+            self.tabby_status = Some(Err(detail.to_string()));
+        }
+        self.push_inference_log(line);
+        Task::none()
+    }
+
+    fn on_inference_exited(&mut self, code: i32) -> Task<Message> {
+        let last_error = self
+            .inference_log
+            .iter()
+            .rev()
+            .find(|line| line.starts_with("[spawn 실패]") || line.starts_with("[err]"))
+            .cloned();
+        self.push_inference_log(format!("[exited] code {}", code));
+        self.inference_pid = None;
+        self.tabby_connect_retry_left = 0;
+        self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
+        self.status = format!("inference 서버 종료 (exit {})", code);
+        self.tabby_status = Some(Err("inference 서버 종료됨".into()));
+        let status = if code == -1 {
+            last_error
+                .and_then(|line| line.strip_prefix("[spawn 실패] ").map(str::to_string))
+                .unwrap_or_else(|| "inference 서버 시작 실패".into())
+        } else if code == 0 {
+            format!("inference 서버 종료 (exit {})", code)
+        } else if let Some(line) = last_error {
+            format!("inference 서버 종료 (exit {}) — {}", code, line)
+        } else {
+            format!("inference 서버 종료 (exit {})", code)
+        };
+        self.status = status.clone();
+        self.tabby_status = Some(Err(status));
+        self.model_options
+            .retain(|o| o.provider != LlmProvider::OpenAICompat);
+        self.refresh_model_combo();
+        Task::none()
+    }
+
+    // ── Model dir / HF model helpers ──────────────────────────────
+
+    fn on_model_dir_picked(&mut self, maybe_path: Option<std::path::PathBuf>) -> Task<Message> {
+        if let Some(path) = maybe_path {
+            let s = path.display().to_string();
+            let _ = keystore::write_model_dir(&s);
+            self.model_dir_input = s;
+            self.sync_selected_local_model_for_model_dir();
+            self.status = "모델 다운로드 경로 저장됨".into();
+        }
+        Task::none()
+    }
+
+    fn select_downloaded_model(&mut self, folder_name: String) -> Task<Message> {
+        let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
+        let Some(resolved_model_path) =
+            resolve_tabbyapi_model_dir_for_folder(&model_path, &folder_name)
+        else {
+            let msg = format!(
+                "TabbyAPI 모델 폴더를 확정할 수 없습니다: {} (config.json+가중치 파일이 필요하며, 여러 하위 모델이면 폴더 이름에 bpw 힌트가 포함되어야 합니다.)",
+                model_path.display()
+            );
+            self.status = msg.clone();
+            self.tabby_status = Some(Err(msg));
+            return Task::none();
+        };
+        self.inference_engine = InferenceEngine::TabbyApi;
+        self.inference_selected_model = resolved_model_path.display().to_string();
+        self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
+        if let Some(launcher) = find_tabbyapi_launcher(&default_tabbyapi_runtime_dir()) {
+            self.inference_binary_path = launcher.display().to_string();
+            let _ = keystore::write_inference_binary(&self.inference_binary_path);
+        } else {
+            self.inference_binary_path.clear();
+            let _ = keystore::clear_inference_binary();
+        }
+        self.tabby_url_input = format!("http://localhost:{}", self.inference_port_input);
+        let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+        if self.openai_compat_label.trim().is_empty() {
+            self.openai_compat_label = "TabbyAPI".into();
+            let _ = keystore::write_openai_compat_label("TabbyAPI");
+        }
+        self.ui.settings_tab = SettingsTab::Runtime;
+        self.status = format!(
+            "다운로드된 모델 선택됨: {} — Runtime에서 시작 후 연결 테스트",
+            folder_name
+        );
+        Task::none()
+    }
+
+    // ── Usage / write confirm helpers ──────────────────────────────
+
+    fn on_generation_loaded(
+        &mut self,
+        result: Result<openrouter::GenerationData, String>,
+    ) -> Task<Message> {
+        if let Ok(data) = result {
+            let cost = data.total_cost.unwrap_or(0.0);
+            self.last_response_cost = Some(cost);
+            let model_id = data.model.clone().unwrap_or_default();
+            if !model_id.is_empty() {
+                let entry = self.usage.by_model.entry(model_id).or_default();
+                entry.total_cost += cost;
+                entry.prompt_tokens += data.native_tokens_prompt.unwrap_or(0);
+                entry.completion_tokens += data.native_tokens_completion.unwrap_or(0);
+                entry.call_count += 1;
+            }
+            let _ = session::save_usage(&self.usage);
+            return Task::done(Message::FetchAccount);
+        }
+        Task::none()
+    }
+
+    fn discard_write_call(&mut self, idx: usize) -> Task<Message> {
+        if idx >= self.pending_write_calls.len() {
+            return Task::none();
+        }
+        let tc = self.pending_write_calls.remove(idx);
+        self.push_tool_result_block(tc.name.clone(), "discarded".into(), false);
+        self.conversation.push(ChatMessage::tool_result(
+            &tc.id,
+            "[denied] 사용자가 이 도구 호출을 제외했습니다.",
+        ));
+        self.ui.expanded_confirm_idx = match self.ui.expanded_confirm_idx {
+            Some(e) if e == idx => None,
+            Some(e) if e > idx => Some(e - 1),
+            other => other,
+        };
+        if self.pending_write_calls.is_empty() {
+            return self.continue_after_writes(true);
+        }
+        Task::none()
     }
 
     /// 현재 활성 필터/정렬을 적용해 model_options을 좁힌 결과.

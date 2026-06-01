@@ -7,6 +7,7 @@ mod keystore;
 mod mcp;
 mod model;
 mod openrouter;
+mod palette;
 mod pty;
 mod session;
 mod tabby;
@@ -17,6 +18,7 @@ mod view;
 
 pub(crate) use block::*;
 pub(crate) use model::*;
+pub(crate) use palette::*;
 pub(crate) use util::*;
 
 use futures_util::StreamExt;
@@ -665,61 +667,6 @@ struct App {
     mcp_tools: Vec<mcp::McpTool>,
     mcp_input: McpInputState,
 }
-
-#[derive(Debug, Clone, Copy)]
-enum PaletteAction {
-    NewChat,
-    PlanMode,
-    BuildMode,
-    OpenSettings,
-    PickCwd,
-    CycleSort,
-    ToggleFavorite,
-}
-
-struct PaletteCommand {
-    action: PaletteAction,
-    label: &'static str,
-    hint: &'static str,
-}
-
-const PALETTE_COMMANDS: &[PaletteCommand] = &[
-    PaletteCommand {
-        action: PaletteAction::NewChat,
-        label: "새 채팅",
-        hint: "현재 세션 보존 후 빈 세션 시작",
-    },
-    PaletteCommand {
-        action: PaletteAction::PlanMode,
-        label: "🔍 Plan 모드",
-        hint: "읽기 전용 도구만 사용",
-    },
-    PaletteCommand {
-        action: PaletteAction::BuildMode,
-        label: "🔧 Build 모드",
-        hint: "전체 도구 사용 (사용자 승인 필요)",
-    },
-    PaletteCommand {
-        action: PaletteAction::OpenSettings,
-        label: "⚙ 설정",
-        hint: "OpenRouter 키 등록/삭제",
-    },
-    PaletteCommand {
-        action: PaletteAction::PickCwd,
-        label: "📁 작업 폴더 변경",
-        hint: "native folder picker",
-    },
-    PaletteCommand {
-        action: PaletteAction::CycleSort,
-        label: "💰 가격 정렬 토글",
-        hint: "기본 → 오름차순 → 내림차순",
-    },
-    PaletteCommand {
-        action: PaletteAction::ToggleFavorite,
-        label: "★ 현재 모델 즐겨찾기 토글",
-        hint: "favorites.json 영구 저장",
-    },
-];
 
 /// 비활성 세션 (메모리 절약 위해 blocks를 plain text로 보관)
 #[derive(Debug, Clone)]

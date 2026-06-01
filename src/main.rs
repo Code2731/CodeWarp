@@ -59,10 +59,6 @@ struct ModelOption {
     completion_per_million: Option<f64>,
 }
 
-fn vscrollbar() -> Scrollbar {
-    Scrollbar::new().width(8).scroller_width(8).margin(2)
-}
-
 fn hscrollbar() -> Scrollbar {
     Scrollbar::new().width(8).scroller_width(8).margin(2)
 }

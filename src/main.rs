@@ -1,16 +1,23 @@
 // CodeWarp — Iced 진입점
 // Phase 2-3a: 3-pane 레이아웃 + 모델 셀렉터 (TopBar) + 입력 echo
 
+mod block;
 mod hf;
 mod keystore;
 mod mcp;
+mod model;
 mod openrouter;
 mod pty;
 mod session;
 mod tabby;
 mod tools;
 mod update;
+mod util;
 mod view;
+
+pub(crate) use block::*;
+pub(crate) use model::*;
+pub(crate) use util::*;
 
 use futures_util::StreamExt;
 use iced::keyboard::key::Named;
@@ -18,10 +25,10 @@ use iced::keyboard::{Key, Modifiers};
 use iced::task;
 use iced::widget::markdown::{self, HeadingLevel, Settings as MdSettings, Text as MdText, Viewer};
 use iced::widget::operation::snap_to_end;
-use iced::widget::scrollable::{Direction, Scrollbar, Viewport};
+use iced::widget::scrollable::{Direction, Viewport};
 use iced::widget::text_editor::Action;
 use iced::widget::{
-    button, column, combo_box, container, row, scrollable, text, text_editor, Id as ScrollId, Space,
+    button, column, combo_box, container, row, scrollable, text, Id as ScrollId, Space,
 };
 use iced::{font, Color, Element, Font, Length, Size, Task, Theme};
 use std::collections::HashSet;
@@ -29,227 +36,6 @@ use std::path::PathBuf;
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
 use view::SIDEBAR_WIDTH;
-
-/// 모델을 어느 백엔드로 라우팅할지. OpenAICompat은 사용자 임의 endpoint
-/// (xLLM / vLLM / Tabby / llama-server / Ollama 등 — 모두 OpenAI 호환).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum LlmProvider {
-    OpenRouter,
-    OpenAICompat,
-}
-
-/// combo_box에 표시할 모델 항목 (가격 정보 포함).
-/// Display 형식: "[OR][KO]★ model-id  128k  $in/$out" 또는 "[xLLM] model-id  free"
-#[derive(Debug, Clone, PartialEq)]
-struct ModelOption {
-    id: String,
-    provider: LlmProvider,
-    /// OpenAICompat의 사용자 지정 라벨 (xLLM/TabbyML/TabbyAPI/Local 등). 빈 값이면 "Local".
-    /// OpenRouter일 땐 무의미 (Display에서 사용 안 함).
-    provider_label: String,
-    /// 한국어 토크나이저 친화 모델 휴리스틱 결과
-    ko_friendly: bool,
-    /// 즐겨찾기 여부 (refresh_model_combo에서 self.favorites 기준으로 set)
-    favorite: bool,
-    /// context window 토큰 수 (있을 때만 표시)
-    context_length: Option<u64>,
-    /// 입력 100만 토큰당 USD
-    prompt_per_million: Option<f64>,
-    /// 출력 100만 토큰당 USD
-    completion_per_million: Option<f64>,
-}
-
-fn hscrollbar() -> Scrollbar {
-    Scrollbar::new().width(8).scroller_width(8).margin(2)
-}
-
-/// 바이트 수를 KB/MB/GB 단위로 표시 (1024 진법).
-fn fmt_bytes(n: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = 1024 * 1024;
-    const GB: u64 = 1024 * 1024 * 1024;
-    if n >= GB {
-        format!("{:.2} GB", n as f64 / GB as f64)
-    } else if n >= MB {
-        format!("{:.1} MB", n as f64 / MB as f64)
-    } else if n >= KB {
-        format!("{:.0} KB", n as f64 / KB as f64)
-    } else {
-        format!("{} B", n)
-    }
-}
-
-fn fmt_context_length(n: u64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{}k", n / 1_000)
-    } else {
-        n.to_string()
-    }
-}
-
-/// `~`, `~/...`, `~\...` 경로를 사용자 홈 기준 절대 경로로 확장.
-/// 그 외 입력은 그대로 반환.
-fn resolve_user_path(path: &str) -> PathBuf {
-    let trimmed = path.trim();
-    if trimmed == "~" {
-        if let Some(home) = dirs::home_dir() {
-            return home;
-        }
-    }
-    if let Some(rest) = trimmed
-        .strip_prefix("~/")
-        .or_else(|| trimmed.strip_prefix("~\\"))
-    {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
-    }
-    PathBuf::from(trimmed)
-}
-
-impl std::fmt::Display for ModelOption {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let tag: String = match self.provider {
-            LlmProvider::OpenRouter => "[OR]".into(),
-            LlmProvider::OpenAICompat => {
-                let label = self.provider_label.trim();
-                if label.is_empty() {
-                    "[Local]".into()
-                } else {
-                    format!("[{}]", label)
-                }
-            }
-        };
-        let ko = if self.ko_friendly { "[KO]" } else { "" };
-        let star = if self.favorite { "★" } else { "" };
-        let ctx = self
-            .context_length
-            .map(|n| format!("  {}", fmt_context_length(n)))
-            .unwrap_or_default();
-        match (self.prompt_per_million, self.completion_per_million) {
-            (Some(p), Some(c)) if p == 0.0 && c == 0.0 => {
-                write!(f, "{}{}{} {}{}  free", tag, ko, star, self.id, ctx)
-            }
-            (Some(p), Some(c)) => {
-                write!(
-                    f,
-                    "{}{}{} {}{}  ${:.2}/${:.2}",
-                    tag, ko, star, self.id, ctx, p, c
-                )
-            }
-            _ => write!(f, "{}{}{} {}{}", tag, ko, star, self.id, ctx),
-        }
-    }
-}
-
-/// 모델 ID에 한국어 친화로 알려진 패턴이 들어있는지.
-/// 휴리스틱 — 누락/오탐 가능. 화이트리스트 갱신은 여기 한 줄.
-fn is_korean_friendly(id: &str) -> bool {
-    let s = id.to_lowercase();
-    const PATTERNS: &[&str] = &[
-        "claude",
-        "gpt-4o",
-        "gpt-4-turbo",
-        "gpt-4.1",
-        "gemini-1.5",
-        "gemini-2",
-        "qwen2.5",
-        "qwen-2.5",
-        "qwen3",
-        "llama-3.1",
-        "llama-3.2",
-        "llama-3.3",
-        "exaone",
-        "solar",
-        "deepseek-v3",
-        "deepseek-r1",
-        "deepseek-chat",
-        "hyperclova",
-        "ax-3",
-        "a.x",
-        "kullm",
-        "ko-llama",
-        "42dot",
-    ];
-    PATTERNS.iter().any(|p| s.contains(p))
-}
-
-fn parse_price_per_million(s: Option<&str>) -> Option<f64> {
-    let v = s?.parse::<f64>().ok()?;
-    Some(v * 1_000_000.0)
-}
-
-/// input 문자열에서 마지막 '@' 이후 mention query 추출.
-/// 공백·개행이 포함되면 None (이미 완성된 멘션이므로 팝업 불필요).
-fn extract_mention_query(input: &str) -> Option<&str> {
-    let at_pos = input.rfind('@')?;
-    let rest = &input[at_pos + 1..];
-    if rest.bytes().any(|b| matches!(b, b' ' | b'\n' | b'\t')) {
-        return None;
-    }
-    Some(rest)
-}
-
-/// PathBuf 목록을 query로 fuzzy filter (대소문자 무시, 부분 포함).
-fn fuzzy_match_paths(candidates: &[PathBuf], query: &str, max_results: usize) -> Vec<PathBuf> {
-    if query.is_empty() {
-        return candidates.iter().take(max_results).cloned().collect();
-    }
-    let q = query.to_lowercase();
-    candidates
-        .iter()
-        .filter(|p| p.to_string_lossy().to_lowercase().contains(&q))
-        .take(max_results)
-        .cloned()
-        .collect()
-}
-
-/// 첨부 파일 목록을 코드 펜스 블록 컨텍스트 문자열로 변환.
-fn build_file_context(files: &[(PathBuf, String)]) -> String {
-    files
-        .iter()
-        .map(|(path, content)| {
-            let name = path.display();
-            format!("```{name}\n{content}\n```")
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n")
-}
-
-/// cwd 기준으로 파일 목록을 비동기 수집 (최대 200개, max_depth=5).
-async fn collect_mention_candidates(cwd: PathBuf) -> Vec<PathBuf> {
-    tokio::task::spawn_blocking(move || {
-        let mut results = Vec::new();
-        for entry in ignore::WalkBuilder::new(&cwd).max_depth(Some(5)).build() {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-                continue;
-            }
-            if let Ok(rel) = entry.path().strip_prefix(&cwd) {
-                results.push(rel.to_path_buf());
-            }
-            if results.len() >= 200 {
-                break;
-            }
-        }
-        results
-    })
-    .await
-    .unwrap_or_default()
-}
-
-// 첨부 파일 크기 상한 (512 KB 초과 시 거부)
-const MAX_ATTACH_BYTES: u64 = 512 * 1024;
-
-/// PTY 출력 버퍼 최대 줄 수 (FIFO)
-const PTY_MAX_LINES: usize = 500;
-const TABBY_API_DEFAULT_PORT: u16 = 5000;
-const TABBY_API_REPO_URL: &str = "https://github.com/theroyallab/tabbyAPI.git";
 
 fn build_window_icon() -> Option<iced::window::Icon> {
     const SIZE: u32 = 64;
@@ -363,64 +149,6 @@ fn main() -> iced::Result {
             ..Default::default()
         })
         .run()
-}
-
-/// 사용자 입력은 짧은 plain text, AI 응답은 read-only text_editor (부분 선택 + 복사 가능).
-enum BlockBody {
-    User(String),
-    Assistant(text_editor::Content),
-    /// 도구 호출 실행 결과 (휘발성 — 세션 저장 안 됨, 시각 알림용).
-    ToolResult {
-        name: String,
-        summary: String,
-        success: bool,
-    },
-}
-
-impl BlockBody {
-    fn role_label(&self) -> &'static str {
-        match self {
-            BlockBody::User(_) => "you",
-            BlockBody::Assistant(_) => "ai",
-            BlockBody::ToolResult { .. } => "tool",
-        }
-    }
-
-    fn to_text(&self) -> String {
-        match self {
-            BlockBody::User(s) => s.clone(),
-            BlockBody::Assistant(c) => c.text(),
-            BlockBody::ToolResult { summary, .. } => summary.clone(),
-        }
-    }
-
-    fn is_empty_for_history(&self) -> bool {
-        match self {
-            BlockBody::User(s) => s.trim().is_empty(),
-            BlockBody::Assistant(c) => c.text().trim().is_empty(),
-            BlockBody::ToolResult { .. } => false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ViewMode {
-    /// 마크다운으로 예쁘게 렌더. 코드 블록은 syntax highlight.
-    Rendered,
-    /// 원문(read-only text_editor). 기본 assistant 보기이며 부분 선택 + Ctrl+C 가능.
-    Raw,
-}
-
-struct Block {
-    id: u64,
-    body: BlockBody,
-    view_mode: ViewMode,
-    /// assistant Rendered용 캐시. 토큰 도착 시마다 갱신.
-    md_items: Vec<markdown::Item>,
-    /// assistant 블록을 만든 모델 ID (user 블록은 None).
-    model: Option<String>,
-    /// 응답 끝난 후 추출된 Apply 가능한 변경사항 + 적용 여부.
-    apply_candidates: Vec<(ApplyCandidate, bool)>,
 }
 
 impl Drop for App {
@@ -558,494 +286,6 @@ fn humanize_inference_spawn_error(program: &str, err: &std::io::Error) -> String
     }
 
     format!("{}: {}", program, raw)
-}
-
-/// inference 엔진 종류 — 사용자가 dropdown으로 선택.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InferenceEngine {
-    XLlm,
-    VLlm,
-    LlamaServer,
-    TabbyMl,
-    TabbyApi,
-    /// daemon 형태 — 이미 떠있다고 가정, CodeWarp는 spawn 안 함.
-    Ollama,
-    /// 사용자가 직접 명령 입력
-    Custom,
-}
-
-impl InferenceEngine {
-    const ALL: &'static [InferenceEngine] = &[
-        InferenceEngine::XLlm,
-        InferenceEngine::VLlm,
-        InferenceEngine::LlamaServer,
-        InferenceEngine::TabbyMl,
-        InferenceEngine::TabbyApi,
-        InferenceEngine::Ollama,
-        InferenceEngine::Custom,
-    ];
-
-    fn label(&self) -> &'static str {
-        match self {
-            Self::XLlm => "xLLM",
-            Self::VLlm => "vLLM",
-            Self::LlamaServer => "llama-server",
-            Self::TabbyMl => "TabbyML",
-            Self::TabbyApi => "TabbyAPI (EXL2)",
-            Self::Ollama => "Ollama (이미 떠있는 daemon)",
-            Self::Custom => "Custom (직접 명령)",
-        }
-    }
-
-    fn default_port(&self) -> u16 {
-        match self {
-            Self::TabbyMl => 8080,
-            Self::TabbyApi => TABBY_API_DEFAULT_PORT,
-            Self::Ollama => 11434,
-            _ => 9000,
-        }
-    }
-
-    fn shares_model_namespace(&self, other: InferenceEngine) -> bool {
-        match (self, other) {
-            (Self::XLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
-            | (Self::VLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
-            | (Self::LlamaServer, Self::XLlm | Self::VLlm | Self::LlamaServer)
-            | (Self::TabbyMl, Self::TabbyMl)
-            | (Self::TabbyApi, Self::TabbyApi)
-            | (Self::Ollama, Self::Ollama)
-            | (Self::Custom, Self::Custom) => true,
-            _ => false,
-        }
-    }
-
-    /// 모델 path/ID + port를 받아 spawn할 Command 인자 리스트 반환.
-    /// `None`이면 spawn 안 함 (Ollama는 외부 daemon, Custom은 사용자 정의).
-    fn compose_command(&self, model: &str, port: u16) -> Option<Vec<String>> {
-        let port_s = port.to_string();
-        match self {
-            Self::XLlm => Some(vec![
-                "xllm".into(),
-                "serve".into(),
-                "--model".into(),
-                model.into(),
-                "--port".into(),
-                port_s,
-            ]),
-            Self::VLlm => Some(vec![
-                "vllm".into(),
-                "serve".into(),
-                model.into(),
-                "--port".into(),
-                port_s,
-            ]),
-            Self::LlamaServer => Some(vec![
-                "llama-server".into(),
-                "-m".into(),
-                model.into(),
-                "--port".into(),
-                port_s,
-            ]),
-            Self::TabbyMl => Some(vec![
-                "tabby".into(),
-                "serve".into(),
-                "--model".into(),
-                model.into(),
-                "--chat-model".into(),
-                model.into(),
-            ]),
-            Self::TabbyApi => {
-                #[cfg(windows)]
-                {
-                    Some(vec![
-                        "Start.bat".into(),
-                        "--config".into(),
-                        "config.yml".into(),
-                    ])
-                }
-                #[cfg(not(windows))]
-                {
-                    Some(vec![
-                        "./start.sh".into(),
-                        "--config".into(),
-                        "config.yml".into(),
-                    ])
-                }
-            }
-            Self::Ollama | Self::Custom => None,
-        }
-    }
-}
-
-impl std::fmt::Display for InferenceEngine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.label())
-    }
-}
-
-/// 모델 매니저 다운로드 폴더 안의 받은 모델(서브폴더) 리스트.
-/// 빈 폴더는 모델 아님 — skip.
-fn has_model_weight_file(dir: &std::path::Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return false;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if has_model_weight_file(&path) {
-                return true;
-            }
-            continue;
-        }
-
-        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        let file_name = file_name.to_ascii_lowercase();
-        if file_name.ends_with(".safetensors")
-            || file_name.ends_with(".bin")
-            || file_name.ends_with(".gguf")
-            || file_name.ends_with(".pt")
-            || file_name.ends_with(".pth")
-        {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn is_valid_tabbyapi_model_dir_direct(path: &std::path::Path) -> bool {
-    path.is_dir() && path.join("config.json").is_file() && has_model_weight_file(path)
-}
-
-fn tabbyapi_direct_model_children(path: &std::path::Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| is_valid_tabbyapi_model_dir_direct(p))
-        .collect()
-}
-
-fn extract_bpw_hint(text: &str) -> Option<String> {
-    let lower = text.to_ascii_lowercase();
-    let bytes = lower.as_bytes();
-    for (idx, _) in lower.match_indices("bpw") {
-        let mut start = idx;
-        while start > 0 {
-            let ch = bytes[start - 1];
-            if ch.is_ascii_digit() || ch == b'.' {
-                start -= 1;
-            } else {
-                break;
-            }
-        }
-        if start < idx {
-            return Some(lower[start..idx + 3].to_string());
-        }
-    }
-    None
-}
-
-fn resolve_tabbyapi_model_dir_with_hint(
-    path: &std::path::Path,
-    hint: Option<&str>,
-) -> Option<PathBuf> {
-    if is_valid_tabbyapi_model_dir_direct(path) {
-        return Some(path.to_path_buf());
-    }
-
-    let candidates = tabbyapi_direct_model_children(path);
-    if candidates.is_empty() {
-        return None;
-    }
-    if candidates.len() == 1 {
-        return candidates.into_iter().next();
-    }
-
-    if let Some(bpw_hint) = hint.and_then(extract_bpw_hint) {
-        let mut matched: Vec<PathBuf> = candidates
-            .iter()
-            .filter_map(|candidate| {
-                let name = candidate.file_name().and_then(|n| n.to_str())?;
-                if name.to_ascii_lowercase().contains(&bpw_hint) {
-                    Some(candidate.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if matched.len() == 1 {
-            return matched.pop();
-        }
-    }
-
-    None
-}
-
-fn resolve_tabbyapi_model_dir(path: &std::path::Path) -> Option<PathBuf> {
-    resolve_tabbyapi_model_dir_with_hint(path, None)
-}
-
-fn has_tabbyapi_model_dir(path: &std::path::Path) -> bool {
-    is_valid_tabbyapi_model_dir_direct(path) || !tabbyapi_direct_model_children(path).is_empty()
-}
-
-fn resolve_tabbyapi_model_dir_for_folder(
-    path: &std::path::Path,
-    folder_name: &str,
-) -> Option<PathBuf> {
-    resolve_tabbyapi_model_dir_with_hint(path, Some(folder_name))
-}
-
-fn is_downloaded_exl2_root(path: &std::path::Path) -> bool {
-    has_tabbyapi_model_dir(path)
-}
-
-fn is_downloaded_model_dir(path: &std::path::Path) -> bool {
-    path.is_dir() && has_model_weight_file(path)
-}
-
-fn list_downloaded_models(dir: &std::path::Path) -> Vec<String> {
-    let resolved_dir = resolve_user_path(&dir.to_string_lossy());
-    if resolved_dir.as_os_str().is_empty() {
-        return Vec::new();
-    }
-    let Ok(entries) = std::fs::read_dir(&resolved_dir) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        if !is_downloaded_model_dir(&path) {
-            continue;
-        }
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            out.push(name.to_string());
-        }
-    }
-    out.sort_unstable();
-    out
-}
-
-fn downloaded_model_path(dir: &str, folder_name: &str) -> PathBuf {
-    resolve_user_path(dir).join(folder_name)
-}
-
-fn exl2_repo_model_stem(repo_id: &str) -> Option<String> {
-    let name = repo_id.rsplit('/').next()?.trim();
-    if name.is_empty() {
-        return None;
-    }
-    name.strip_suffix("-exl2")
-        .or_else(|| name.strip_suffix("-EXL2"))
-        .map(str::to_string)
-}
-
-fn downloaded_exl2_preset_folder(dir: &str, preset: &Exl2Preset) -> Option<String> {
-    let root = resolve_user_path(dir);
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return None;
-    };
-    let mut models: Vec<String> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_dir() && is_downloaded_exl2_root(p))
-        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
-        .collect();
-    models.sort_unstable();
-    if let Some(exact) = models
-        .iter()
-        .find(|m| m.eq_ignore_ascii_case(preset.folder_name))
-    {
-        return Some(exact.clone());
-    }
-
-    let stem = exl2_repo_model_stem(preset.repo_id)?;
-    let stem_prefix = format!("{}-", stem.to_ascii_lowercase());
-    let mut matches: Vec<String> = models
-        .into_iter()
-        .filter(|m| {
-            let lower = m.to_ascii_lowercase();
-            lower.starts_with(&stem_prefix) && lower.contains("bpw")
-        })
-        .collect();
-    if matches.len() == 1 {
-        matches.pop()
-    } else {
-        None
-    }
-}
-
-/// 윈도우는 taskkill /T /F (자식 트리 포함), 그 외는 kill SIGTERM.
-fn kill_pid(pid: u32) {
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/T", "/F", "/PID", &pid.to_string()])
-            .status();
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = std::process::Command::new("kill")
-            .arg(pid.to_string())
-            .status();
-    }
-}
-
-/// AI 응답의 fenced code block 첫 줄에서 `// path: ...` 또는 `# path: ...`를
-/// 검사해 적용 후보를 추출. 닫는 fence가 없거나 path가 첫 줄이 아니면 skip.
-#[derive(Debug, Clone, PartialEq)]
-struct ApplyCandidate {
-    path: String,
-    language: String,
-    content: String,
-}
-
-fn extract_path_from_comment(line: &str) -> Option<String> {
-    let trimmed = line.trim_start();
-    for prefix in ["//", "#", "--"] {
-        if let Some(rest) = trimmed.strip_prefix(prefix) {
-            let rest = rest.trim_start();
-            if let Some(p) = rest.strip_prefix("path:") {
-                let path = p.trim().to_string();
-                if !path.is_empty() {
-                    return Some(path);
-                }
-            }
-        }
-    }
-    None
-}
-
-fn parse_apply_candidates(markdown: &str) -> Vec<ApplyCandidate> {
-    let mut out = Vec::new();
-    let mut lines = markdown.lines().peekable();
-    while let Some(line) = lines.next() {
-        let trimmed = line.trim_start();
-        let Some(rest) = trimmed.strip_prefix("```") else {
-            continue;
-        };
-        // fence 시작 — language는 fence info의 첫 단어
-        let language = rest.split_whitespace().next().unwrap_or("").to_string();
-        // 첫 본문 라인에서 path 추출
-        let Some(first) = lines.next() else { break };
-        let Some(path) = extract_path_from_comment(first) else {
-            // path 없는 코드 블록 — 닫는 fence까지 skip
-            for inner in lines.by_ref() {
-                if inner.trim_start().starts_with("```") {
-                    break;
-                }
-            }
-            continue;
-        };
-        // 본문 수집 — 닫는 fence까지
-        let mut content = String::new();
-        let mut closed = false;
-        for inner in lines.by_ref() {
-            if inner.trim_start().starts_with("```") {
-                closed = true;
-                break;
-            }
-            content.push_str(inner);
-            content.push('\n');
-        }
-        if closed && !content.is_empty() {
-            out.push(ApplyCandidate {
-                path,
-                language,
-                content,
-            });
-        }
-    }
-    out
-}
-
-/// 마지막 user 메시지 다음의 모든 메시지를 conversation에서 제거.
-/// regenerate 또는 edit 직전 호출. user가 전혀 없으면 conversation을 비움.
-fn truncate_after_last_user(conv: &mut Vec<crate::openrouter::ChatMessage>) {
-    while let Some(last) = conv.last() {
-        if last.role == "user" {
-            return;
-        }
-        conv.pop();
-    }
-}
-
-/// 가장 마지막 BlockBody::User 인덱스 (없으면 None).
-fn last_user_block_idx(blocks: &[Block]) -> Option<usize> {
-    blocks
-        .iter()
-        .rposition(|b| matches!(b.body, BlockBody::User(_)))
-}
-
-/// 가장 마지막 BlockBody::Assistant 인덱스 (없으면 None).
-fn last_assistant_block_idx(blocks: &[Block]) -> Option<usize> {
-    blocks
-        .iter()
-        .rposition(|b| matches!(b.body, BlockBody::Assistant(_)))
-}
-
-fn persisted_to_block(pb: session::PersistedBlock) -> Block {
-    let role = pb.role;
-    let content = pb.content;
-    let md_items = if role == "assistant" {
-        markdown::parse(&content).collect()
-    } else {
-        Vec::new()
-    };
-    let body = if role == "user" {
-        BlockBody::User(content)
-    } else {
-        BlockBody::Assistant(text_editor::Content::with_text(&content))
-    };
-    let model = if pb.model.is_empty() {
-        None
-    } else {
-        Some(pb.model)
-    };
-    Block {
-        id: pb.id,
-        body,
-        view_mode: if role == "assistant" {
-            ViewMode::Raw
-        } else {
-            ViewMode::Rendered
-        },
-        md_items,
-        model,
-        apply_candidates: Vec::new(),
-    }
-}
-
-/// 도구 호출 결과를 ToolResult 칩에 표시할 한 줄 요약 + 성공 여부로 변환.
-fn summarize_tool_result(name: &str, args_json: &str, result: &str) -> (String, bool) {
-    let lower = result.to_ascii_lowercase();
-    let success =
-        !(result.starts_with("Error") || lower.contains("[err]") || lower.starts_with("error"));
-    let summary = match name {
-        "write_file" => tools::WriteFileArgs::parse(args_json)
-            .map(|a| format!("{} ({} bytes)", a.path, a.content.len()))
-            .unwrap_or_else(|_| "?".into()),
-        "run_command" => tools::RunCommandArgs::parse(args_json)
-            .map(|a| format!("$ {}", a.command.chars().take(60).collect::<String>()))
-            .unwrap_or_else(|_| "?".into()),
-        _ => result
-            .lines()
-            .next()
-            .unwrap_or("")
-            .chars()
-            .take(80)
-            .collect(),
-    };
-    (summary, success)
 }
 
 /// 두 텍스트의 line-by-line diff를 색상 표시된 Element로 변환.
@@ -1243,114 +483,6 @@ struct HfDownload {
     file_bytes_done: u64,
     file_bytes_total: Option<u64>,
 }
-
-/// 추천 프리셋 — 클릭 시 hf_repo_input에 채움.
-struct ModelPreset {
-    repo_id: &'static str,
-    label: &'static str,
-    note: &'static str,
-}
-// xLLM / vLLM / llama-server 등 자체 띄울 OpenAI 호환 백엔드용 HF 본판 모델.
-// Tabby는 자체 카탈로그·cache를 사용하므로 Tabby를 위해서는 이 매니저 대신
-// `tabby serve --model X` 명령을 직접 실행 (그러면 Tabby가 자동 다운로드).
-const MODEL_PRESETS: &[ModelPreset] = &[
-    ModelPreset {
-        repo_id: "Qwen/Qwen2.5-Coder-7B-Instruct",
-        label: "Qwen2.5-Coder 7B Instruct",
-        note: "코딩 + 한국어 친화 (xLLM/vLLM)",
-    },
-    ModelPreset {
-        repo_id: "Qwen/Qwen2.5-7B-Instruct",
-        label: "Qwen2.5 7B Instruct",
-        note: "범용 + 한국어 친화 (xLLM/vLLM)",
-    },
-    ModelPreset {
-        repo_id: "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct",
-        label: "EXAONE 3.5 7.8B",
-        note: "한국어 특화 (LG AI)",
-    },
-    ModelPreset {
-        repo_id: "upstage/SOLAR-10.7B-Instruct-v1.0",
-        label: "SOLAR 10.7B",
-        note: "한국어 친화 (Upstage)",
-    },
-    ModelPreset {
-        repo_id: "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
-        label: "DeepSeek-Coder V2 Lite",
-        note: "코딩 (16B-MoE 활성 2.4B)",
-    },
-];
-
-/// EXL2 프리셋 — TabbyAPI용. 클릭하면 해당 branch를 바로 다운로드.
-struct Exl2Preset {
-    repo_id: &'static str,
-    revision: &'static str,    // HF branch (bpw 수치)
-    folder_name: &'static str, // models 폴더 아래 저장될 이름
-    label: &'static str,
-    note: &'static str,
-    vram: &'static str,
-}
-
-const EXL2_PRESETS: &[Exl2Preset] = &[
-    Exl2Preset {
-        repo_id: "turboderp/Llama-3.2-1B-Instruct-exl2",
-        revision: "4.0bpw",
-        folder_name: "Llama-3.2-1B-Instruct-4.0bpw",
-        label: "Llama 3.2 1B Instruct",
-        note: "검증·테스트용 초소형",
-        vram: "~600MB",
-    },
-    Exl2Preset {
-        repo_id: "turboderp/Llama-3.2-3B-Instruct-exl2",
-        revision: "3.5bpw",
-        folder_name: "Llama-3.2-3B-Instruct-3.5bpw",
-        label: "Llama 3.2 3B Instruct",
-        note: "소형 범용",
-        vram: "~1.8GB",
-    },
-    Exl2Preset {
-        repo_id: "turboderp/Llama-3.1-8B-Instruct-exl2",
-        revision: "4.0bpw",
-        folder_name: "Llama-3.1-8B-Instruct-4.0bpw",
-        label: "Llama 3.1 8B Instruct 4bpw",
-        note: "RTX 3080 최적 균형",
-        vram: "~5GB",
-    },
-    Exl2Preset {
-        repo_id: "turboderp/Llama-3.1-8B-Instruct-exl2",
-        revision: "6.0bpw",
-        folder_name: "Llama-3.1-8B-Instruct-6.0bpw",
-        label: "Llama 3.1 8B Instruct 6bpw",
-        note: "품질 우선 (RTX 3080 10GB 내)",
-        vram: "~7.5GB",
-    },
-    Exl2Preset {
-        repo_id: "turboderp/gemma-2-9b-it-exl2",
-        revision: "4.0bpw",
-        folder_name: "Gemma-2-9B-it-4.0bpw",
-        label: "Gemma 2 9B Instruct",
-        note: "Google 범용 (강력한 instruction following)",
-        vram: "~5.5GB",
-    },
-    Exl2Preset {
-        repo_id: "turboderp/gemma-3-12b-it-exl2",
-        revision: "4.0bpw",
-        folder_name: "Gemma-3-12B-it-4.0bpw",
-        label: "Gemma 3 12B Instruct",
-        note: "최신 Gemma 3 (멀티모달 지원)",
-        vram: "~7GB",
-    },
-];
-
-/// 도구 호출이 SSE delta로 부분씩 도착하는 동안 누적할 임시 구조.
-#[derive(Default, Clone)]
-struct PendingToolCall {
-    id: String,
-    name: String,
-    arguments: String,
-}
-
-const MAX_TOOL_ROUNDS: u32 = 5;
 
 struct UiState {
     show_settings: bool,
@@ -1601,13 +733,6 @@ struct InactiveSession {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ModelCategory {
-    Coding,
-    Reasoning,
-    General,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AgentMode {
     /// 읽기 전용 도구만 (read_file, glob, grep) — 분석/계획 단계
     Plan,
@@ -1661,49 +786,6 @@ enum SettingsTab {
     Runtime,
     Models,
     Mcp,
-}
-
-/// 모델 ID에서 카테고리를 추정. 키워드 매칭 기반.
-/// 코딩/추론 전용 모델만 좁게 매칭하고, 나머지(Claude/GPT-4/Gemini 등)는 범용으로.
-fn categorize_model(model_id: &str) -> Vec<ModelCategory> {
-    let id = model_id.to_lowercase();
-    // 코딩 전용 모델만 (이름에 'code', 'coder' 등이 명시된 것)
-    let coding_keywords = [
-        "coder",
-        "codex",
-        "codestral",
-        "codellama",
-        "starcoder",
-        "codegen",
-        "code-",
-    ];
-    // 추론 전용 모델 (chain-of-thought / thinking 모드)
-    let reasoning_keywords = [
-        "o1-",
-        "o3-",
-        "o4-",
-        "/o1",
-        "/o3",
-        "/o4",
-        "thinking",
-        "-reasoning",
-        "-r1",
-        "-qwq",
-        "/qwq",
-    ];
-    let is_coding = coding_keywords.iter().any(|k| id.contains(k));
-    let is_reasoning = reasoning_keywords.iter().any(|k| id.contains(k));
-    let mut cats = Vec::new();
-    if is_coding {
-        cats.push(ModelCategory::Coding);
-    }
-    if is_reasoning {
-        cats.push(ModelCategory::Reasoning);
-    }
-    if !is_coding && !is_reasoning {
-        cats.push(ModelCategory::General);
-    }
-    cats
 }
 
 #[derive(Debug, Clone)]
@@ -2333,7 +1415,10 @@ mod tests {
     fn ab(id: u64) -> Block {
         Block {
             id,
-            body: BlockBody::Assistant(text_editor::Content::with_text(&format!("a{}", id))),
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::with_text(&format!(
+                "a{}",
+                id
+            ))),
             view_mode: ViewMode::Rendered,
             md_items: Vec::new(),
             model: None,
@@ -2358,7 +1443,7 @@ mod tests {
     fn assistant_block_with_text(id: u64, text: &str) -> Block {
         Block {
             id,
-            body: BlockBody::Assistant(text_editor::Content::with_text(text)),
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::with_text(text)),
             view_mode: ViewMode::Rendered,
             md_items: Vec::new(),
             model: None,
@@ -2471,7 +1556,7 @@ mod tests {
         app.streaming_block_id = Some(42);
         app.blocks.push(Block {
             id: 42,
-            body: BlockBody::Assistant(text_editor::Content::new()),
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
             view_mode: ViewMode::Rendered,
             md_items: Vec::new(),
             model: None,

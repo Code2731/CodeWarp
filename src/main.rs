@@ -4,6 +4,7 @@
 mod block;
 mod bootstrap;
 mod hf;
+mod input;
 mod keystore;
 mod mcp;
 mod model;
@@ -22,13 +23,12 @@ use bootstrap::{
     build_window_icon, JETBRAINS_MONO_BOLD, JETBRAINS_MONO_REGULAR, PRETENDARD_BOLD,
     PRETENDARD_REGULAR, PRETENDARD_SEMIBOLD,
 };
+pub(crate) use input::on_event;
 pub(crate) use model::*;
 pub(crate) use palette::*;
 pub(crate) use util::*;
 
 use futures_util::StreamExt;
-use iced::keyboard::key::Named;
-use iced::keyboard::{Key, Modifiers};
 use iced::task;
 use iced::widget::markdown::{self, HeadingLevel, Settings as MdSettings, Text as MdText, Viewer};
 use iced::widget::operation::snap_to_end;
@@ -43,54 +43,6 @@ use std::path::PathBuf;
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
 use view::SIDEBAR_WIDTH;
-
-fn handle_key(key: Key, modifiers: Modifiers) -> Option<Message> {
-    // Esc — 열려있는 오버레이(팔레트/설정) 모두 닫기
-    if matches!(key.as_ref(), Key::Named(Named::Escape)) {
-        return Some(Message::CloseAllOverlays);
-    }
-    // Ctrl/Cmd + 단축키
-    if modifiers.command() {
-        return match key.as_ref() {
-            Key::Character("k") => Some(Message::OpenCommandPalette),
-            Key::Character("n") => Some(Message::NewChat),
-            Key::Character(",") => Some(Message::OpenSettings),
-            Key::Character("`") => Some(Message::PtyToggle),
-            Key::Character("p") if modifiers.shift() => {
-                Some(Message::SetAgentMode(AgentMode::Plan))
-            }
-            Key::Character("b") if modifiers.shift() => {
-                Some(Message::SetAgentMode(AgentMode::Build))
-            }
-            _ => None,
-        };
-    }
-    None
-}
-
-/// keyboard + window 이벤트를 하나의 listen_with로 통합.
-/// (listen_with는 fn pointer만 받으므로 closure 캡처 불가)
-fn on_event(
-    event: iced::Event,
-    _status: iced::event::Status,
-    _window: iced::window::Id,
-) -> Option<Message> {
-    match event {
-        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-            match key.as_ref() {
-                Key::Named(Named::ArrowUp) => Some(Message::MentionMove(-1)),
-                Key::Named(Named::ArrowDown) => Some(Message::MentionMove(1)),
-                _ => handle_key(key, modifiers),
-            }
-        }
-        iced::Event::Window(iced::window::Event::FileDropped(path)) => {
-            Some(Message::FileDropped(path))
-        }
-        iced::Event::Window(iced::window::Event::FileHovered(_)) => Some(Message::FileDragHover),
-        iced::Event::Window(iced::window::Event::FilesHoveredLeft) => Some(Message::FileDragHover),
-        _ => None,
-    }
-}
 
 fn main() -> iced::Result {
     let window_icon = build_window_icon();

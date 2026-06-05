@@ -1,5 +1,6 @@
 // update.rs — App update + 헬퍼 메서드 (main.rs child module)
 use super::*;
+use futures_util::StreamExt;
 use iced::widget::text_editor;
 use iced::{Subscription, Task};
 

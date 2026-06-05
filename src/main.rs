@@ -2,6 +2,7 @@
 // Phase 2-3a: 3-pane 레이아웃 + 모델 셀렉터 (TopBar) + 입력 echo
 
 mod block;
+mod bootstrap;
 mod hf;
 mod keystore;
 mod mcp;
@@ -17,6 +18,10 @@ mod util;
 mod view;
 
 pub(crate) use block::*;
+use bootstrap::{
+    build_window_icon, JETBRAINS_MONO_BOLD, JETBRAINS_MONO_REGULAR, PRETENDARD_BOLD,
+    PRETENDARD_REGULAR, PRETENDARD_SEMIBOLD,
+};
 pub(crate) use model::*;
 pub(crate) use palette::*;
 pub(crate) use util::*;
@@ -38,50 +43,6 @@ use std::path::PathBuf;
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
 use view::SIDEBAR_WIDTH;
-
-fn build_window_icon() -> Option<iced::window::Icon> {
-    const SIZE: u32 = 64;
-    const CENTER: f32 = (SIZE as f32 - 1.0) / 2.0;
-    const RADIUS: f32 = 27.0;
-    const INNER_RADIUS: f32 = 16.0;
-    let mut pixels: Vec<u8> = Vec::with_capacity((SIZE * SIZE * 4) as usize);
-
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let dx = x as f32 - CENTER;
-            let dy = y as f32 - CENTER;
-            let distance = (dx * dx + dy * dy).sqrt();
-
-            let (r, g, b, a) = if distance <= RADIUS {
-                if distance <= INNER_RADIUS {
-                    (250, 250, 255, 255)
-                } else {
-                    let t = 1.0 - (distance - INNER_RADIUS) / (RADIUS - INNER_RADIUS);
-                    (
-                        (40.0 + t * 120.0) as u8,
-                        (80.0 + t * 60.0) as u8,
-                        (180.0 + t * 55.0) as u8,
-                        255,
-                    )
-                }
-            } else {
-                (0, 0, 0, 0)
-            };
-
-            pixels.extend_from_slice(&[r, g, b, a]);
-        }
-    }
-
-    iced::window::icon::from_rgba(pixels, SIZE, SIZE).ok()
-}
-
-// 본문용 — 한국어/영문 동시 지원 (Pretendard, OFL)
-const PRETENDARD_REGULAR: &[u8] = include_bytes!("../assets/fonts/Pretendard-Regular.otf");
-const PRETENDARD_SEMIBOLD: &[u8] = include_bytes!("../assets/fonts/Pretendard-SemiBold.otf");
-const PRETENDARD_BOLD: &[u8] = include_bytes!("../assets/fonts/Pretendard-Bold.otf");
-// 코드용 monospace (JetBrains Mono, OFL)
-const JETBRAINS_MONO_REGULAR: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf");
-const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf");
 
 fn handle_key(key: Key, modifiers: Modifiers) -> Option<Message> {
     // Esc — 열려있는 오버레이(팔레트/설정) 모두 닫기

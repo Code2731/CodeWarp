@@ -212,16 +212,19 @@ impl InferenceEngine {
     }
 
     pub(crate) fn shares_model_namespace(&self, other: InferenceEngine) -> bool {
-        match (self, other) {
+        matches!(
+            (self, other),
             (Self::XLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
-            | (Self::VLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
-            | (Self::LlamaServer, Self::XLlm | Self::VLlm | Self::LlamaServer)
-            | (Self::TabbyMl, Self::TabbyMl)
-            | (Self::TabbyApi, Self::TabbyApi)
-            | (Self::Ollama, Self::Ollama)
-            | (Self::Custom, Self::Custom) => true,
-            _ => false,
-        }
+                | (Self::VLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
+                | (
+                    Self::LlamaServer,
+                    Self::XLlm | Self::VLlm | Self::LlamaServer
+                )
+                | (Self::TabbyMl, Self::TabbyMl)
+                | (Self::TabbyApi, Self::TabbyApi)
+                | (Self::Ollama, Self::Ollama)
+                | (Self::Custom, Self::Custom)
+        )
     }
 
     /// 모델 path/ID + port를 받아 spawn할 Command 인자 리스트 반환.

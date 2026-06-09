@@ -345,4 +345,106 @@ mod tests {
         let p = load_all_at(Some(tmp.path()));
         assert_eq!(p.sessions[0].title, "new format");
     }
+
+    #[test]
+    fn json_roundtrip_preserves_full_state() {
+        let data = PersistedAllSessions {
+            sessions: vec![
+                PersistedSessionData {
+                    id: 1,
+                    title: "chat one".into(),
+                    conversation: vec![
+                        ChatMessage::user("hello"),
+                        ChatMessage::assistant("hi there"),
+                    ],
+                    blocks: vec![
+                        PersistedBlock {
+                            id: 10,
+                            role: "user".into(),
+                            content: "hello".into(),
+                            model: String::new(),
+                        },
+                        PersistedBlock {
+                            id: 11,
+                            role: "assistant".into(),
+                            content: "hi there".into(),
+                            model: "gpt-4o".into(),
+                        },
+                    ],
+                    next_block_id: 12,
+                    scroll_y: 42.5,
+                },
+                PersistedSessionData {
+                    id: 2,
+                    title: "chat two".into(),
+                    conversation: Vec::new(),
+                    blocks: Vec::new(),
+                    next_block_id: 0,
+                    scroll_y: 0.0,
+                },
+            ],
+            active_idx: 1,
+        };
+        let json = serde_json::to_string_pretty(&data).unwrap();
+        let loaded: PersistedAllSessions = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.sessions.len(), 2);
+        assert_eq!(loaded.active_idx, 1);
+        assert_eq!(loaded.sessions[0].title, "chat one");
+        assert_eq!(loaded.sessions[0].blocks.len(), 2);
+        assert_eq!(loaded.sessions[0].blocks[1].model, "gpt-4o");
+        assert_eq!(loaded.sessions[0].scroll_y, 42.5);
+        assert_eq!(loaded.sessions[1].title, "chat two");
+    }
+
+    #[test]
+    fn load_all_at_non_existent_dir_returns_default() {
+        let tmp = TempDir::new().unwrap();
+        let phantom = tmp.path().join("does-not-exist");
+        let loaded = load_all_at(Some(&phantom));
+        assert_eq!(loaded.sessions.len(), 1);
+        assert_eq!(loaded.sessions[0].title, "새 채팅");
+    }
+
+    #[test]
+    fn favorites_serde_roundtrip() {
+        let favs = vec!["gpt-4o".to_string(), "claude-3.5".to_string()];
+        let json = serde_json::to_string(&favs).unwrap();
+        let loaded: Vec<String> = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded, favs);
+    }
+
+    #[test]
+    fn usage_serde_roundtrip() {
+        let mut usage = UsageStore::default();
+        usage.by_model.insert(
+            "gpt-4o".into(),
+            ModelUsage {
+                total_cost: 1.23,
+                prompt_tokens: 500,
+                completion_tokens: 300,
+                call_count: 10,
+            },
+        );
+        usage.by_model.insert(
+            "claude-3.5".into(),
+            ModelUsage {
+                total_cost: 0.45,
+                prompt_tokens: 200,
+                completion_tokens: 100,
+                call_count: 5,
+            },
+        );
+
+        let json = serde_json::to_string(&usage).unwrap();
+        let loaded: UsageStore = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.by_model.len(), 2);
+        assert!((loaded.by_model["gpt-4o"].total_cost - 1.23).abs() < 1e-10);
+        assert_eq!(loaded.by_model["claude-3.5"].call_count, 5);
+    }
+
+    #[test]
+    fn usage_default_is_empty() {
+        let usage = UsageStore::default();
+        assert!(usage.by_model.is_empty());
+    }
 }

@@ -298,7 +298,7 @@ fn resolve_binary_from_dir(dir: &std::path::Path, program: &str) -> Option<PathB
             candidates.push(dir.join(format!("{base}.bat")));
             candidates.push(dir.join(format!("{base}.com")));
         }
-        return candidates.into_iter().find(|c| c.is_file());
+        candidates.into_iter().find(|c| c.is_file())
     }
 
     #[cfg(not(windows))]
@@ -537,17 +537,16 @@ impl App {
     ) -> (String, Vec<String>, Option<PathBuf>) {
         let override_path = self.inference_binary_path.trim();
         if !matches!(self.inference_engine, InferenceEngine::TabbyApi) {
-            let final_program = if override_path.is_empty() {
-                program
-            } else if is_tabbyapi_launcher_path(override_path) {
-                program
-            } else if std::path::Path::new(override_path).is_dir() {
-                resolve_binary_from_dir(std::path::Path::new(override_path), &program)
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| override_path.to_string())
-            } else {
-                override_path.to_string()
-            };
+            let final_program =
+                if override_path.is_empty() || is_tabbyapi_launcher_path(override_path) {
+                    program
+                } else if std::path::Path::new(override_path).is_dir() {
+                    resolve_binary_from_dir(std::path::Path::new(override_path), &program)
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| override_path.to_string())
+                } else {
+                    override_path.to_string()
+                };
             return (final_program, args, None);
         }
 
@@ -1615,7 +1614,12 @@ impl App {
         if let Some(b) = self.blocks.iter_mut().find(|b| b.id == id) {
             b.view_mode = match b.view_mode {
                 ViewMode::Rendered => ViewMode::Raw,
-                ViewMode::Raw => ViewMode::Rendered,
+                ViewMode::Raw => {
+                    if let BlockBody::Assistant(content) = &b.body {
+                        b.md_items = markdown::parse(&content.text()).collect();
+                    }
+                    ViewMode::Rendered
+                }
             };
         }
         Task::none()
@@ -2346,6 +2350,14 @@ impl App {
                     self.status = format!("최대 도구 라운드 {} 초과", MAX_TOOL_ROUNDS);
                 } else {
                     self.status = "준비됨".into();
+                }
+                if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
+                    if let BlockBody::Assistant(content) = &b.body {
+                        let raw = content.text();
+                        if !raw.is_empty() {
+                            b.md_items = markdown::parse(&raw).collect();
+                        }
+                    }
                 }
                 if !assistant_text.is_empty() {
                     self.conversation
@@ -3668,7 +3680,6 @@ impl App {
                 let mut raw = content.text();
                 raw.push_str(text);
                 *content = text_editor::Content::with_text(&raw);
-                b.md_items = markdown::parse(&raw).collect();
             }
         }
     }

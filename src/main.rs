@@ -1305,6 +1305,73 @@ mod tests {
     }
 
     #[test]
+    fn chat_chunk_does_not_reparse_markdown_during_streaming() {
+        let (mut app, _) = App::new();
+        app.conversation.clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Token("**hello**".into())));
+        assert!(
+            app.blocks[0].md_items.is_empty(),
+            "md_items should stay empty during streaming (F16 perf fix)"
+        );
+        assert_eq!(app.blocks[0].body.to_text(), "**hello**");
+    }
+
+    #[test]
+    fn toggle_block_view_to_rendered_triggers_markdown_parse() {
+        let (mut app, _) = App::new();
+        app.conversation.clear();
+        app.blocks.clear();
+        let id = 42;
+        app.blocks.push(Block {
+            id,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::with_text(
+                "**bold** text",
+            )),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ToggleBlockView(id));
+        assert_eq!(app.blocks[0].view_mode, ViewMode::Rendered);
+        assert!(
+            !app.blocks[0].md_items.is_empty(),
+            "md_items should be populated after toggling to Rendered"
+        );
+    }
+
+    #[test]
+    fn toggle_block_view_to_raw_clears_no_md_items() {
+        let (mut app, _) = App::new();
+        app.conversation.clear();
+        app.blocks.clear();
+        let id = 42;
+        app.blocks.push(Block {
+            id,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::with_text("hello")),
+            view_mode: ViewMode::Rendered,
+            md_items: vec![], // pretend it was parsed
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ToggleBlockView(id));
+        assert_eq!(app.blocks[0].view_mode, ViewMode::Raw);
+    }
+
+    #[test]
     fn last_user_idx_empty() {
         assert_eq!(last_user_block_idx(&[]), None);
     }

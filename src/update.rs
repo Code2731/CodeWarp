@@ -2444,7 +2444,7 @@ impl App {
         Task::none()
     }
 
-    fn on_mcp_tools_loaded(
+    pub(crate) fn on_mcp_tools_loaded(
         &mut self,
         server_name: String,
         tools: Vec<mcp::McpTool>,
@@ -2456,7 +2456,7 @@ impl App {
         Task::none()
     }
 
-    fn on_mcp_tools_failed(&mut self, msg: String) -> Task<Message> {
+    pub(crate) fn on_mcp_tools_failed(&mut self, msg: String) -> Task<Message> {
         self.status = format!("MCP tool 로드 실패: {msg}");
         Task::none()
     }

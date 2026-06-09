@@ -3,6 +3,7 @@ use super::*;
 use futures_util::StreamExt;
 use iced::widget::text_editor;
 use iced::{Subscription, Task};
+use std::time::Duration;
 
 use crate::view::{SIDEBAR_WIDTH, SIDEBAR_WIDTH_COMPACT, SIDEBAR_WIDTH_WIDE};
 
@@ -735,6 +736,10 @@ impl App {
             Message::PtyClear => self.pty_clear(),
             Message::RemoveAttachment(idx) => self.remove_attachment(idx),
             Message::ClearAttachments => self.clear_attachments(),
+            Message::AutoSave => {
+                self.save_session();
+                Task::none()
+            }
 
             // ── @-mention ─────────────────────────────────────────
             Message::MentionMove(delta) => self.move_mention_selection(delta),
@@ -3715,7 +3720,13 @@ impl App {
     }
 
     pub(crate) fn subscription(&self) -> Subscription<Message> {
-        iced::event::listen_with(on_event)
+        let event_sub = iced::event::listen_with(on_event);
+        if self.streaming_block_id.is_some() {
+            let timer_sub = iced::time::every(Duration::from_secs(15)).map(|_| Message::AutoSave);
+            Subscription::batch(vec![event_sub, timer_sub])
+        } else {
+            event_sub
+        }
     }
 
     pub(crate) fn filtered_palette_commands(&self) -> Vec<&'static PaletteCommand> {

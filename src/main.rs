@@ -646,6 +646,8 @@ enum Message {
     RemoveAttachment(usize),
     /// 첨부 파일 전체 제거
     ClearAttachments,
+    /// 주기적 자동 저장 타이머 (크래시 복구).
+    AutoSave,
     /// mention 팝업 ↑(-1) ↓(+1)
     MentionMove(i32),
     /// mention 팝업에서 선택 확정 (Enter)

@@ -13,8 +13,24 @@ const INFERENCE_BIN_USER: &str = "inference_binary_path";
 const HF_TOKEN_USER: &str = "hf_token";
 const MODEL_DIR_USER: &str = "model_download_dir";
 
+fn humanize_keyring_error(e: keyring::Error) -> String {
+    match &e {
+        keyring::Error::NoStorageAccess(_) => "자격 증명 저장소에 접근할 수 없습니다.".into(),
+        keyring::Error::PlatformFailure(_) => "OS 자격 증명 저장소 오류입니다.".into(),
+        keyring::Error::BadEncoding(_) => "자격 증명 데이터 형식이 잘못되었습니다.".into(),
+        keyring::Error::TooLong(attr, _) => {
+            format!("자격 증명 속성({attr})이 길이 제한을 초과했습니다.")
+        }
+        keyring::Error::Invalid(attr, reason) => {
+            format!("자격 증명 속성({attr})이 유효하지 않습니다: {reason}")
+        }
+        keyring::Error::Ambiguous(_) => "일치하는 자격 증명이 여러 개 있습니다.".into(),
+        _ => e.to_string(),
+    }
+}
+
 fn entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(SERVICE, USER).map_err(|e| e.to_string())
+    keyring::Entry::new(SERVICE, USER).map_err(humanize_keyring_error)
 }
 
 fn model_entry() -> Result<keyring::Entry, String> {
@@ -34,10 +50,12 @@ fn tabby_token_entry() -> Result<keyring::Entry, String> {
 }
 
 pub fn read_api_key() -> Result<String, String> {
-    entry()?.get_password().map_err(|e| match e {
-        keyring::Error::NoEntry => "API 키가 저장되어 있지 않습니다.".into(),
-        other => other.to_string(),
-    })
+    entry()?
+        .get_password()
+        .map_err(|e| match e {
+            keyring::Error::NoEntry => "API 키가 저장되어 있지 않습니다.".into(),
+            other => humanize_keyring_error(other),
+        })
 }
 
 pub fn write_api_key(key: &str) -> Result<(), String> {

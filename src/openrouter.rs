@@ -1136,21 +1136,49 @@ pub fn chat_stream(
         }
         req = apply_compat_auth_headers(req, &base_url, api_key.as_deref());
 
-        let resp = match req.send().await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                yield ChatEvent::Error(e.to_string());
-                return;
+        const MAX_RETRIES: u32 = 3;
+        let mut attempt = 0u32;
+        let resp = loop {
+            match req.send().await {
+                Ok(r) if r.status().is_success() => break r,
+                Ok(r) => {
+                    let status = r.status();
+                    let text = r.text().await.unwrap_or_default();
+                    if status.is_server_error() && attempt < MAX_RETRIES {
+                        let delay = std::time::Duration::from_secs(1 << attempt);
+                        tokio::time::sleep(delay).await;
+                        attempt += 1;
+                        req = client.post(&endpoint).json(&body);
+                        if base_url.contains("openrouter.ai") {
+                            req = req
+                                .header("HTTP-Referer", "https://codewarp.app")
+                                .header("X-Title", "CodeWarp");
+                        }
+                        req = apply_compat_auth_headers(req, &base_url, api_key.as_deref());
+                        continue;
+                    }
+                    yield ChatEvent::Error(format!("OpenRouter {}: {}", status, text));
+                    return;
+                }
+                Err(e) => {
+                    if attempt < MAX_RETRIES {
+                        let delay = std::time::Duration::from_secs(1 << attempt);
+                        tokio::time::sleep(delay).await;
+                        attempt += 1;
+                        req = client.post(&endpoint).json(&body);
+                        if base_url.contains("openrouter.ai") {
+                            req = req
+                                .header("HTTP-Referer", "https://codewarp.app")
+                                .header("X-Title", "CodeWarp");
+                        }
+                        req = apply_compat_auth_headers(req, &base_url, api_key.as_deref());
+                        continue;
+                    }
+                    yield ChatEvent::Error(e.to_string());
+                    return;
+                }
             }
         };
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            yield ChatEvent::Error(format!("OpenRouter {}: {}", status, text));
-            return;
-        }
 
         let mut stream = resp.bytes_stream();
         let mut buffer = String::new();

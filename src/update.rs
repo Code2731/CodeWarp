@@ -1517,6 +1517,7 @@ impl App {
         self.pending_write_calls.clear();
         self.show_write_confirm = false;
         self.streaming_block_id = None;
+        self.streaming_block_idx = None;
         self.tool_round = 0;
         self.next_block_id = 0;
         self.input.clear();
@@ -1567,6 +1568,7 @@ impl App {
         self.pending_write_calls.clear();
         self.show_write_confirm = false;
         self.streaming_block_id = None;
+        self.streaming_block_idx = None;
         self.tool_round = 0;
         self.input.clear();
         self.ui.pending_delete_session = None;
@@ -2065,6 +2067,7 @@ impl App {
             apply_candidates: Vec::new(),
         });
         self.streaming_block_id = Some(ai_id);
+        self.streaming_block_idx = Some(self.blocks.len() - 1);
         self.status = "응답 다시 생성 중…".into();
         self.follow_bottom = true;
 
@@ -2282,6 +2285,7 @@ impl App {
             apply_candidates: Vec::new(),
         });
         self.streaming_block_id = Some(ai_id);
+        self.streaming_block_idx = Some(self.blocks.len() - 1);
         self.input.clear();
         self.status = "응답 생성 중…".into();
         self.follow_bottom = true;
@@ -2335,12 +2339,16 @@ impl App {
                 generation_id,
             } => {
                 let assistant_text = self
-                    .blocks
-                    .iter()
-                    .find(|b| b.id == ai_id)
-                    .and_then(|b| match &b.body {
-                        BlockBody::Assistant(c) => Some(c.text()),
-                        _ => None,
+                    .streaming_block_idx
+                    .and_then(|idx| {
+                        if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
+                            match &self.blocks[idx].body {
+                                BlockBody::Assistant(c) => Some(c.text()),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
                     })
                     .unwrap_or_default();
 
@@ -2356,11 +2364,13 @@ impl App {
                 } else {
                     self.status = "준비됨".into();
                 }
-                if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
-                    if let BlockBody::Assistant(content) = &b.body {
-                        let raw = content.text();
-                        if !raw.is_empty() {
-                            b.md_items = markdown::parse(&raw).collect();
+                if let Some(idx) = self.streaming_block_idx {
+                    if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
+                        if let BlockBody::Assistant(content) = &self.blocks[idx].body {
+                            let raw = content.text();
+                            if !raw.is_empty() {
+                                self.blocks[idx].md_items = markdown::parse(&raw).collect();
+                            }
                         }
                     }
                 }
@@ -2370,19 +2380,26 @@ impl App {
                 } else {
                     self.status =
                         "[WARN] 모델이 빈 응답을 반환했습니다. Provider/Runtime 로그를 확인해 주세요.".into();
-                    if let Some(b) = self.blocks.iter().find(|b| b.id == ai_id) {
-                        if b.body.to_text().trim().is_empty() {
+                    if let Some(idx) = self.streaming_block_idx {
+                        if idx < self.blocks.len()
+                            && self.blocks[idx].id == ai_id
+                            && self.blocks[idx].body.to_text().trim().is_empty()
+                        {
                             self.append_assistant_block_text(ai_id, "[WARN] empty response");
                         }
                     }
                 }
                 let candidates = parse_apply_candidates(&assistant_text);
                 if !candidates.is_empty() {
-                    if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
-                        b.apply_candidates = candidates.into_iter().map(|c| (c, false)).collect();
+                    if let Some(idx) = self.streaming_block_idx {
+                        if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
+                            self.blocks[idx].apply_candidates =
+                                candidates.into_iter().map(|c| (c, false)).collect();
+                        }
                     }
                 }
                 self.streaming_block_id = None;
+                self.streaming_block_idx = None;
                 self.abort_handle = None;
                 self.pending_tool_calls.clear();
                 self.maybe_update_title();
@@ -2397,21 +2414,24 @@ impl App {
                 }
             }
             ChatEvent::Error(e) => {
-                if let Some(b) = self.blocks.iter_mut().find(|b| b.id == ai_id) {
-                    if let BlockBody::Assistant(content) = &mut b.body {
-                        let prefix = if content.text().is_empty() {
-                            ""
-                        } else {
-                            "\n\n"
-                        };
-                        let msg = format!("{}[ERROR] {}", prefix, e);
-                        let mut raw = content.text();
-                        raw.push_str(&msg);
-                        *content = text_editor::Content::with_text(&raw);
-                        b.md_items = markdown::parse(&raw).collect();
+                if let Some(idx) = self.streaming_block_idx {
+                    if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
+                        if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
+                            let prefix = if content.text().is_empty() {
+                                ""
+                            } else {
+                                "\n\n"
+                            };
+                            let msg = format!("{}[ERROR] {}", prefix, e);
+                            let mut raw = content.text();
+                            raw.push_str(&msg);
+                            *content = text_editor::Content::with_text(&raw);
+                            self.blocks[idx].md_items = markdown::parse(&raw).collect();
+                        }
                     }
                 }
                 self.streaming_block_id = None;
+                self.streaming_block_idx = None;
                 self.abort_handle = None;
                 self.pending_tool_calls.clear();
                 let humanized = openrouter::humanize_error(&e);
@@ -3371,15 +3391,18 @@ impl App {
         self.compare_pending = false;
         if keep_partial_assistant {
             if let Some(ai_id) = self.streaming_block_id {
-                if let Some(b) = self.blocks.iter().find(|b| b.id == ai_id) {
-                    let txt = b.body.to_text();
-                    if !txt.is_empty() {
-                        self.conversation.push(ChatMessage::assistant(txt));
+                if let Some(idx) = self.streaming_block_idx {
+                    if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
+                        let txt = self.blocks[idx].body.to_text();
+                        if !txt.is_empty() {
+                            self.conversation.push(ChatMessage::assistant(txt));
+                        }
                     }
                 }
             }
         }
         self.streaming_block_id = None;
+        self.streaming_block_idx = None;
         self.pending_tool_calls.clear();
         self.tool_round = 0;
     }
@@ -3668,10 +3691,12 @@ impl App {
     }
 
     fn fill_assistant_block(&mut self, block_id: u64, text: String) {
-        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == block_id) {
-            if let BlockBody::Assistant(content) = &mut b.body {
-                *content = text_editor::Content::with_text(&text);
-                b.md_items = markdown::parse(&text).collect();
+        if let Some(idx) = self.streaming_block_idx {
+            if idx < self.blocks.len() && self.blocks[idx].id == block_id {
+                if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
+                    *content = text_editor::Content::with_text(&text);
+                    self.blocks[idx].md_items = markdown::parse(&text).collect();
+                }
             }
         }
     }
@@ -3680,11 +3705,13 @@ impl App {
         if text.is_empty() {
             return;
         }
-        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == block_id) {
-            if let BlockBody::Assistant(content) = &mut b.body {
-                let mut raw = content.text();
-                raw.push_str(text);
-                *content = text_editor::Content::with_text(&raw);
+        if let Some(idx) = self.streaming_block_idx {
+            if idx < self.blocks.len() && self.blocks[idx].id == block_id {
+                if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
+                    let mut raw = content.text();
+                    raw.push_str(text);
+                    *content = text_editor::Content::with_text(&raw);
+                }
             }
         }
     }
@@ -3696,6 +3723,7 @@ impl App {
             Err(e) => {
                 self.status = e;
                 self.streaming_block_id = None;
+                self.streaming_block_idx = None;
                 return Task::none();
             }
         };

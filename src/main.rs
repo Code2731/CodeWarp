@@ -369,6 +369,8 @@ struct App {
     next_block_id: u64,
     input: String,
     streaming_block_id: Option<u64>,
+    /// streaming_block_id에 해당하는 block의 self.blocks 내 인덱스 캐시 (O(1) lookup)
+    streaming_block_idx: Option<usize>,
     /// 진행 중인 chat_stream task의 abort handle (Stop 버튼이 사용).
     abort_handle: Option<task::Handle>,
     hf_abort_handle: Option<task::Handle>,
@@ -747,6 +749,7 @@ impl App {
             next_block_id: 0,
             input: String::new(),
             streaming_block_id: None,
+            streaming_block_idx: None,
             abort_handle: None,
             hf_abort_handle: None,
             ui: UiState::new(!has_key),
@@ -1194,6 +1197,7 @@ mod tests {
         app.conversation.clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
         app.tool_round = 3;
         app.pending_tool_calls = vec![PendingToolCall {
             id: "tc-1".into(),
@@ -1206,6 +1210,7 @@ mod tests {
         app.abort_active_chat_stream(true);
 
         assert!(app.streaming_block_id.is_none());
+        assert!(app.streaming_block_idx.is_none());
         assert!(app.pending_tool_calls.is_empty());
         assert_eq!(app.tool_round, 0);
         assert_eq!(app.conversation.len(), 1);
@@ -1222,6 +1227,7 @@ mod tests {
         app.conversation.clear();
         app.blocks.clear();
         app.streaming_block_id = Some(7);
+        app.streaming_block_idx = Some(0);
         app.tool_round = 2;
         app.pending_tool_calls = vec![PendingToolCall {
             id: "tc-2".into(),
@@ -1234,6 +1240,7 @@ mod tests {
         app.abort_active_chat_stream(false);
 
         assert!(app.streaming_block_id.is_none());
+        assert!(app.streaming_block_idx.is_none());
         assert!(app.pending_tool_calls.is_empty());
         assert_eq!(app.tool_round, 0);
         assert!(app.conversation.is_empty());
@@ -1291,6 +1298,7 @@ mod tests {
         app.conversation.clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
         app.blocks.push(Block {
             id: 42,
             body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
@@ -1312,6 +1320,7 @@ mod tests {
         app.conversation.clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
         app.blocks.push(Block {
             id: 42,
             body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
@@ -1926,6 +1935,53 @@ mod tests {
             app.status
         );
         assert_eq!(app.blocks.len(), before_blocks);
+    }
+
+    #[test]
+    fn send_message_returns_early_when_streaming() {
+        let (mut app, _) = App::new();
+        app.conversation.clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.input = "hello".into();
+        let before = app.conversation.len();
+
+        let _ = app.update(Message::Send);
+
+        assert_eq!(app.conversation.len(), before, "should not send while streaming");
+        assert_eq!(app.streaming_block_id, Some(42));
+    }
+
+    #[test]
+    fn send_message_returns_early_when_input_empty() {
+        let (mut app, _) = App::new();
+        app.input.clear();
+
+        let _ = app.update(Message::Send);
+
+        assert!(app.status.is_empty() || app.status == "준비됨");
+    }
+
+    #[test]
+    fn regenerate_last_returns_early_when_streaming() {
+        let (mut app, _) = App::new();
+        app.conversation.push(ChatMessage::user("hello"));
+        app.streaming_block_id = Some(42);
+        let before = app.conversation.len();
+
+        let _ = app.update(Message::RegenerateLast);
+
+        assert_eq!(app.conversation.len(), before);
+    }
+
+    #[test]
+    fn regenerate_last_returns_early_when_no_user_message() {
+        let (mut app, _) = App::new();
+        app.conversation.clear();
+
+        let _ = app.update(Message::RegenerateLast);
+
+        assert!(app.status.is_empty() || app.status == "준비됨");
     }
 
     #[test]

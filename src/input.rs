@@ -2,7 +2,7 @@ use super::{AgentMode, Message};
 use iced::keyboard::key::Named;
 use iced::keyboard::{Key, Modifiers};
 
-fn handle_key(key: Key, modifiers: Modifiers) -> Option<Message> {
+pub(crate) fn handle_key(key: Key, modifiers: Modifiers) -> Option<Message> {
     if matches!(key.as_ref(), Key::Named(Named::Escape)) {
         return Some(Message::CloseAllOverlays);
     }

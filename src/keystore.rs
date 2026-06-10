@@ -50,12 +50,10 @@ fn tabby_token_entry() -> Result<keyring::Entry, String> {
 }
 
 pub fn read_api_key() -> Result<String, String> {
-    entry()?
-        .get_password()
-        .map_err(|e| match e {
-            keyring::Error::NoEntry => "API 키가 저장되어 있지 않습니다.".into(),
-            other => humanize_keyring_error(other),
-        })
+    entry()?.get_password().map_err(|e| match e {
+        keyring::Error::NoEntry => "API 키가 저장되어 있지 않습니다.".into(),
+        other => humanize_keyring_error(other),
+    })
 }
 
 pub fn write_api_key(key: &str) -> Result<(), String> {

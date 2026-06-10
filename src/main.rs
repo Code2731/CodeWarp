@@ -990,6 +990,147 @@ mod tests {
         assert!(msg.contains("tabby.cmd"), "got: {}", msg);
     }
 
+    #[test]
+    fn humanize_inference_spawn_error_vllm_not_found() {
+        let err = std::io::Error::new(std::io::ErrorKind::NotFound, "not found");
+        let msg = humanize_inference_spawn_error("vllm", &err);
+        assert!(msg.contains("vllm"), "got: {}", msg);
+        assert!(
+            msg.to_ascii_lowercase().contains("binary path"),
+            "got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn humanize_inference_spawn_error_llama_server_not_found() {
+        let err = std::io::Error::new(std::io::ErrorKind::NotFound, "not found");
+        let msg = humanize_inference_spawn_error("llama-server", &err);
+        assert!(msg.contains("llama-server"), "got: {}", msg);
+        assert!(
+            msg.to_ascii_lowercase().contains("binary path"),
+            "got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn humanize_inference_spawn_error_tabby_not_found_falls_back() {
+        let err = std::io::Error::new(std::io::ErrorKind::NotFound, "not found");
+        let msg = humanize_inference_spawn_error("tabby.exe", &err);
+        assert!(msg.starts_with("tabby.exe:"), "got: {}", msg);
+    }
+
+    #[test]
+    fn humanize_inference_spawn_error_tabby_korean_access_denied() {
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "액세스가 거부됨");
+        let msg = humanize_inference_spawn_error("tabby.bat", &err);
+        assert!(
+            msg.contains("Tabby executable could not be started"),
+            "got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn humanize_inference_spawn_error_generic_fallback() {
+        let err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "connection refused");
+        let msg = humanize_inference_spawn_error("my-tool", &err);
+        assert_eq!(msg, "my-tool: connection refused");
+    }
+
+    // ── input::handle_key ──────────────────────────────────────────
+
+    #[test]
+    fn input_escape_closes_overlays() {
+        use iced::keyboard::{Key, Modifiers};
+        let result = input::handle_key(
+            Key::Named(iced::keyboard::key::Named::Escape),
+            Modifiers::default(),
+        );
+        assert!(matches!(result, Some(Message::CloseAllOverlays)));
+    }
+
+    #[test]
+    fn input_cmd_k_opens_palette() {
+        use iced::keyboard::{Key, Modifiers};
+        let result = input::handle_key(Key::Character("k".into()), Modifiers::COMMAND);
+        assert!(matches!(result, Some(Message::OpenCommandPalette)));
+    }
+
+    #[test]
+    fn input_cmd_n_new_chat() {
+        use iced::keyboard::{Key, Modifiers};
+        let result = input::handle_key(Key::Character("n".into()), Modifiers::COMMAND);
+        assert!(matches!(result, Some(Message::NewChat)));
+    }
+
+    #[test]
+    fn input_cmd_comma_settings() {
+        use iced::keyboard::{Key, Modifiers};
+        let result = input::handle_key(Key::Character(",".into()), Modifiers::COMMAND);
+        assert!(matches!(result, Some(Message::OpenSettings)));
+    }
+
+    #[test]
+    fn input_arrow_keys_are_not_handle_key() {
+        use iced::keyboard::{Key, Modifiers};
+        assert!(input::handle_key(
+            Key::Named(iced::keyboard::key::Named::ArrowUp),
+            Modifiers::default()
+        )
+        .is_none());
+        assert!(input::handle_key(
+            Key::Named(iced::keyboard::key::Named::ArrowDown),
+            Modifiers::default()
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn input_cmd_backtick_toggles_terminal() {
+        use iced::keyboard::{Key, Modifiers};
+        let result = input::handle_key(Key::Character("`".into()), Modifiers::COMMAND);
+        assert!(matches!(result, Some(Message::PtyToggle)));
+    }
+
+    #[test]
+    fn input_cmd_shift_p_sets_plan_mode() {
+        use iced::keyboard::{Key, Modifiers};
+        let result = input::handle_key(
+            Key::Character("p".into()),
+            Modifiers::COMMAND | Modifiers::SHIFT,
+        );
+        assert!(matches!(
+            result,
+            Some(Message::SetAgentMode(AgentMode::Plan))
+        ));
+    }
+
+    #[test]
+    fn input_cmd_shift_b_sets_build_mode() {
+        use iced::keyboard::{Key, Modifiers};
+        let result = input::handle_key(
+            Key::Character("b".into()),
+            Modifiers::COMMAND | Modifiers::SHIFT,
+        );
+        assert!(matches!(
+            result,
+            Some(Message::SetAgentMode(AgentMode::Build))
+        ));
+    }
+
+    #[test]
+    fn input_non_shortcut_returns_none() {
+        use iced::keyboard::{Key, Modifiers};
+        assert!(input::handle_key(Key::Character("z".into()), Modifiers::default()).is_none());
+        assert!(input::handle_key(
+            Key::Named(iced::keyboard::key::Named::Enter),
+            Modifiers::default()
+        )
+        .is_none());
+    }
+
     // ── is_korean_friendly ──────────────────────────────────────────
 
     #[test]
@@ -1948,7 +2089,11 @@ mod tests {
 
         let _ = app.update(Message::Send);
 
-        assert_eq!(app.conversation.len(), before, "should not send while streaming");
+        assert_eq!(
+            app.conversation.len(),
+            before,
+            "should not send while streaming"
+        );
         assert_eq!(app.streaming_block_id, Some(42));
     }
 

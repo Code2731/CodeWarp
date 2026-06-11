@@ -4,8 +4,13 @@ This document describes **actual coding patterns currently used in this reposito
 
 Source basis:
 - `src/main.rs`
+- `src/block.rs`
+- `src/model.rs`
+- `src/palette.rs`
+- `src/runtime_process.rs`
 - `src/update.rs`
 - `src/view.rs`
+- `src/view/ui.rs`
 - `src/session.rs`
 - `Cargo.toml`
 - `scripts/harness.ps1`, `scripts/harness.sh`
@@ -16,8 +21,9 @@ Source basis:
 
 - Main entry point is `src/main.rs`.
 - Feature modules are declared at top-level in `main.rs` using lowercase module names:
-  - `mod hf;`, `mod keystore;`, `mod mcp;`, `mod openrouter;`, `mod pty;`, `mod session;`, `mod tabby;`, `mod tools;`, `mod update;`, `mod view;`
+  - `mod block;`, `mod bootstrap;`, `mod hf;`, `mod input;`, `mod keystore;`, `mod mcp;`, `mod model;`, `mod openrouter;`, `mod palette;`, `mod pty;`, `mod runtime_process;`, `mod session;`, `mod tabby;`, `mod tools;`, `mod update;`, `mod util;`, `mod view;`
 - `update.rs` and `view.rs` are implemented as child modules of `main.rs` and use `use super::*;`.
+- `view/ui.rs` is a child module of `view.rs` and keeps UI constants/style helpers close to rendering code.
 - Core app wiring follows Iced Elm-style flow from `main.rs`:
   - `App::new`
   - `App::update`
@@ -27,14 +33,14 @@ Source basis:
 
 ### Types (PascalCase)
 - Structs and enums use `PascalCase`.
-- Examples from `main.rs` / `session.rs`:
+- Examples from `main.rs` / `model.rs` / `block.rs` / `session.rs`:
   - `ModelOption`, `ApplyCandidate`, `PersistedSessionData`
   - `LlmProvider`, `InferenceEngine`, `SettingsTab`, `Message`
 
 ### Functions and methods (snake_case)
 - Free functions and methods use `snake_case`.
 - Examples:
-  - `resolve_user_path`, `fmt_context_length`, `extract_mention_query` (`main.rs`)
+  - `resolve_user_path`, `fmt_context_length`, `extract_mention_query` (`util.rs`)
   - `validate_tabbyapi_launcher_path`, `run_tool_round`, `kick_chat_stream` (`update.rs`)
   - `view_topbar`, `view_sidebar`, `view_statusbar` (`view.rs`)
 
@@ -45,7 +51,7 @@ Source basis:
 ### Constants (SCREAMING_SNAKE_CASE)
 - Constants use `SCREAMING_SNAKE_CASE`.
 - Examples:
-  - `MAX_ATTACH_BYTES`, `PTY_MAX_LINES`, `TABBY_API_DEFAULT_PORT` (`main.rs`)
+  - `MAX_ATTACH_BYTES`, `PTY_MAX_LINES`, `TABBY_API_DEFAULT_PORT` (`util.rs` / `model.rs`)
   - `TABBY_CONNECT_RETRIES_AFTER_START`, `TABBY_CONNECT_RETRY_DELAY_SECS` (`update.rs`)
 
 ### Module names (lowercase)

@@ -3,7 +3,9 @@
 This document describes how CodeWarp manages model sources, Hugging Face downloads, EXL2 presets, and TabbyAPI runtime flow based on the current Rust implementation in:
 
 - `src/main.rs`
+- `src/model.rs`
 - `src/update.rs`
+- `src/runtime_process.rs`
 - `src/hf.rs`
 - `src/tabby.rs`
 
@@ -103,7 +105,7 @@ Primary entry point:
 
 ## 3) EXL2 preset system
 
-EXL2 presets are declared as `const EXL2_PRESETS` in `src/main.rs`.
+EXL2 presets are declared as `const EXL2_PRESETS` in `src/model.rs`.
 
 Each preset contains:
 
@@ -123,7 +125,7 @@ Each preset contains:
 
 ### Folder resolution behavior
 
-Model folder resolution for EXL2/TabbyAPI uses helpers in `src/main.rs`:
+Model folder resolution for EXL2/TabbyAPI uses helpers in `src/model.rs`:
 
 - validates direct model dir (`config.json` + weight file)
 - if parent contains multiple candidate subfolders, resolves by `bpw` hint extracted from folder name when possible
@@ -135,7 +137,7 @@ This is why preset `folder_name` is important: it helps deterministic selection 
 
 ## 4) TabbyAPI runtime lifecycle
 
-Runtime orchestration is handled in `src/update.rs` with `InferenceEngine::TabbyApi` and shared spawn infrastructure.
+Runtime orchestration is handled in `src/update.rs` with `InferenceEngine::TabbyApi`, with child process spawn/log/error helpers isolated in `src/runtime_process.rs`.
 
 ### Lifecycle stages
 
@@ -153,8 +155,8 @@ Runtime orchestration is handled in `src/update.rs` with `InferenceEngine::Tabby
 
 4. **Spawn**
    - `StartInference` composes command (`Start.bat --config config.yml` / `./start.sh --config config.yml`).
-   - `resolve_runtime_spawn_command` adapts to script type (`cmd.exe /C ...`, python runner, etc.).
-   - `spawn_inference_stream` starts child process and streams stdout/stderr lines.
+   - `runtime_process::resolve_runtime_spawn_command` adapts to script type (`cmd.exe /C ...`, python runner, etc.).
+   - `runtime_process::spawn_inference_stream` starts child process and streams stdout/stderr lines.
 
 5. **PID + logs + process state**
    - First log line includes `[pid:<n>]`, captured to `inference_pid`.
@@ -183,7 +185,7 @@ Runtime orchestration is handled in `src/update.rs` with `InferenceEngine::Tabby
 
 ## 5) Inference engine enum and model namespace behavior
 
-`InferenceEngine` in `src/main.rs`:
+`InferenceEngine` in `src/model.rs`:
 
 - `XLlm`
 - `VLlm`
@@ -239,11 +241,11 @@ So model selection is keystore-backed, while chat state and visible assistant/us
 
 ### General model presets (`MODEL_PRESETS`)
 
-Defined in `src/main.rs` for quick Hugging Face repo input fill (non-EXL2 flow).
+Defined in `src/model.rs` for quick Hugging Face repo input fill (non-EXL2 flow).
 
 ### EXL2 presets (`EXL2_PRESETS`)
 
-Defined in `src/main.rs` for one-click EXL2 download with explicit `revision` (bpw) and deterministic `folder_name`.
+Defined in `src/model.rs` for one-click EXL2 download with explicit `revision` (bpw) and deterministic `folder_name`.
 
 Current preset families include Llama 3.2/3.1 and Gemma EXL2 variants with VRAM notes.
 

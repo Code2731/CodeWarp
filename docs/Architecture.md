@@ -20,18 +20,25 @@ State (App)  ←→  Message  ←→  update()  ←→  Task  ←→  view()
 
 ```
 src/
-├── main.rs          # App struct, Message enum, module declarations, tests
-├── update.rs        # App::update() 메인 디스패치 + 모든 helper 메서드
-├── view.rs          # App::view() UI 렌더링 (settings, chat, sidebar, right panel)
-├── session.rs       # 세션 직렬화/역직렬화, 디스크 저장/로드
-├── openrouter.rs    # OpenRouter HTTP/SSE 클라이언트, 모델 목록, 채팅 스트림
-├── tabby.rs         # OpenAI-호환 클라이언트, 모델 목록, 채팅 스트림
-├── hf.rs            # HuggingFace 다운로드, EXL2 프리셋, revision 처리
-├── tools.rs         # 도구 호출 시스템 (read_file, write_file, glob, grep, run_command)
-├── mcp.rs           # MCP 클라이언트 (stdio 서버 연결, tools/list, tools/call)
-├── pty.rs           # PTY 터미널 (portable-pty 기반)
-├── keystore.rs      # 크레덴셜 관리 (Windows Credential Manager, macOS Keychain, Linux Secret Service)
-└── lib.rs           # 공유 타입/상수
+├── main.rs             # App struct, Message enum, module declarations, tests
+├── bootstrap.rs        # window icon + embedded font setup
+├── input.rs            # keyboard/window event routing
+├── runtime_process.rs  # inference child process spawn/log/error helpers
+├── update.rs           # App::update() dispatcher + async task wiring
+├── view.rs             # App::view() UI rendering shell
+├── view/ui.rs          # UI constants, spacing, style helpers
+├── block.rs            # chat block model, apply candidates, conversation helpers
+├── model.rs            # providers, model options, filters, inference engines, presets
+├── util.rs             # path/fuzzy/format/summarize helpers
+├── palette.rs          # command palette state/items
+├── session.rs          # sessions, usage, favorites persistence
+├── openrouter.rs       # OpenRouter HTTP/SSE client, model listing, chat stream
+├── tabby.rs            # OpenAI-compatible endpoint client and chat stream
+├── hf.rs               # Hugging Face download stream, revision fallback handling
+├── tools.rs            # tool calls (read/write/glob/grep/run_command)
+├── mcp.rs              # stdio MCP client and tool definition aggregation
+├── pty.rs              # PTY terminal (portable-pty based)
+└── keystore.rs         # OS credential manager persistence
 ```
 
 ## App State Composition

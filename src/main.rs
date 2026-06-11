@@ -2184,6 +2184,21 @@ mod tests {
     }
 
     #[test]
+    fn resolve_provider_prefers_current_tabby_inputs_over_keystore() {
+        let (mut app, _) = App::new();
+        app.model_options = vec![oai_opt("local-model", "TabbyAPI")];
+        app.selected_model = Some("local-model".into());
+        app.selected_model_provider = Some(LlmProvider::OpenAICompat);
+        app.tabby_url_input = "http://localhost:5001".into();
+        app.tabby_token_input = "live-token".into();
+
+        let (base_url, api_key) = app.resolve_provider().expect("provider resolves");
+
+        assert_eq!(base_url, "http://localhost:5001/v1");
+        assert_eq!(api_key.as_deref(), Some("live-token"));
+    }
+
+    #[test]
     fn saved_shared_model_prefers_tabby_when_tabby_url_is_set() {
         let (mut app, _) = App::new();
         app.selected_model = Some("shared-model".into());

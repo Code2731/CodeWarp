@@ -2053,7 +2053,7 @@ impl App {
                 "바이너리"
             };
             let binary_placeholder = if self.inference_engine == InferenceEngine::TabbyApi {
-                "Windows: Start.bat / macOS: start.sh 또는 main.py"
+                "Windows: Start.bat/Start.cmd / macOS: start.sh 또는 main.py"
             } else {
                 "PATH 기본값 사용, 필요 시 실제 실행 파일 경로"
             };
@@ -2100,9 +2100,9 @@ impl App {
             && self.inference_binary_path.trim().is_empty()
         {
             container(
-                    text("EXL2 모델 다운로드만으로는 서버가 실행되지 않습니다. TabbyAPI 프로젝트의 Start.bat/start.sh/main.py를 script로 지정해야 합니다.")
-                        .size(FS_LABEL),
-                )
+                text("EXL2 모델 다운로드만으로는 서버가 실행되지 않습니다. TabbyAPI 프로젝트의 Start.bat/Start.cmd/start.sh/main.py를 script로 지정해야 합니다.")
+                    .size(FS_LABEL),
+            )
                 .padding([6, 10])
                 .style(panel_style)
                 .into()

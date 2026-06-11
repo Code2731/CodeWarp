@@ -129,6 +129,8 @@ struct ChunkChoice {
 struct DeltaPayload {
     content: Option<FlexibleContent>,
     text: Option<String>,
+    value: Option<serde_json::Value>,
+    output_text: Option<serde_json::Value>,
     reasoning_content: Option<String>,
     reasoning: Option<String>,
     tool_calls: Option<Vec<ToolCallDelta>>,
@@ -161,6 +163,10 @@ struct NonStreamChoice {
 #[derive(Deserialize)]
 struct NonStreamMessage {
     content: Option<FlexibleContent>,
+    #[serde(default)]
+    value: Option<serde_json::Value>,
+    #[serde(default)]
+    output_text: Option<serde_json::Value>,
     #[serde(default)]
     reasoning_content: Option<String>,
     #[serde(default)]
@@ -302,7 +308,14 @@ fn value_to_text(value: &serde_json::Value) -> Option<String> {
             normalize_non_empty_text(out)
         }
         serde_json::Value::Object(map) => {
-            for key in ["text", "content", "value", "output_text"] {
+            for key in [
+                "text",
+                "content",
+                "value",
+                "output_text",
+                "message",
+                "response",
+            ] {
                 if let Some(v) = map.get(key).and_then(value_to_text) {
                     return Some(v);
                 }
@@ -323,6 +336,12 @@ fn extract_non_stream_content_from_value(value: &serde_json::Value) -> Option<St
                 if let Some(content) = msg.get("content").and_then(value_to_text) {
                     return Some(content);
                 }
+                if let Some(content) = msg.get("value").and_then(value_to_text) {
+                    return Some(content);
+                }
+                if let Some(content) = msg.get("output_text").and_then(value_to_text) {
+                    return Some(content);
+                }
                 if let Some(reasoning) = msg.get("reasoning_content").and_then(value_to_text) {
                     return Some(reasoning);
                 }
@@ -337,6 +356,12 @@ fn extract_non_stream_content_from_value(value: &serde_json::Value) -> Option<St
                 if let Some(text) = delta.get("text").and_then(value_to_text) {
                     return Some(text);
                 }
+                if let Some(content) = delta.get("value").and_then(value_to_text) {
+                    return Some(content);
+                }
+                if let Some(content) = delta.get("output_text").and_then(value_to_text) {
+                    return Some(content);
+                }
                 if let Some(reasoning) = delta.get("reasoning_content").and_then(value_to_text) {
                     return Some(reasoning);
                 }
@@ -347,10 +372,26 @@ fn extract_non_stream_content_from_value(value: &serde_json::Value) -> Option<St
             if let Some(text) = choice.get("text").and_then(value_to_text) {
                 return Some(text);
             }
+            if let Some(content) = choice.get("content").and_then(value_to_text) {
+                return Some(content);
+            }
+            if let Some(content) = choice.get("value").and_then(value_to_text) {
+                return Some(content);
+            }
+            if let Some(content) = choice.get("output_text").and_then(value_to_text) {
+                return Some(content);
+            }
         }
     }
 
-    for key in ["output_text", "response", "text"] {
+    for key in [
+        "output_text",
+        "response",
+        "text",
+        "content",
+        "message",
+        "value",
+    ] {
         if let Some(v) = value.get(key).and_then(value_to_text) {
             return Some(v);
         }
@@ -505,6 +546,12 @@ fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
         {
             return Some(text);
         }
+        if let Some(text) = delta.value.as_ref().and_then(value_to_text) {
+            return Some(text);
+        }
+        if let Some(text) = delta.output_text.as_ref().and_then(value_to_text) {
+            return Some(text);
+        }
         if let Some(text) = delta
             .reasoning_content
             .as_ref()
@@ -543,6 +590,12 @@ fn extract_stream_text(choice: &ChunkChoice) -> Option<String> {
             }
         }) {
             return Some(content);
+        }
+        if let Some(text) = message.value.as_ref().and_then(value_to_text) {
+            return Some(text);
+        }
+        if let Some(text) = message.output_text.as_ref().and_then(value_to_text) {
+            return Some(text);
         }
         if let Some(text) = message
             .reasoning_content
@@ -907,6 +960,17 @@ mod tests {
     }
 
     #[test]
+    fn stream_chunk_supports_top_level_delta_output_text_shape() {
+        let raw = r#"{
+            "id":"chatcmpl-x",
+            "choices":[{"index":0,"delta":{"output_text":"hello from delta output_text"}}]
+        }"#;
+        let parsed: StreamChunk = serde_json::from_str(raw).expect("valid stream chunk");
+        let token = parsed.choices.iter().find_map(extract_stream_text);
+        assert_eq!(token.as_deref(), Some("hello from delta output_text"));
+    }
+
+    #[test]
     fn stream_chunk_supports_nested_message_value_shape() {
         let raw = r#"{
             "id":"chatcmpl-x",
@@ -969,6 +1033,15 @@ mod tests {
         assert_eq!(
             extract_non_stream_content(raw).as_deref(),
             Some("hello from top-level response")
+        );
+    }
+
+    #[test]
+    fn extract_non_stream_content_reads_top_level_message_shape() {
+        let raw = r#"{"message":{"content":"hello from top-level message"}}"#;
+        assert_eq!(
+            extract_non_stream_content(raw).as_deref(),
+            Some("hello from top-level message")
         );
     }
 

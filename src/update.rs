@@ -202,14 +202,7 @@ fn is_tabbyapi_launcher_path(path: &str) -> bool {
         .and_then(|n| n.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if !matches!(name.as_str(), "start.bat" | "start.sh" | "main.py") {
-        return false;
-    }
-    let parent = p
-        .parent()
-        .map(|d| d.to_string_lossy().to_ascii_lowercase())
-        .unwrap_or_default();
-    parent.contains("tabbyapi")
+    tabbyapi_allowed_launcher_name(&name)
 }
 
 fn runtime_command_exists(command: &str) -> bool {
@@ -3634,7 +3627,7 @@ impl App {
         self.kick_chat_stream()
     }
 
-    fn resolve_provider(&self) -> Result<(String, Option<String>), String> {
+    pub(crate) fn resolve_provider(&self) -> Result<(String, Option<String>), String> {
         let id = self
             .selected_model
             .as_deref()
@@ -3649,10 +3642,19 @@ impl App {
                 Ok((openrouter::BASE_URL.to_string(), Some(key)))
             }
             LlmProvider::OpenAICompat => {
-                let base = keystore::read_tabby_base_url()
-                    .filter(|s| !s.trim().is_empty())
-                    .ok_or_else(|| "Tabby URL 미설정".to_string())?;
-                let token = keystore::read_tabby_token().filter(|s| !s.trim().is_empty());
+                let base = if self.tabby_url_input.trim().is_empty() {
+                    keystore::read_tabby_base_url()
+                } else {
+                    Some(self.tabby_url_input.clone())
+                }
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| "Tabby URL 미설정".to_string())?;
+                let token = if self.tabby_token_input.trim().is_empty() {
+                    keystore::read_tabby_token()
+                } else {
+                    Some(self.tabby_token_input.clone())
+                }
+                .filter(|s| !s.trim().is_empty());
                 Ok((tabby::chat_base(&base), token))
             }
         }
@@ -3715,10 +3717,19 @@ impl App {
             .ok_or_else(|| "Compare 모드: Tabby 모델이 없습니다. Provider 연결 테스트로 Tabby 모델을 먼저 불러와 주세요.".to_string())?;
 
         let openrouter_key = keystore::read_api_key()?;
-        let tabby_base = keystore::read_tabby_base_url()
-            .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| "Compare 모드: Tabby URL 미설정".to_string())?;
-        let tabby_token = keystore::read_tabby_token().filter(|s| !s.trim().is_empty());
+        let tabby_base = if self.tabby_url_input.trim().is_empty() {
+            keystore::read_tabby_base_url()
+        } else {
+            Some(self.tabby_url_input.clone())
+        }
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| "Compare 모드: Tabby URL 미설정".to_string())?;
+        let tabby_token = if self.tabby_token_input.trim().is_empty() {
+            keystore::read_tabby_token()
+        } else {
+            Some(self.tabby_token_input.clone())
+        }
+        .filter(|s| !s.trim().is_empty());
 
         Ok((
             ChatRoute {

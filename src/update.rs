@@ -1726,6 +1726,9 @@ impl App {
     }
 
     fn copy_block(&self, id: u64) -> Task<Message> {
+        if self.streaming_block_id == Some(id) && !self.streaming_raw.is_empty() {
+            return iced::clipboard::write(self.streaming_raw.clone());
+        }
         if let Some(b) = self.blocks.iter().find(|b| b.id == id) {
             return iced::clipboard::write(b.body.to_text());
         }
@@ -2338,19 +2341,7 @@ impl App {
                 finish_reason,
                 generation_id,
             } => {
-                let assistant_text = self
-                    .streaming_block_idx
-                    .and_then(|idx| {
-                        if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
-                            match &self.blocks[idx].body {
-                                BlockBody::Assistant(c) => Some(c.text()),
-                                _ => None,
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default();
+                let assistant_text = self.streaming_raw.clone();
 
                 let has_tools = !self.pending_tool_calls.is_empty()
                     && (finish_reason.as_deref() == Some("tool_calls") || finish_reason.is_none());
@@ -2364,32 +2355,38 @@ impl App {
                 } else {
                     self.status = "준비됨".into();
                 }
+
+                let final_text = std::mem::take(&mut self.streaming_raw);
                 if let Some(idx) = self.streaming_block_idx {
                     if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
-                        if let BlockBody::Assistant(content) = &self.blocks[idx].body {
-                            let raw = content.text();
-                            if !raw.is_empty() {
-                                self.blocks[idx].md_items = markdown::parse(&raw).collect();
+                        if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
+                            *content = text_editor::Content::with_text(&final_text);
+                            if !final_text.is_empty() {
+                                self.blocks[idx].md_items = markdown::parse(&final_text).collect();
                             }
                         }
                     }
                 }
-                if !assistant_text.is_empty() {
+
+                if !final_text.is_empty() {
                     self.conversation
-                        .push(ChatMessage::assistant(assistant_text.clone()));
+                        .push(ChatMessage::assistant(final_text.clone()));
                 } else {
                     self.status =
                         "[WARN] 모델이 빈 응답을 반환했습니다. Provider/Runtime 로그를 확인해 주세요.".into();
                     if let Some(idx) = self.streaming_block_idx {
-                        if idx < self.blocks.len()
-                            && self.blocks[idx].id == ai_id
-                            && self.blocks[idx].body.to_text().trim().is_empty()
-                        {
-                            self.append_assistant_block_text(ai_id, "[WARN] empty response");
+                        if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
+                            if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
+                                if content.text().trim().is_empty() {
+                                    *content =
+                                        text_editor::Content::with_text("[WARN] empty response");
+                                }
+                            }
                         }
                     }
                 }
-                let candidates = parse_apply_candidates(&assistant_text);
+
+                let candidates = parse_apply_candidates(&final_text);
                 if !candidates.is_empty() {
                     if let Some(idx) = self.streaming_block_idx {
                         if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
@@ -2400,6 +2397,7 @@ impl App {
                 }
                 self.streaming_block_id = None;
                 self.streaming_block_idx = None;
+                self.streaming_raw.clear();
                 self.abort_handle = None;
                 self.pending_tool_calls.clear();
                 self.maybe_update_title();
@@ -2417,21 +2415,21 @@ impl App {
                 if let Some(idx) = self.streaming_block_idx {
                     if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
                         if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
-                            let prefix = if content.text().is_empty() {
+                            let prefix = if self.streaming_raw.is_empty() {
                                 ""
                             } else {
                                 "\n\n"
                             };
-                            let msg = format!("{}[ERROR] {}", prefix, e);
-                            let mut raw = content.text();
-                            raw.push_str(&msg);
-                            *content = text_editor::Content::with_text(&raw);
-                            self.blocks[idx].md_items = markdown::parse(&raw).collect();
+                            let final_text = std::mem::take(&mut self.streaming_raw);
+                            let full = format!("{}{}[ERROR] {}", final_text, prefix, e);
+                            *content = text_editor::Content::with_text(&full);
+                            self.blocks[idx].md_items = markdown::parse(&full).collect();
                         }
                     }
                 }
                 self.streaming_block_id = None;
                 self.streaming_block_idx = None;
+                self.streaming_raw.clear();
                 self.abort_handle = None;
                 self.pending_tool_calls.clear();
                 let humanized = openrouter::humanize_error(&e);
@@ -3185,21 +3183,30 @@ impl App {
 
     /// 현재 활성 세션 + 비활성 세션 모두를 디스크에 저장.
     fn save_session(&self) {
+        let sid = self.streaming_block_id;
+        let raw = &self.streaming_raw;
         let current_blocks_persisted: Vec<session::PersistedBlock> = self
             .blocks
             .iter()
-            .filter_map(|b| match &b.body {
-                BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
-                    id: b.id,
-                    role: if matches!(&b.body, BlockBody::User(_)) {
-                        "user".into()
-                    } else {
-                        "assistant".into()
-                    },
-                    content: b.body.to_text(),
-                    model: b.model.clone().unwrap_or_default(),
-                }),
-                BlockBody::ToolResult { .. } => None, // 휘발성 — 저장 안 함
+            .filter_map(|b| {
+                let content = if sid == Some(b.id) {
+                    raw.clone()
+                } else {
+                    b.body.to_text()
+                };
+                match &b.body {
+                    BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
+                        id: b.id,
+                        role: if matches!(&b.body, BlockBody::User(_)) {
+                            "user".into()
+                        } else {
+                            "assistant".into()
+                        },
+                        content,
+                        model: b.model.clone().unwrap_or_default(),
+                    }),
+                    BlockBody::ToolResult { .. } => None,
+                }
             })
             .collect();
 
@@ -3258,21 +3265,30 @@ impl App {
         if self.conversation.is_empty() && self.blocks.is_empty() {
             return; // 빈 세션은 보관 X
         }
+        let sid = self.streaming_block_id;
+        let raw = &self.streaming_raw;
         let blocks_persisted: Vec<session::PersistedBlock> = self
             .blocks
             .iter()
-            .filter_map(|b| match &b.body {
-                BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
-                    id: b.id,
-                    role: if matches!(&b.body, BlockBody::User(_)) {
-                        "user".into()
-                    } else {
-                        "assistant".into()
-                    },
-                    content: b.body.to_text(),
-                    model: b.model.clone().unwrap_or_default(),
-                }),
-                BlockBody::ToolResult { .. } => None,
+            .filter_map(|b| {
+                let content = if sid == Some(b.id) {
+                    raw.clone()
+                } else {
+                    b.body.to_text()
+                };
+                match &b.body {
+                    BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
+                        id: b.id,
+                        role: if matches!(&b.body, BlockBody::User(_)) {
+                            "user".into()
+                        } else {
+                            "assistant".into()
+                        },
+                        content,
+                        model: b.model.clone().unwrap_or_default(),
+                    }),
+                    BlockBody::ToolResult { .. } => None,
+                }
             })
             .collect();
         let snap = InactiveSession {
@@ -3383,7 +3399,6 @@ impl App {
         );
     }
 
-    // Abort active assistant stream and optionally keep partial assistant text.
     pub(crate) fn abort_active_chat_stream(&mut self, keep_partial_assistant: bool) {
         if let Some(h) = self.abort_handle.take() {
             h.abort();
@@ -3391,18 +3406,25 @@ impl App {
         self.compare_pending = false;
         if keep_partial_assistant {
             if let Some(ai_id) = self.streaming_block_id {
-                if let Some(idx) = self.streaming_block_idx {
+                let txt = if !self.streaming_raw.is_empty() {
+                    std::mem::take(&mut self.streaming_raw)
+                } else if let Some(idx) = self.streaming_block_idx {
                     if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
-                        let txt = self.blocks[idx].body.to_text();
-                        if !txt.is_empty() {
-                            self.conversation.push(ChatMessage::assistant(txt));
-                        }
+                        self.blocks[idx].body.to_text()
+                    } else {
+                        String::new()
                     }
+                } else {
+                    String::new()
+                };
+                if !txt.is_empty() {
+                    self.conversation.push(ChatMessage::assistant(txt));
                 }
             }
         }
         self.streaming_block_id = None;
         self.streaming_block_idx = None;
+        self.streaming_raw.clear();
         self.pending_tool_calls.clear();
         self.tool_round = 0;
     }
@@ -3699,6 +3721,9 @@ impl App {
                 }
             }
         }
+        if self.streaming_block_id == Some(block_id) {
+            self.streaming_raw.clear();
+        }
     }
 
     fn append_assistant_block_text(&mut self, block_id: u64, text: &str) {
@@ -3707,10 +3732,8 @@ impl App {
         }
         if let Some(idx) = self.streaming_block_idx {
             if idx < self.blocks.len() && self.blocks[idx].id == block_id {
-                if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
-                    let mut raw = content.text();
-                    raw.push_str(text);
-                    *content = text_editor::Content::with_text(&raw);
+                if let BlockBody::Assistant(_) = &self.blocks[idx].body {
+                    self.streaming_raw.push_str(text);
                 }
             }
         }
@@ -3724,6 +3747,7 @@ impl App {
                 self.status = e;
                 self.streaming_block_id = None;
                 self.streaming_block_idx = None;
+                self.streaming_raw.clear();
                 return Task::none();
             }
         };

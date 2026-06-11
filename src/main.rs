@@ -371,6 +371,8 @@ struct App {
     streaming_block_id: Option<u64>,
     /// streaming_block_id에 해당하는 block의 self.blocks 내 인덱스 캐시 (O(1) lookup)
     streaming_block_idx: Option<usize>,
+    /// 스트리밍 중 누적 raw text (Content rebuild 회피)
+    streaming_raw: String,
     /// 진행 중인 chat_stream task의 abort handle (Stop 버튼이 사용).
     abort_handle: Option<task::Handle>,
     hf_abort_handle: Option<task::Handle>,
@@ -750,6 +752,7 @@ impl App {
             input: String::new(),
             streaming_block_id: None,
             streaming_block_idx: None,
+            streaming_raw: String::new(),
             abort_handle: None,
             hf_abort_handle: None,
             ui: UiState::new(!has_key),
@@ -1452,7 +1455,7 @@ mod tests {
         let _ = app.update(Message::ChatChunk(ChatEvent::Token("hel".into())));
         let _ = app.update(Message::ChatChunk(ChatEvent::Token("lo".into())));
 
-        assert_eq!(app.blocks[0].body.to_text(), "hello");
+        assert_eq!(app.streaming_raw, "hello");
     }
 
     #[test]
@@ -1476,7 +1479,7 @@ mod tests {
             app.blocks[0].md_items.is_empty(),
             "md_items should stay empty during streaming (F16 perf fix)"
         );
-        assert_eq!(app.blocks[0].body.to_text(), "**hello**");
+        assert_eq!(app.streaming_raw, "**hello**");
     }
 
     #[test]

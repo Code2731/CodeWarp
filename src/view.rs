@@ -732,13 +732,17 @@ impl App {
                 let body_view: Element<Message> = match (&b.body, b.view_mode) {
                     (BlockBody::User(s), _) => text(s).size(FS_SUBTITLE).into(),
                     (BlockBody::Assistant(content), ViewMode::Raw) => {
-                        let id = b.id;
-                        text_editor(content)
-                            .on_action(move |action| Message::EditorAction(id, action))
-                            .height(Length::Shrink)
-                            .padding(0)
-                            .size(FS_SUBTITLE)
-                            .into()
+                        if self.streaming_block_id == Some(b.id) && !self.streaming_raw.is_empty() {
+                            text(&self.streaming_raw).size(FS_SUBTITLE).into()
+                        } else {
+                            let id = b.id;
+                            text_editor(content)
+                                .on_action(move |action| Message::EditorAction(id, action))
+                                .height(Length::Shrink)
+                                .padding(0)
+                                .size(FS_SUBTITLE)
+                                .into()
+                        }
                     }
                     (BlockBody::Assistant(_), ViewMode::Rendered) => {
                         let mut settings: markdown::Settings = (&self.theme()).into();

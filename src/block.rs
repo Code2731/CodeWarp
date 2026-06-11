@@ -145,6 +145,7 @@ pub(crate) struct PendingToolCall {
 }
 
 pub(crate) const MAX_TOOL_ROUNDS: u32 = 5;
+pub(crate) const MAX_MID_STREAM_RETRIES: u32 = 1;
 
 // ── Block / conversation helpers ────────────────────────────────────
 

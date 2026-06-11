@@ -400,6 +400,8 @@ struct App {
     pending_tool_calls: Vec<PendingToolCall>,
     /// 도구 호출 라운드 카운터 (무한 루프 방지)
     tool_round: u32,
+    /// mid-stream 오류 재시도 카운터
+    mid_stream_retries: u32,
     /// 도구 실행 시 기준이 되는 작업 디렉토리
     cwd: PathBuf,
 
@@ -773,6 +775,7 @@ impl App {
             conversation: Vec::new(),
             pending_tool_calls: Vec::new(),
             tool_round: 0,
+            mid_stream_retries: 0,
             cwd: keystore::read_cwd()
                 .map(PathBuf::from)
                 .filter(|p| p.is_dir())

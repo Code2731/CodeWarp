@@ -2048,6 +2048,7 @@ impl App {
         };
         self.blocks.truncate(idx + 1);
         self.tool_round = 0;
+        self.mid_stream_retries = 0;
         self.pending_tool_calls.clear();
 
         let (base_url, api_key) = match self.resolve_provider() {
@@ -2176,6 +2177,7 @@ impl App {
             self.close_mention();
             self.pending_tool_calls.clear();
             self.tool_round = 0;
+            self.mid_stream_retries = 0;
             let messages = self.conversation.clone();
 
             let user_id = self.next_id();
@@ -2267,6 +2269,7 @@ impl App {
         self.close_mention();
         self.pending_tool_calls.clear();
         self.tool_round = 0;
+        self.mid_stream_retries = 0;
         let messages = self.conversation.clone();
 
         let user_id = self.next_id();
@@ -2412,6 +2415,30 @@ impl App {
                 }
             }
             ChatEvent::Error(e) => {
+                // Mid-stream retry: if tokens were emitted, retry silently
+                if !self.streaming_raw.is_empty()
+                    && self.mid_stream_retries < MAX_MID_STREAM_RETRIES
+                    && !e.contains("OpenRouter 401")
+                    && !e.contains("OpenRouter 402")
+                {
+                    self.mid_stream_retries += 1;
+                    self.streaming_raw.clear();
+                    if let Some(idx) = self.streaming_block_idx {
+                        if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
+                            if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
+                                *content = text_editor::Content::new();
+                            }
+                            self.blocks[idx].md_items.clear();
+                        }
+                    }
+                    self.pending_tool_calls.clear();
+                    self.status = format!(
+                        "재시도 중… ({}/{})",
+                        self.mid_stream_retries, MAX_MID_STREAM_RETRIES
+                    );
+                    return self.kick_chat_stream();
+                }
+
                 if let Some(idx) = self.streaming_block_idx {
                     if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
                         if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
@@ -3427,6 +3454,7 @@ impl App {
         self.streaming_raw.clear();
         self.pending_tool_calls.clear();
         self.tool_round = 0;
+        self.mid_stream_retries = 0;
     }
 
     /// pending_tool_calls를 conversation에 반영, 안전한 도구는 즉시 실행하고

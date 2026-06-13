@@ -3,6 +3,7 @@ use super::*;
 use futures_util::StreamExt;
 use iced::widget::text_editor;
 use iced::{Subscription, Task};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::view::{SIDEBAR_WIDTH, SIDEBAR_WIDTH_COMPACT, SIDEBAR_WIDTH_WIDE};
@@ -415,7 +416,7 @@ async fn collect_chat_text(
     base_url: String,
     api_key: Option<String>,
     model: String,
-    messages: Vec<ChatMessage>,
+    messages: Arc<Vec<ChatMessage>>,
 ) -> Result<String, String> {
     let stream = openrouter::chat_stream(base_url, api_key, model, messages, None);
     futures_util::pin_mut!(stream);
@@ -1510,7 +1511,7 @@ impl App {
         self.abort_active_chat_stream(true);
         self.snapshot_current_to_inactive();
         self.blocks.clear();
-        self.conversation.clear();
+        Arc::make_mut(&mut self.conversation).clear();
         self.pending_tool_calls.clear();
         self.pending_write_calls.clear();
         self.show_write_confirm = false;
@@ -1531,7 +1532,7 @@ impl App {
         self.ui.pending_delete_session = None;
         if target_id == self.current_session_id {
             self.blocks.clear();
-            self.conversation.clear();
+            Arc::make_mut(&mut self.conversation).clear();
             self.next_block_id = 0;
             self.current_session_id = self.allocate_session_id();
             self.current_session_title = "새 채팅".into();
@@ -1745,8 +1746,8 @@ impl App {
             _ => return Task::none(),
         };
         self.blocks.truncate(idx);
-        truncate_after_last_user(&mut self.conversation);
-        self.conversation.pop();
+        truncate_after_last_user(Arc::make_mut(&mut self.conversation));
+        Arc::make_mut(&mut self.conversation).pop();
         self.tool_round = 0;
         self.pending_tool_calls.clear();
         self.input = user_text;
@@ -1776,7 +1777,7 @@ impl App {
         };
         self.fill_assistant_block(openrouter_block_id, openrouter_text.clone());
         self.fill_assistant_block(tabby_block_id, tabby_text.clone());
-        self.conversation.push(ChatMessage::assistant(format!(
+        Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(format!(
             "[OpenRouter]\n{}\n\n[Tabby]\n{}",
             openrouter_text, tabby_text
         )));
@@ -2040,7 +2041,7 @@ impl App {
         if !self.conversation.iter().any(|m| m.role == "user") {
             return Task::none();
         }
-        truncate_after_last_user(&mut self.conversation);
+        truncate_after_last_user(Arc::make_mut(&mut self.conversation));
         let Some(idx) = last_user_block_idx(&self.blocks) else {
             return Task::none();
         };
@@ -2170,7 +2171,7 @@ impl App {
             } else {
                 text.clone()
             };
-            self.conversation.push(ChatMessage::user(user_msg));
+            Arc::make_mut(&mut self.conversation).push(ChatMessage::user(user_msg));
             self.attached_files.clear();
             self.close_mention();
             self.pending_tool_calls.clear();
@@ -2262,7 +2263,7 @@ impl App {
         } else {
             text.clone()
         };
-        self.conversation.push(ChatMessage::user(user_msg));
+        Arc::make_mut(&mut self.conversation).push(ChatMessage::user(user_msg));
         self.attached_files.clear();
         self.close_mention();
         self.pending_tool_calls.clear();
@@ -2370,7 +2371,7 @@ impl App {
                 }
 
                 if !final_text.is_empty() {
-                    self.conversation
+                    Arc::make_mut(&mut self.conversation)
                         .push(ChatMessage::assistant(final_text.clone()));
                 } else {
                     self.status =
@@ -2505,8 +2506,7 @@ impl App {
     }
 
     fn on_mcp_tool_result(&mut self, tool_call_id: String, result: String) -> Task<Message> {
-        self.conversation
-            .push(ChatMessage::tool_result(&tool_call_id, result));
+        Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(&tool_call_id, result));
         self.tool_round += 1;
         self.kick_chat_stream()
     }
@@ -2837,7 +2837,7 @@ impl App {
         }
         let tc = self.pending_write_calls.remove(idx);
         self.push_tool_result_block(tc.name.clone(), "discarded".into(), false);
-        self.conversation.push(ChatMessage::tool_result(
+        Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(
             &tc.id,
             "[denied] 사용자가 이 도구 호출을 제외했습니다.",
         ));
@@ -3241,7 +3241,7 @@ impl App {
             .map(|s| session::PersistedSessionData {
                 id: s.id,
                 title: s.title.clone(),
-                conversation: s.conversation.clone(),
+                conversation: (*s.conversation).clone(),
                 blocks: s.blocks.clone(),
                 next_block_id: s.next_block_id,
                 scroll_y: s.scroll_y,
@@ -3250,7 +3250,7 @@ impl App {
         sessions.push(session::PersistedSessionData {
             id: self.current_session_id,
             title: self.current_session_title.clone(),
-            conversation: self.conversation.clone(),
+            conversation: (*self.conversation).clone(),
             blocks: current_blocks_persisted,
             next_block_id: self.next_block_id,
             scroll_y: self.current_scroll_y,
@@ -3408,13 +3408,13 @@ impl App {
             self.cwd.display(),
             mode_block,
         );
-        if let Some(first) = self.conversation.first_mut() {
+        if let Some(first) = Arc::make_mut(&mut self.conversation).first_mut() {
             if first.role == "system" {
                 first.content = Some(prompt);
                 return;
             }
         }
-        self.conversation.insert(
+        Arc::make_mut(&mut self.conversation).insert(
             0,
             ChatMessage {
                 role: "system".into(),
@@ -3443,7 +3443,7 @@ impl App {
                     String::new()
                 };
                 if !txt.is_empty() {
-                    self.conversation.push(ChatMessage::assistant(txt));
+                    Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(txt));
                 }
             }
         }
@@ -3481,7 +3481,7 @@ impl App {
         if !assistant_partial.is_empty() {
             assistant_msg.content = Some(assistant_partial);
         }
-        self.conversation.push(assistant_msg);
+        Arc::make_mut(&mut self.conversation).push(assistant_msg);
 
         let mcp_tool_names: std::collections::HashSet<String> =
             self.mcp_tools.iter().map(|t| t.name.clone()).collect();
@@ -3497,7 +3497,7 @@ impl App {
                 .partition(|tc| tools::tool_kind(&tc.name) == tools::ToolKind::ReadOnly);
             for tc in &local_read {
                 let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
-                self.conversation
+                Arc::make_mut(&mut self.conversation)
                     .push(ChatMessage::tool_result(&tc.id, result));
             }
             if !local_write.is_empty() {
@@ -3542,8 +3542,7 @@ impl App {
         for tc in &read_calls {
             names.push(tc.name.clone());
             let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
-            self.conversation
-                .push(ChatMessage::tool_result(&tc.id, result));
+            Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(&tc.id, result));
         }
         if !names.is_empty() {
             self.status = format!("도구 호출: {}", names.join(", "));
@@ -3609,14 +3608,14 @@ impl App {
                 let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
                 let (summary, success) = summarize_tool_result(&tc.name, &tc.arguments, &result);
                 self.push_tool_result_block(tc.name.clone(), summary, success);
-                self.conversation
+                Arc::make_mut(&mut self.conversation)
                     .push(ChatMessage::tool_result(&tc.id, result));
             }
             self.status = format!("실행 완료: {}", names.join(", "));
         } else {
             for tc in &calls {
                 self.push_tool_result_block(tc.name.clone(), "denied".into(), false);
-                self.conversation.push(ChatMessage::tool_result(
+                Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(
                     &tc.id,
                     "[denied] 사용자가 파일 쓰기를 거부했습니다.",
                 ));

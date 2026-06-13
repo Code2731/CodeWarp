@@ -43,6 +43,7 @@ use iced::widget::{
 use iced::{font, Color, Element, Font, Length, Size, Task, Theme};
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use openrouter::{AuthKeyData, ChatEvent, ChatMessage, GenerationData, OpenRouterModel};
 use view::SIDEBAR_WIDTH;
@@ -395,7 +396,7 @@ struct App {
     current_scroll_y: f32,
 
     /// OpenRouter에 보낼 누적 대화 (도구 호출 round trip 포함)
-    conversation: Vec<ChatMessage>,
+    conversation: Arc<Vec<ChatMessage>>,
     /// 현재 stream 중 누적되는 tool_calls
     pending_tool_calls: Vec<PendingToolCall>,
     /// 도구 호출 라운드 카운터 (무한 루프 방지)
@@ -467,7 +468,7 @@ struct App {
 struct InactiveSession {
     id: u64,
     title: String,
-    conversation: Vec<ChatMessage>,
+    conversation: Arc<Vec<ChatMessage>>,
     blocks: Vec<session::PersistedBlock>,
     next_block_id: u64,
     scroll_y: f32,
@@ -774,7 +775,7 @@ impl App {
             stream_id: ScrollId::new("stream"),
             follow_bottom: true,
             current_scroll_y: 0.0,
-            conversation: Vec::new(),
+            conversation: Arc::new(Vec::new()),
             pending_tool_calls: Vec::new(),
             tool_round: 0,
             mid_stream_retries: 0,
@@ -843,7 +844,7 @@ impl App {
             .map(|(_, s)| InactiveSession {
                 id: s.id,
                 title: s.title.clone(),
-                conversation: s.conversation.clone(),
+                conversation: Arc::new(s.conversation.clone()),
                 blocks: s.blocks.clone(),
                 next_block_id: s.next_block_id,
                 scroll_y: s.scroll_y,
@@ -852,7 +853,7 @@ impl App {
 
         app.current_session_id = active.id;
         app.current_session_title = active.title;
-        app.conversation = active.conversation;
+        app.conversation = Arc::new(active.conversation);
         app.next_block_id = active.next_block_id;
         app.blocks = active.blocks.into_iter().map(persisted_to_block).collect();
         app.current_scroll_y = active.scroll_y;
@@ -1347,7 +1348,7 @@ mod tests {
     #[test]
     fn abort_stream_keeps_partial_assistant_when_requested() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);
@@ -1377,7 +1378,7 @@ mod tests {
     #[test]
     fn abort_stream_drops_partial_assistant_when_not_requested() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(7);
         app.streaming_block_idx = Some(0);
@@ -1402,7 +1403,7 @@ mod tests {
     #[test]
     fn abort_stream_handles_missing_assistant_block() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(999);
         app.tool_round = 1;
@@ -1448,7 +1449,7 @@ mod tests {
     #[test]
     fn chat_chunk_tokens_append_to_assistant_block_without_editor_focus() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);
@@ -1470,7 +1471,7 @@ mod tests {
     #[test]
     fn chat_chunk_does_not_reparse_markdown_during_streaming() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);
@@ -1494,7 +1495,7 @@ mod tests {
     #[test]
     fn toggle_block_view_to_rendered_triggers_markdown_parse() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         let id = 42;
         app.blocks.push(Block {
@@ -1519,7 +1520,7 @@ mod tests {
     #[test]
     fn toggle_block_view_to_raw_clears_no_md_items() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         let id = 42;
         app.blocks.push(Block {
@@ -2093,7 +2094,7 @@ mod tests {
     #[test]
     fn send_message_returns_early_when_streaming() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.input = "hello".into();
@@ -2126,7 +2127,7 @@ mod tests {
     #[test]
     fn regenerate_last_returns_early_when_streaming() {
         let (mut app, _) = App::new();
-        app.conversation.push(ChatMessage::user("hello"));
+        Arc::make_mut(&mut app.conversation).push(ChatMessage::user("hello"));
         app.streaming_block_id = Some(42);
         let before = app.conversation.len();
 
@@ -2138,7 +2139,7 @@ mod tests {
     #[test]
     fn regenerate_last_returns_early_when_no_user_message() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
 
         let _ = app.update(Message::RegenerateLast);
 
@@ -3148,7 +3149,7 @@ mod tests {
     #[test]
     fn chat_chunk_done_builds_content_from_streaming_raw() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);
@@ -3178,7 +3179,7 @@ mod tests {
     #[test]
     fn chat_chunk_done_empty_streaming_raw_shows_warning() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);
@@ -3204,7 +3205,7 @@ mod tests {
     #[test]
     fn chat_chunk_error_appends_to_streaming_raw() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);
@@ -3232,7 +3233,7 @@ mod tests {
     #[test]
     fn chat_chunk_error_empty_streaming_raw() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);
@@ -3257,7 +3258,7 @@ mod tests {
     #[test]
     fn mid_stream_error_triggers_retry() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);
@@ -3284,7 +3285,7 @@ mod tests {
     #[test]
     fn mid_stream_error_retries_exhausted() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);
@@ -3314,7 +3315,7 @@ mod tests {
     #[test]
     fn mid_stream_error_401_not_retried() {
         let (mut app, _) = App::new();
-        app.conversation.clear();
+        Arc::make_mut(&mut app.conversation).clear();
         app.blocks.clear();
         app.streaming_block_id = Some(42);
         app.streaming_block_idx = Some(0);

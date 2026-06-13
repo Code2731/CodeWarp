@@ -2,6 +2,8 @@
 // list_models: 모델 리스트
 // chat_stream: SSE 토큰 + tool_call delta 스트림
 
+use std::sync::Arc;
+
 use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
@@ -1180,7 +1182,7 @@ pub fn chat_stream(
     base_url: String,
     api_key: Option<String>,
     model: String,
-    messages: Vec<ChatMessage>,
+    messages: Arc<Vec<ChatMessage>>,
     tools: Option<serde_json::Value>,
 ) -> impl Stream<Item = ChatEvent> {
     async_stream::stream! {
@@ -1193,7 +1195,7 @@ pub fn chat_stream(
         };
         let body = ChatRequest {
             model: &model,
-            messages: &messages,
+            messages: &*messages,
             stream: true,
             tools: tools.as_ref(),
             tool_choice: tools.as_ref().map(|_| "auto"),

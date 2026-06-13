@@ -39,6 +39,9 @@ pub(crate) fn on_event(
                 _ => handle_key(key, modifiers),
             }
         }
+        iced::Event::Window(iced::window::Event::CloseRequested) => {
+            Some(Message::WindowCloseRequested)
+        }
         iced::Event::Window(iced::window::Event::FileDropped(path)) => {
             Some(Message::FileDropped(path))
         }

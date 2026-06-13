@@ -733,6 +733,11 @@ impl App {
                 self.save_session();
                 Task::none()
             }
+            Message::WindowCloseRequested => {
+                self.save_session();
+                session::mark_clean_shutdown();
+                Task::none()
+            }
 
             // ── @-mention ─────────────────────────────────────────
             Message::MentionMove(delta) => self.move_mention_selection(delta),
@@ -3812,12 +3817,13 @@ impl App {
 
     pub(crate) fn subscription(&self) -> Subscription<Message> {
         let event_sub = iced::event::listen_with(on_event);
-        if self.streaming_block_id.is_some() {
-            let timer_sub = iced::time::every(Duration::from_secs(15)).map(|_| Message::AutoSave);
-            Subscription::batch(vec![event_sub, timer_sub])
+        let interval = if self.streaming_block_id.is_some() {
+            Duration::from_secs(15)
         } else {
-            event_sub
-        }
+            Duration::from_secs(60)
+        };
+        let timer_sub = iced::time::every(interval).map(|_| Message::AutoSave);
+        Subscription::batch(vec![event_sub, timer_sub])
     }
 
     pub(crate) fn filtered_palette_commands(&self) -> Vec<&'static PaletteCommand> {

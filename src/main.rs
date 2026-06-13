@@ -652,8 +652,10 @@ enum Message {
     RemoveAttachment(usize),
     /// 첨부 파일 전체 제거
     ClearAttachments,
-    /// 주기적 자동 저장 타이머 (크래시 복구).
+    /// 주기적 자동 저장 타이머.
     AutoSave,
+    /// 창 닫힘 → 세션 저장 + clean shutdown 마커.
+    WindowCloseRequested,
     /// mention 팝업 ↑(-1) ↓(+1)
     MentionMove(i32),
     /// mention 팝업에서 선택 확정 (Enter)
@@ -856,6 +858,10 @@ impl App {
         app.current_scroll_y = active.scroll_y;
         app.inactive_sessions = inactive;
         app.next_session_id = persisted.sessions.iter().map(|s| s.id).max().unwrap_or(0) + 1;
+        // Crash recovery: 이전 종료가 비정상이었다면 상태에 표시
+        if !session::was_clean_shutdown() && !app.blocks.is_empty() {
+            app.status = format!("[복구됨] {}", app.status);
+        }
         // 활성 세션의 마지막 scroll 위치 복원 task
         let restore_scroll = if app.current_scroll_y > 0.0 {
             Some(iced::widget::operation::scroll_to(
@@ -2110,7 +2116,11 @@ mod tests {
 
         let _ = app.update(Message::Send);
 
-        assert!(app.status.is_empty() || app.status == "준비됨");
+        assert!(
+            app.status.is_empty() || app.status == "준비됨" || app.status.starts_with("[복구됨]"),
+            "unexpected status: {}",
+            app.status
+        );
     }
 
     #[test]
@@ -2132,7 +2142,11 @@ mod tests {
 
         let _ = app.update(Message::RegenerateLast);
 
-        assert!(app.status.is_empty() || app.status == "준비됨");
+        assert!(
+            app.status.is_empty() || app.status == "준비됨" || app.status.starts_with("[복구됨]"),
+            "unexpected status: {}",
+            app.status
+        );
     }
 
     #[test]

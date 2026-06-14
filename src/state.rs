@@ -1,4 +1,4 @@
-// state.rs — Core application state types (child module of main)
+﻿// state.rs — Core application state types (child module of main)
 use super::*;
 
 pub(crate) struct HfDownload {

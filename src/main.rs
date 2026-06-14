@@ -21,6 +21,7 @@ mod update;
 mod update_chat;
 mod update_helpers;
 mod update_inference;
+mod update_settings;
 mod util;
 mod view;
 

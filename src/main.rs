@@ -20,6 +20,7 @@ mod tools;
 mod update;
 mod update_chat;
 mod update_helpers;
+mod update_inference;
 mod util;
 mod view;
 

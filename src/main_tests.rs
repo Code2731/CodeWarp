@@ -1084,8 +1084,7 @@ fn select_downloaded_model_defaults_to_tabbyapi_port() {
     assert_eq!(app.inference_port_input, TABBY_API_DEFAULT_PORT.to_string());
     assert_eq!(app.tabby_url_input, "http://localhost:5000");
     assert!(app.inference_selected_model.ends_with("Local-EXL2"));
-    if let Some(launcher) = update::find_tabbyapi_launcher(&update::default_tabbyapi_runtime_dir())
-    {
+    if let Some(launcher) = find_tabbyapi_launcher(&default_tabbyapi_runtime_dir()) {
         assert_eq!(app.inference_binary_path, launcher.display().to_string());
         assert!(app.can_start_inference());
     } else {
@@ -1102,7 +1101,7 @@ fn find_tabbyapi_launcher_accepts_start_cmd() {
     let launcher = tmp.path().join("Start.cmd");
     std::fs::write(&launcher, "@echo off").unwrap();
 
-    let found = update::find_tabbyapi_launcher(tmp.path());
+    let found = find_tabbyapi_launcher(tmp.path());
     let found = found.expect("expected launcher");
     assert_eq!(found.parent(), Some(tmp.path()));
     let name = found
@@ -1836,7 +1835,7 @@ fn tabbyapi_config_points_to_selected_model_and_local_port() {
     let model = models.path().join("Local-EXL2");
     std::fs::create_dir_all(&model).unwrap();
 
-    let config = update::write_tabbyapi_config_for_launcher(
+    let config = write_tabbyapi_config_for_launcher(
         &launcher.display().to_string(),
         &model.display().to_string(),
         TABBY_API_DEFAULT_PORT,

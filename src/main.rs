@@ -18,6 +18,7 @@ mod state;
 mod tabby;
 mod tools;
 mod update;
+mod update_chat;
 mod update_helpers;
 mod util;
 mod view;

@@ -1,6 +1,8 @@
 // view.rs — App 뷰 메서드 (main.rs child module)
 use super::*;
 mod chat;
+mod chat_block;
+mod chat_empty;
 mod pty;
 mod rightpanel;
 mod settings;

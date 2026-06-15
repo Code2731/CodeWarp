@@ -4,6 +4,7 @@ mod chat;
 mod pty;
 mod rightpanel;
 mod settings;
+mod settings_endpoint;
 mod settings_mcp;
 mod settings_models;
 mod settings_runtime;

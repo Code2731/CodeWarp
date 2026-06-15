@@ -897,4 +897,52 @@ impl App {
         self.status = format!("MCP tool 로드 실패: {msg}");
         Task::none()
     }
+    pub(crate) fn close_mention(&mut self) {
+        self.show_mention = false;
+        self.mention_query.clear();
+        self.mention_selected = 0;
+    }
+    pub(crate) fn normalized_attachment_path(&self, path: &std::path::Path) -> std::path::PathBuf {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.cwd.join(path)
+        }
+    }
+    pub(crate) fn is_already_attached(&self, path: &std::path::Path) -> bool {
+        let needle = self.normalized_attachment_path(path);
+        self.attached_files
+            .iter()
+            .any(|(p, _)| self.normalized_attachment_path(p) == needle)
+    }
+    pub(crate) fn total_attached_bytes(&self) -> u64 {
+        self.attached_files
+            .iter()
+            .map(|(_, content)| content.len() as u64)
+            .sum()
+    }
+    pub(crate) fn push_pty_line(&mut self, line: String) {
+        self.pty_output.push_back(line);
+        if self.pty_output.len() > PTY_MAX_LINES {
+            self.pty_output.pop_front();
+        }
+    }
+    pub(crate) fn filtered_palette_commands(&self) -> Vec<&'static PaletteCommand> {
+        let q = self.ui.command_palette_input.to_lowercase();
+        if q.is_empty() {
+            PALETTE_COMMANDS.iter().collect()
+        } else {
+            PALETTE_COMMANDS
+                .iter()
+                .filter(|c| {
+                    c.label.to_lowercase().contains(&q) || c.hint.to_lowercase().contains(&q)
+                })
+                .collect()
+        }
+    }
+    pub(crate) fn next_id(&mut self) -> u64 {
+        let id = self.next_block_id;
+        self.next_block_id += 1;
+        id
+    }
 }

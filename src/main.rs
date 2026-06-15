@@ -1,4 +1,4 @@
-﻿// CodeWarp — Iced 진입점
+// CodeWarp — Iced 진입점
 // Phase 2-3a: 3-pane 레이아웃 + 모델 셀렉터 (TopBar) + 입력 echo
 
 mod block;
@@ -74,6 +74,3 @@ fn main() -> iced::Result {
         })
         .run()
 }
-
-#[cfg(test)]
-mod main_tests;

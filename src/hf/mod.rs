@@ -1,118 +1,16 @@
-// HuggingFace Hub 다운로드 — siblings 리스트 + 파일별 stream 다운로드.
-// Iced Task::run으로 받아 view에 진행률 표시.
-
 use std::io::Write;
 
 use futures_util::{Stream, StreamExt};
-use serde::Deserialize;
 
-const HF_BASE: &str = "https://huggingface.co";
-const PROGRESS_BYTES: u64 = 1024 * 1024; // 1MB마다 progress emit
+mod error;
+mod types;
+pub(crate) use error::*;
+pub(crate) use types::*;
 
-#[derive(Deserialize)]
-struct ModelInfo {
-    siblings: Vec<Sibling>,
-}
+#[cfg(test)]
+mod tests;
 
-#[derive(Deserialize)]
-struct Sibling {
-    rfilename: String,
-}
-
-#[derive(Deserialize)]
-struct TreeEntry {
-    path: String,
-    #[serde(rename = "type")]
-    kind: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct RepoRefs {
-    branches: Vec<RepoBranch>,
-}
-
-#[derive(Deserialize)]
-struct RepoBranch {
-    name: String,
-}
-
-/// 다운로드 진행 이벤트 — Stream으로 emit.
-#[derive(Debug, Clone)]
-pub enum DownloadEvent {
-    /// 메타 fetched, 곧 파일 다운로드 시작.
-    Started {
-        total_files: usize,
-    },
-    /// 새 파일 시작.
-    FileStart {
-        idx: usize,
-        name: String,
-        size: Option<u64>,
-    },
-    /// 1MB마다 또는 파일 끝에 emit.
-    FileProgress {
-        idx: usize,
-        bytes_done: u64,
-        bytes_total: Option<u64>,
-    },
-    FileDone,
-    AllDone,
-    Error(String),
-}
-
-/// HF 원문 오류를 사용자 행동 가능한 메시지로 변환.
-pub fn humanize_error(raw: &str) -> String {
-    let lc = raw.to_lowercase();
-
-    if contains_status(raw, 401) || contains_status(raw, 403) {
-        return "권한 없음(401/403) — Hugging Face 토큰을 저장했는지, 게이트 모델 접근 권한이 있는지 확인해 주세요.".into();
-    }
-    if contains_status(raw, 404) {
-        if lc.contains("revision") || lc.contains("not found") {
-            return "리비전/브랜치를 찾을 수 없음(404) — 프리셋 브랜치가 바뀌었을 수 있어요. 다른 프리셋으로 재시도해 주세요.".into();
-        }
-        return "리소스를 찾을 수 없음(404) — repo ID 또는 파일 경로를 다시 확인해 주세요.".into();
-    }
-    if lc.contains("timeout") || lc.contains("timed out") {
-        return "요청 시간 초과 — 네트워크 상태를 확인하고 다시 시도해 주세요.".into();
-    }
-    if lc.contains("dns")
-        || lc.contains("name or service not known")
-        || lc.contains("failed to lookup address")
-    {
-        return "DNS 조회 실패 — 인터넷 연결 또는 DNS 설정을 확인해 주세요.".into();
-    }
-    if lc.contains("tls")
-        || lc.contains("certificate")
-        || lc.contains("handshake")
-        || lc.contains("secure connection")
-    {
-        return "TLS/인증서 오류 — 시스템 시간/인증서 저장소/보안 SW를 확인한 뒤 다시 시도해 주세요.".into();
-    }
-    if lc.contains("connection reset")
-        || lc.contains("connection refused")
-        || lc.contains("unexpected eof")
-    {
-        return "연결 실패 — 잠시 후 재시도하거나 네트워크/방화벽 설정을 확인해 주세요.".into();
-    }
-
-    raw.to_string()
-}
-
-fn contains_status(raw: &str, code: u16) -> bool {
-    let mut digits = String::new();
-    for ch in raw.chars() {
-        if ch.is_ascii_digit() {
-            digits.push(ch);
-            continue;
-        }
-        if digits.len() == 3 && digits.parse::<u16>().ok() == Some(code) {
-            return true;
-        }
-        digits.clear();
-    }
-    digits.len() == 3 && digits.parse::<u16>().ok() == Some(code)
-}
+// ── Revision helpers ────────────────────────────────────────────────
 
 fn normalize_revision_name(s: &str) -> String {
     s.chars()
@@ -224,6 +122,8 @@ fn annotate_revision_not_found_error(base: &str, requested: &str, branches: &[St
     )
 }
 
+// ── URL helpers ─────────────────────────────────────────────────────
+
 fn encode_path_segment(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for b in input.bytes() {
@@ -265,6 +165,8 @@ fn model_tree_url(repo_id: &str, rev: &str) -> String {
         encode_path_segment(rev)
     )
 }
+
+// ── HTTP fetch functions ────────────────────────────────────────────
 
 async fn fetch_repo_branches(
     client: &reqwest::Client,
@@ -361,6 +263,8 @@ fn http_client() -> Result<reqwest::Client, String> {
         .map_err(|e| format!("HTTP client 생성 실패: {e}"))
 }
 
+// ── Public download API ─────────────────────────────────────────────
+
 /// `repo_id` 예: "turboderp/Llama-3.2-1B-Instruct-exl2". siblings를
 /// `dest_dir/<folder_name>/{filename}`으로 저장. revision으로 branch 선택 (EXL2 bpw).
 pub fn download_repo(
@@ -379,11 +283,9 @@ pub fn download_repo(
         let mut rev = revision.as_deref().unwrap_or("main").to_string();
         let requested_rev = rev.clone();
 
-        // 1) siblings 메타 (revision 쿼리 파라미터로 branch 지정)
         let mut info: ModelInfo = match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
             Ok(v) => v,
             Err(e) => {
-                // EXL2 프리셋처럼 branch가 바뀐 경우 404면 refs에서 fallback branch를 찾아 1회 재시도.
                 if rev != "main" && contains_status(&e, 404) {
                     if let Some(branches) = fetch_repo_branches(&client, &repo_id, token_ref).await {
                         if let Some(fallback) = choose_revision_fallback(&rev, &branches) {
@@ -483,7 +385,6 @@ pub fn download_repo(
         yield DownloadEvent::Started { total_files };
         let rev_path = encode_path_segment(&rev);
 
-        // 2) 다운로드 디렉토리 보장
         let safe_id = folder_name.unwrap_or_else(|| repo_id.replace('/', "--"));
         let target_root = dest_dir.join(&safe_id);
         if let Err(e) = std::fs::create_dir_all(&target_root) {
@@ -491,7 +392,6 @@ pub fn download_repo(
             return;
         }
 
-        // 3) 파일별 스트림 다운로드
         for (idx, sibling) in info.siblings.iter().enumerate() {
             let filename = &sibling.rfilename;
             let encoded_filename = encode_repo_file_path(filename);
@@ -520,8 +420,6 @@ pub fn download_repo(
                 size: total_bytes,
             };
 
-            // 하위 디렉토리도 보장 (예: "model-00001-of-00002.safetensors"는 plain이지만
-            // "tokenizer/sub.json" 같은 path가 있을 수 있음)
             let target_file = target_root.join(filename);
             if let Some(parent) = target_file.parent() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
@@ -560,7 +458,6 @@ pub fn download_repo(
                     last_emit = bytes_done;
                 }
             }
-            // 파일 끝에 한 번 더 (마지막 < 1MB 잔여 표시)
             yield DownloadEvent::FileProgress {
                 idx,
                 bytes_done,
@@ -570,159 +467,5 @@ pub fn download_repo(
         }
 
         yield DownloadEvent::AllDone;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        annotate_revision_not_found_error, choose_revision_fallback, contains_status,
-        encode_path_segment, encode_repo_file_path, extract_bpw_value, format_branch_suggestions,
-        humanize_error, model_info_url, model_tree_url, normalize_revision_name,
-    };
-
-    #[test]
-    fn humanize_auth() {
-        let msg = humanize_error("HF 401: unauthorized");
-        assert!(msg.contains("토큰"));
-    }
-
-    #[test]
-    fn humanize_auth_lowercase_prefix() {
-        let msg = humanize_error("hf 403: forbidden");
-        assert!(msg.contains("권한"));
-    }
-
-    #[test]
-    fn humanize_auth_status_text() {
-        let msg = humanize_error("request failed with status 401 Unauthorized");
-        assert!(msg.contains("401/403"));
-    }
-
-    #[test]
-    fn humanize_404_revision() {
-        let msg = humanize_error("HF 404: revision not found");
-        assert!(msg.contains("리비전"));
-    }
-
-    #[test]
-    fn humanize_timeout() {
-        let msg = humanize_error("operation timed out");
-        assert!(msg.contains("시간 초과"));
-    }
-
-    #[test]
-    fn contains_status_matches_standalone_code() {
-        assert!(contains_status("status=404 not found", 404));
-        assert!(!contains_status("file size 1404 bytes", 404));
-    }
-
-    #[test]
-    fn normalize_revision_name_compacts_symbols() {
-        assert_eq!(normalize_revision_name("4.0-bpw"), "40bpw");
-        assert_eq!(normalize_revision_name(" 4_0 BPW "), "40bpw");
-    }
-
-    #[test]
-    fn extract_bpw_value_parses_number() {
-        assert_eq!(extract_bpw_value("4.0bpw"), Some(4.0));
-        assert_eq!(extract_bpw_value("exl2-6.5bpw"), Some(6.5));
-        assert_eq!(extract_bpw_value("main"), None);
-    }
-
-    #[test]
-    fn choose_revision_fallback_prefers_closest_bpw() {
-        let branches = vec![
-            "3.0bpw".to_string(),
-            "4.5bpw".to_string(),
-            "6.0bpw".to_string(),
-        ];
-        assert_eq!(
-            choose_revision_fallback("4.0bpw", &branches).as_deref(),
-            Some("4.5bpw")
-        );
-    }
-
-    #[test]
-    fn choose_revision_fallback_uses_main_when_no_bpw_match() {
-        let branches = vec!["dev".to_string(), "main".to_string()];
-        assert_eq!(
-            choose_revision_fallback("unknown-branch", &branches).as_deref(),
-            Some("main")
-        );
-    }
-
-    #[test]
-    fn format_branch_suggestions_limits_and_counts() {
-        let branches = vec![
-            "a".to_string(),
-            "b".to_string(),
-            "c".to_string(),
-            "d".to_string(),
-        ];
-        assert_eq!(format_branch_suggestions(&branches, 2), "a, b ... +2 more");
-    }
-
-    #[test]
-    fn annotate_revision_not_found_error_appends_requested_and_candidates() {
-        let branches = vec!["main".to_string(), "4.0bpw".to_string()];
-        let text =
-            annotate_revision_not_found_error("HF 404: revision not found", "4bpw", &branches);
-        assert!(text.contains("requested revision: '4bpw'"));
-        assert!(text.contains("available branches: main, 4.0bpw"));
-    }
-
-    #[test]
-    fn encode_path_segment_keeps_safe_revision_names() {
-        assert_eq!(encode_path_segment("4.0bpw"), "4.0bpw");
-        assert_eq!(encode_path_segment("main"), "main");
-    }
-
-    #[test]
-    fn encode_path_segment_escapes_reserved_chars() {
-        assert_eq!(
-            encode_path_segment("branch with/slash"),
-            "branch%20with%2Fslash"
-        );
-    }
-
-    #[test]
-    fn encode_repo_file_path_keeps_slashes_and_escapes_segments() {
-        assert_eq!(
-            encode_repo_file_path("tokenizer/my file @v1.json"),
-            "tokenizer/my%20file%20%40v1.json"
-        );
-    }
-
-    #[test]
-    fn encode_repo_file_path_escapes_each_nested_segment() {
-        assert_eq!(
-            encode_repo_file_path("a b/c+d/model-00001.safetensors"),
-            "a%20b/c%2Bd/model-00001.safetensors"
-        );
-    }
-
-    #[test]
-    fn model_info_url_uses_revision_path_endpoint() {
-        assert_eq!(
-            model_info_url("owner/repo", "4.0bpw"),
-            "https://huggingface.co/api/models/owner/repo/revision/4.0bpw"
-        );
-    }
-
-    #[test]
-    fn model_tree_url_uses_revision_tree_endpoint() {
-        assert_eq!(
-            model_tree_url("owner/repo", "4.0bpw"),
-            "https://huggingface.co/api/models/owner/repo/tree/4.0bpw?recursive=true"
-        );
-    }
-
-    #[test]
-    fn model_info_url_keeps_main_on_base_model_endpoint() {
-        assert_eq!(
-            model_info_url("owner/repo", "main"),
-            "https://huggingface.co/api/models/owner/repo"
-        );
     }
 }

@@ -29,6 +29,9 @@ mod update_inference_config;
 mod update_inference_start;
 mod update_inference_tabby;
 mod update_settings;
+mod update_settings_interact;
+mod update_settings_io;
+mod update_settings_ui;
 mod util;
 mod view;
 

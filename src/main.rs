@@ -26,6 +26,7 @@ mod update_chat_stream;
 mod update_chat_tools;
 mod update_chat_ui;
 mod update_helpers;
+mod update_helpers_tabbyapi;
 mod update_inference;
 mod update_inference_config;
 mod update_inference_start;
@@ -51,6 +52,7 @@ pub(crate) use runtime_process::humanize_inference_spawn_error;
 pub(crate) use runtime_process::spawn_inference_stream;
 pub(crate) use state::*;
 pub(crate) use update_helpers::*;
+pub(crate) use update_helpers_tabbyapi::*;
 pub(crate) use util::*;
 
 use iced::task;

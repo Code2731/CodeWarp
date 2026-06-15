@@ -2,6 +2,14 @@
 use super::*;
 use iced::Task;
 
+#[derive(Clone)]
+pub(crate) struct ChatRoute {
+    pub(crate) label: String,
+    pub(crate) base_url: String,
+    pub(crate) api_key: Option<String>,
+    pub(crate) model: String,
+}
+
 impl App {
     pub(crate) fn on_compare_responses_loaded(
         &mut self,

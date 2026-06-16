@@ -8,7 +8,10 @@ mod tabbyapi;
 pub(crate) use tabbyapi::*;
 
 #[cfg(test)]
-mod tests;
+mod display_tests;
+
+#[cfg(test)]
+mod engine_tests;
 
 /// 모델 ID에 한국어 친화로 알려진 패턴이 들어있는지.
 /// 휴리스틱 — 누락/오탐 가능. 화이트리스트 갱신은 여기 한 줄.

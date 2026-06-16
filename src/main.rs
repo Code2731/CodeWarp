@@ -35,6 +35,7 @@ mod update_inference_engine;
 mod update_inference_lifecycle;
 mod update_inference_spawn;
 mod update_inference_tabby;
+mod update_inference_tabby_fetch;
 mod update_settings;
 mod update_settings_hf;
 mod update_settings_interact;

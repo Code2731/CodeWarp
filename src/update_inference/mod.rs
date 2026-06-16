@@ -5,4 +5,7 @@ use super::*;
 mod engine_tests;
 
 #[cfg(test)]
-mod tabby_tests;
+mod tabby_launcher_tests;
+
+#[cfg(test)]
+mod tabby_models_tests;

@@ -1,9 +1,7 @@
 // update_chat_send.rs — Send/input update methods (main.rs child module)
 use super::*;
-use futures_util::StreamExt;
 use iced::widget::text_editor;
 use iced::Task;
-use std::sync::Arc;
 
 impl App {
     pub(crate) fn on_file_read_done(
@@ -150,93 +148,7 @@ impl App {
             return Task::none();
         }
         if self.compare_both {
-            let (openrouter_route, tabby_route) = match self.compare_routes() {
-                Ok(v) => v,
-                Err(e) => {
-                    self.status = e;
-                    return Task::none();
-                }
-            };
-
-            self.ensure_system_message();
-            let user_msg = if !self.attached_files.is_empty() {
-                let ctx = build_file_context(&self.attached_files);
-                format!("{ctx}\n\n{text}")
-            } else {
-                text.clone()
-            };
-            Arc::make_mut(&mut self.conversation).push(ChatMessage::user(user_msg));
-            self.attached_files.clear();
-            self.close_mention();
-            self.pending_tool_calls.clear();
-            self.tool_round = 0;
-            self.mid_stream_retries = 0;
-            let messages = self.conversation.clone();
-
-            let user_id = self.next_id();
-            self.blocks.push(Block {
-                id: user_id,
-                body: BlockBody::User(text),
-                view_mode: ViewMode::Rendered,
-                md_items: Vec::new(),
-                model: None,
-                apply_candidates: Vec::new(),
-            });
-            let openrouter_block_id = self.next_id();
-            self.blocks.push(Block {
-                id: openrouter_block_id,
-                body: BlockBody::Assistant(text_editor::Content::with_text(
-                    "OpenRouter 응답 대기 중…",
-                )),
-                view_mode: ViewMode::Raw,
-                md_items: Vec::new(),
-                model: Some(format!(
-                    "{}: {}",
-                    openrouter_route.label, openrouter_route.model
-                )),
-                apply_candidates: Vec::new(),
-            });
-            let tabby_block_id = self.next_id();
-            self.blocks.push(Block {
-                id: tabby_block_id,
-                body: BlockBody::Assistant(text_editor::Content::with_text("Tabby 응답 대기 중…")),
-                view_mode: ViewMode::Raw,
-                md_items: Vec::new(),
-                model: Some(format!("{}: {}", tabby_route.label, tabby_route.model)),
-                apply_candidates: Vec::new(),
-            });
-
-            self.input.clear();
-            self.compare_pending = true;
-            self.status = "Compare 응답 생성 중…".into();
-            self.follow_bottom = true;
-
-            let openrouter_messages = messages.clone();
-            let tabby_messages = messages;
-            let task = Task::perform(
-                async move {
-                    let openrouter = collect_chat_text(
-                        openrouter_route.base_url,
-                        openrouter_route.api_key,
-                        openrouter_route.model,
-                        openrouter_messages,
-                    );
-                    let tabby = collect_chat_text(
-                        tabby_route.base_url,
-                        tabby_route.api_key,
-                        tabby_route.model,
-                        tabby_messages,
-                    );
-                    tokio::join!(openrouter, tabby)
-                },
-                move |(openrouter_result, tabby_result)| Message::CompareResponsesLoaded {
-                    openrouter_block_id,
-                    tabby_block_id,
-                    openrouter_result,
-                    tabby_result,
-                },
-            );
-            return Task::batch(vec![snap_to_end(self.stream_id.clone()), task]);
+            return self.compare_send_message(text);
         }
         let (base_url, api_key) = match self.resolve_provider() {
             Ok(v) => v,
@@ -303,26 +215,6 @@ impl App {
         self.abort_handle = Some(handle);
         Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
     }
-}
-
-pub(crate) async fn collect_chat_text(
-    base_url: String,
-    api_key: Option<String>,
-    model: String,
-    messages: Arc<Vec<ChatMessage>>,
-) -> Result<String, String> {
-    let stream = openrouter::chat_stream(base_url, api_key, model, messages, None);
-    futures_util::pin_mut!(stream);
-    let mut out = String::new();
-    while let Some(event) = stream.next().await {
-        match event {
-            ChatEvent::Token(t) => out.push_str(&t),
-            ChatEvent::Done { .. } => return Ok(out),
-            ChatEvent::Error(e) => return Err(e),
-            ChatEvent::ToolCallDelta { .. } => {}
-        }
-    }
-    Ok(out)
 }
 
 #[cfg(test)]

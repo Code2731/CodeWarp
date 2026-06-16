@@ -49,10 +49,9 @@ pub(crate) use input::on_event;
 pub(crate) use message::*;
 pub(crate) use model::*;
 pub(crate) use palette::*;
-#[cfg(test)]
-pub(crate) use runtime_process::humanize_inference_spawn_error;
 pub(crate) use runtime_process::spawn_inference_stream;
 pub(crate) use state::*;
+pub(crate) use tabby::tabby_connection_error_looks_unreachable;
 pub(crate) use update_helpers::*;
 pub(crate) use update_helpers_tabbyapi::*;
 pub(crate) use util::*;

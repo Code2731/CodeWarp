@@ -169,6 +169,17 @@ pub async fn list_models(base_url: String, token: Option<String>) -> Result<Vec<
     Ok(Vec::new())
 }
 
+pub(crate) fn tabby_connection_error_looks_unreachable(raw: &str, actionable: &str) -> bool {
+    let raw_lower = raw.to_ascii_lowercase();
+    raw_lower.contains("refused")
+        || raw_lower.contains("os error 10061")
+        || raw_lower.contains("timeout")
+        || raw_lower.contains("timed out")
+        || actionable.contains("응답 없음")
+        || actionable.contains("시간 초과")
+        || actionable.contains("응답하지")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

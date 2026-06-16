@@ -125,7 +125,8 @@ impl App {
                     self.hf_abort_handle = None;
                 }
                 hf::DownloadEvent::Error(e) => {
-                    self.status = format!("다운로드 실패: {}", compose_hf_download_error(e));
+                    self.status =
+                        format!("다운로드 실패: {}", crate::hf::compose_hf_download_error(e));
                     self.hf_dl = None;
                     self.hf_abort_handle = None;
                 }

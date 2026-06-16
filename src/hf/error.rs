@@ -51,3 +51,218 @@ pub(crate) fn contains_status(raw: &str, code: u16) -> bool {
     }
     digits.len() == 3 && digits.parse::<u16>().ok() == Some(code)
 }
+
+const HF_HINT_MARKERS: [&str; 3] = [
+    "fallback retry from",
+    "fallback lookup failed:",
+    "requested revision:",
+];
+
+fn starts_with_ascii_case_insensitive(text: &str, prefix: &str) -> bool {
+    text.to_ascii_lowercase()
+        .starts_with(&prefix.to_ascii_lowercase())
+}
+
+fn find_hint_boundary(tail: &str) -> Option<usize> {
+    for sep in [") (", ")("] {
+        let mut offset = 0usize;
+        while let Some(rel) = tail[offset..].find(sep) {
+            let pos = offset + rel;
+            let after = tail[pos + sep.len()..].trim_start();
+            if HF_HINT_MARKERS
+                .iter()
+                .any(|m| starts_with_ascii_case_insensitive(after, m))
+            {
+                return Some(pos);
+            }
+            offset = pos + sep.len();
+        }
+    }
+    None
+}
+
+fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
+    let raw_lc = raw.to_ascii_lowercase();
+    let marker_lc = marker.to_ascii_lowercase();
+    let idx = raw_lc.find(&marker_lc)?;
+    let tail = &raw[idx..];
+    let cut = find_hint_boundary(tail);
+    let head = cut.map(|i| &tail[..i]).unwrap_or(tail);
+    let head = head.strip_suffix(')').unwrap_or(head).trim();
+    if head.is_empty() {
+        None
+    } else {
+        Some(head.to_string())
+    }
+}
+
+fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    haystack
+        .to_ascii_lowercase()
+        .contains(&needle.to_ascii_lowercase())
+}
+
+fn merge_hint(hints: &mut Vec<String>, candidate: String) {
+    if hints.iter().any(|existing| {
+        existing == &candidate || contains_ascii_case_insensitive(existing, &candidate)
+    }) {
+        return;
+    }
+    hints.retain(|existing| !contains_ascii_case_insensitive(&candidate, existing));
+    hints.push(candidate);
+}
+
+pub fn compose_hf_download_error(raw: &str) -> String {
+    let humanized = humanize_error(raw);
+    let mut hints: Vec<String> = Vec::new();
+    for marker in HF_HINT_MARKERS {
+        if let Some(h) = extract_hf_error_hint(raw, marker) {
+            merge_hint(&mut hints, h);
+        }
+    }
+    if hints.is_empty() {
+        return humanized;
+    }
+    let missing: Vec<String> = hints
+        .into_iter()
+        .filter(|h| !contains_ascii_case_insensitive(&humanized, h))
+        .collect();
+    if missing.is_empty() {
+        humanized
+    } else {
+        format!("{humanized} ({})", missing.join(" | "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_hf_error_hint_parses_requested_revision_tail() {
+        let raw =
+            "HF 404: revision not found (requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "requested revision:").as_deref(),
+            Some("requested revision: '4bpw'; available branches: main, 4.0bpw")
+        );
+    }
+
+    #[test]
+    fn extract_hf_error_hint_parses_fallback_retry() {
+        let raw = "HF 404: revision not found (fallback retry from '4bpw' to '4.0bpw') (requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "fallback retry from").as_deref(),
+            Some("fallback retry from '4bpw' to '4.0bpw'")
+        );
+    }
+
+    #[test]
+    fn compose_hf_download_error_appends_revision_hint() {
+        let raw =
+            "HF 404: revision not found (requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        let msg = compose_hf_download_error(raw);
+        assert!(msg.contains("requested revision: '4bpw'"));
+        assert!(msg.contains("available branches: main, 4.0bpw"));
+    }
+
+    #[test]
+    fn compose_hf_download_error_appends_fallback_and_revision_hints() {
+        let raw = "HF 404: revision not found (fallback retry from '4bpw' to '4.0bpw') (requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        let msg = compose_hf_download_error(raw);
+        assert!(msg.contains("fallback retry from '4bpw' to '4.0bpw'"));
+        assert!(msg.contains("requested revision: '4bpw'"));
+    }
+
+    #[test]
+    fn compose_hf_download_error_appends_fallback_lookup_failure_hint() {
+        let raw = "HF 404: revision not found (fallback lookup failed: branch refs unavailable; requested revision: '4bpw')";
+        let msg = compose_hf_download_error(raw);
+        assert!(msg.contains("fallback lookup failed: branch refs unavailable"));
+        assert!(msg.contains("requested revision: '4bpw'"));
+    }
+
+    #[test]
+    fn extract_hf_error_hint_keeps_branch_names_with_parentheses() {
+        let raw = "HF 404: revision not found (requested revision: '4bpw'; available branches: exl2(legacy), main)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "requested revision:").as_deref(),
+            Some("requested revision: '4bpw'; available branches: exl2(legacy), main")
+        );
+    }
+
+    #[test]
+    fn extract_hf_error_hint_parses_no_space_parenthesis_separator() {
+        let raw = "HF 404: revision not found (fallback retry from '4bpw' to '4.0bpw')(requested revision: '4bpw'; available branches: main, 4.0bpw)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "fallback retry from").as_deref(),
+            Some("fallback retry from '4bpw' to '4.0bpw'")
+        );
+    }
+
+    #[test]
+    fn merge_hint_prefers_more_specific_hint() {
+        let mut hints = vec!["requested revision: '4bpw'".to_string()];
+        merge_hint(
+            &mut hints,
+            "fallback lookup failed: branch refs unavailable; requested revision: '4bpw'"
+                .to_string(),
+        );
+        assert_eq!(hints.len(), 1);
+        assert!(hints[0].starts_with("fallback lookup failed:"));
+    }
+
+    #[test]
+    fn compose_hf_download_error_avoids_overlapping_hint_duplicates() {
+        let raw = "HF 404: revision not found (fallback lookup failed: branch refs unavailable; requested revision: '4bpw')";
+        let msg = compose_hf_download_error(raw);
+        assert_eq!(msg.matches("requested revision: '4bpw'").count(), 1);
+    }
+
+    #[test]
+    fn extract_hf_error_hint_is_case_insensitive_for_marker() {
+        let raw = "HF 404: revision not found (Requested Revision: '4bpw'; available branches: main, 4.0bpw)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "requested revision:").as_deref(),
+            Some("Requested Revision: '4bpw'; available branches: main, 4.0bpw")
+        );
+    }
+
+    #[test]
+    fn contains_ascii_case_insensitive_matches_mixed_case() {
+        assert!(contains_ascii_case_insensitive(
+            "Requested Revision: '4bpw'",
+            "requested revision:"
+        ));
+    }
+
+    #[test]
+    fn merge_hint_deduplicates_case_insensitive_overlap() {
+        let mut hints = vec!["Requested Revision: '4bpw'".to_string()];
+        merge_hint(&mut hints, "requested revision: '4bpw'".to_string());
+        assert_eq!(hints.len(), 1);
+    }
+
+    #[test]
+    fn starts_with_ascii_case_insensitive_matches_mixed_case_prefix() {
+        assert!(starts_with_ascii_case_insensitive(
+            "Requested Revision: '4bpw'",
+            "requested revision:"
+        ));
+    }
+
+    #[test]
+    fn find_hint_boundary_detects_next_marker_separator() {
+        let tail = "fallback retry from '4bpw' to '4.0bpw') (requested revision: '4bpw')";
+        assert_eq!(find_hint_boundary(tail), Some(38));
+    }
+
+    #[test]
+    fn extract_hf_error_hint_keeps_internal_paren_separator_not_followed_by_marker() {
+        let raw = "HF 404: revision not found (requested revision: '4bpw'; available branches: weird)(branch), main)";
+        assert_eq!(
+            extract_hf_error_hint(raw, "requested revision:").as_deref(),
+            Some("requested revision: '4bpw'; available branches: weird)(branch), main")
+        );
+    }
+}

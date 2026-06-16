@@ -23,6 +23,7 @@ mod update_chat_compare;
 mod update_chat_send;
 mod update_chat_session;
 mod update_chat_stream;
+mod update_chat_stream_helpers;
 mod update_chat_tools;
 mod update_chat_ui;
 mod update_helpers;

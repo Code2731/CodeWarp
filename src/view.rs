@@ -9,6 +9,7 @@ mod settings;
 mod settings_endpoint;
 mod settings_mcp;
 mod settings_models;
+mod settings_provider;
 mod settings_runtime;
 mod sidebar;
 mod statusbar;

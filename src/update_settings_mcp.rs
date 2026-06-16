@@ -60,3 +60,54 @@ impl App {
         Task::none()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn on_mcp_tools_loaded_removes_old_tools_and_updates_status() {
+        let (mut app, _) = App::new();
+        app.mcp_tools.push(mcp::McpTool {
+            server_name: "fs".into(),
+            name: "read".into(),
+            description: "".into(),
+            input_schema: serde_json::json!({}),
+        });
+        app.mcp_tools.push(mcp::McpTool {
+            server_name: "old-server".into(),
+            name: "list".into(),
+            description: "".into(),
+            input_schema: serde_json::json!({}),
+        });
+
+        let new_tools = vec![
+            mcp::McpTool {
+                server_name: "fs".into(),
+                name: "read".into(),
+                description: "read file".into(),
+                input_schema: serde_json::json!({}),
+            },
+            mcp::McpTool {
+                server_name: "fs".into(),
+                name: "write".into(),
+                description: "write file".into(),
+                input_schema: serde_json::json!({}),
+            },
+        ];
+
+        let _ = app.on_mcp_tools_loaded("fs".into(), new_tools);
+        assert_eq!(app.mcp_tools.len(), 3);
+        assert!(app.mcp_tools.iter().any(|t| t.server_name == "old-server"));
+        assert!(app.mcp_tools.iter().any(|t| t.name == "write"));
+        assert!(app.status.contains("MCP"));
+    }
+
+    #[test]
+    fn on_mcp_tools_failed_shows_error_in_status() {
+        let (mut app, _) = App::new();
+        let _ = app.on_mcp_tools_failed("connection refused".into());
+        assert!(app.status.contains("MCP tool 로드 실패"));
+        assert!(app.status.contains("connection refused"));
+    }
+}

@@ -68,3 +68,52 @@ impl App {
         Task::none()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toggle_block_view_to_rendered_triggers_markdown_parse() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        let id = 42;
+        app.blocks.push(Block {
+            id,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::with_text(
+                "**bold** text",
+            )),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ToggleBlockView(id));
+        assert_eq!(app.blocks[0].view_mode, ViewMode::Rendered);
+        assert!(
+            !app.blocks[0].md_items.is_empty(),
+            "md_items should be populated after toggling to Rendered"
+        );
+    }
+
+    #[test]
+    fn toggle_block_view_to_raw_clears_no_md_items() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        let id = 42;
+        app.blocks.push(Block {
+            id,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::with_text("hello")),
+            view_mode: ViewMode::Rendered,
+            md_items: vec![],
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ToggleBlockView(id));
+        assert_eq!(app.blocks[0].view_mode, ViewMode::Raw);
+    }
+}

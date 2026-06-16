@@ -263,3 +263,333 @@ impl App {
         task
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assistant_block_with_text(id: u64, text: &str) -> Block {
+        Block {
+            id,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::with_text(text)),
+            view_mode: ViewMode::Rendered,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn abort_stream_keeps_partial_assistant_when_requested() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.tool_round = 3;
+        app.pending_tool_calls = vec![PendingToolCall {
+            id: "tc-1".into(),
+            name: "read_file".into(),
+            arguments: "{}".into(),
+        }];
+        app.blocks
+            .push(assistant_block_with_text(42, "partial response"));
+
+        app.abort_active_chat_stream(true);
+
+        assert!(app.streaming_block_id.is_none());
+        assert!(app.streaming_block_idx.is_none());
+        assert!(app.pending_tool_calls.is_empty());
+        assert_eq!(app.tool_round, 0);
+        assert_eq!(app.conversation.len(), 1);
+        assert_eq!(app.conversation[0].role, "assistant");
+        assert_eq!(
+            app.conversation[0].content.as_deref(),
+            Some("partial response")
+        );
+    }
+
+    #[test]
+    fn abort_stream_drops_partial_assistant_when_not_requested() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(7);
+        app.streaming_block_idx = Some(0);
+        app.tool_round = 2;
+        app.pending_tool_calls = vec![PendingToolCall {
+            id: "tc-2".into(),
+            name: "glob".into(),
+            arguments: "{}".into(),
+        }];
+        app.blocks
+            .push(assistant_block_with_text(7, "to be discarded"));
+
+        app.abort_active_chat_stream(false);
+
+        assert!(app.streaming_block_id.is_none());
+        assert!(app.streaming_block_idx.is_none());
+        assert!(app.pending_tool_calls.is_empty());
+        assert_eq!(app.tool_round, 0);
+        assert!(app.conversation.is_empty());
+    }
+
+    #[test]
+    fn abort_stream_handles_missing_assistant_block() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(999);
+        app.tool_round = 1;
+        app.pending_tool_calls = vec![PendingToolCall {
+            id: "tc-3".into(),
+            name: "grep".into(),
+            arguments: "{}".into(),
+        }];
+
+        app.abort_active_chat_stream(true);
+
+        assert!(app.streaming_block_id.is_none());
+        assert!(app.pending_tool_calls.is_empty());
+        assert_eq!(app.tool_round, 0);
+        assert!(app.conversation.is_empty());
+    }
+
+    #[test]
+    fn chat_chunk_tokens_append_to_assistant_block_without_editor_focus() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Rendered,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Token("hel".into())));
+        let _ = app.update(Message::ChatChunk(ChatEvent::Token("lo".into())));
+
+        assert_eq!(app.streaming_raw, "hello");
+    }
+
+    #[test]
+    fn chat_chunk_does_not_reparse_markdown_during_streaming() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Token("**hello**".into())));
+        assert!(
+            app.blocks[0].md_items.is_empty(),
+            "md_items should stay empty during streaming"
+        );
+        assert_eq!(app.streaming_raw, "**hello**");
+    }
+
+    #[test]
+    fn chat_chunk_done_builds_content_from_streaming_raw() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+        app.streaming_raw = "hello world".into();
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Done {
+            finish_reason: Some("stop".into()),
+            generation_id: None,
+        }));
+
+        assert_eq!(app.blocks[0].body.to_text(), "hello world");
+        assert!(!app.blocks[0].md_items.is_empty());
+        assert!(app.streaming_raw.is_empty());
+        assert!(app.streaming_block_id.is_none());
+        assert_eq!(app.conversation.len(), 1);
+        assert_eq!(app.conversation[0].content.as_deref(), Some("hello world"));
+    }
+
+    #[test]
+    fn chat_chunk_done_empty_streaming_raw_shows_warning() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+        app.streaming_raw = String::new();
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Done {
+            finish_reason: Some("stop".into()),
+            generation_id: None,
+        }));
+
+        assert_eq!(app.blocks[0].body.to_text(), "[WARN] empty response");
+        assert!(app.conversation.is_empty());
+    }
+
+    #[test]
+    fn chat_chunk_error_appends_to_streaming_raw() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+        app.streaming_raw = "partial text".into();
+        app.mid_stream_retries = MAX_MID_STREAM_RETRIES;
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Error("server error".into())));
+
+        assert!(app.blocks[0].body.to_text().contains("partial text"));
+        assert!(app.blocks[0]
+            .body
+            .to_text()
+            .contains("[ERROR] server error"));
+        assert!(app.streaming_block_id.is_none());
+    }
+
+    #[test]
+    fn chat_chunk_error_empty_streaming_raw() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Error("server error".into())));
+
+        assert!(app.blocks[0]
+            .body
+            .to_text()
+            .contains("[ERROR] server error"));
+        assert!(app.streaming_block_id.is_none());
+    }
+
+    #[test]
+    fn mid_stream_error_triggers_retry() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+        app.streaming_raw = "partial text".into();
+        app.mid_stream_retries = 0;
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Error(
+            "connection dropped".into(),
+        )));
+
+        assert_eq!(app.mid_stream_retries, 1);
+        assert!(app.blocks[0].body.to_text().is_empty());
+        assert!(app.streaming_raw.is_empty());
+    }
+
+    #[test]
+    fn mid_stream_error_retries_exhausted() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+        app.streaming_raw = "partial text".into();
+        app.mid_stream_retries = MAX_MID_STREAM_RETRIES;
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Error(
+            "connection dropped".into(),
+        )));
+
+        assert!(app.blocks[0]
+            .body
+            .to_text()
+            .contains("[ERROR] connection dropped"));
+        assert_eq!(app.mid_stream_retries, MAX_MID_STREAM_RETRIES);
+        assert!(app.streaming_block_id.is_none());
+    }
+
+    #[test]
+    fn mid_stream_error_401_not_retried() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+        app.streaming_raw = "partial text".into();
+        app.mid_stream_retries = 0;
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Error(
+            "OpenRouter 401 unauthorized".into(),
+        )));
+
+        assert!(app.blocks[0].body.to_text().contains("[ERROR]"));
+        assert_eq!(app.mid_stream_retries, 0);
+    }
+}

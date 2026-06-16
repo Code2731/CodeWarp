@@ -167,3 +167,23 @@ impl App {
         Task::none()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toggle_compare_mode_updates_status() {
+        let (mut app, _) = App::new();
+
+        let _ = app.update(Message::ToggleCompareBoth(true));
+
+        assert!(app.compare_both);
+        assert!(app.status.contains("Compare 모드"), "got: {}", app.status);
+
+        let _ = app.update(Message::ToggleCompareBoth(false));
+
+        assert!(!app.compare_both);
+        assert!(app.status.contains("Single 모드"), "got: {}", app.status);
+    }
+}

@@ -1,10 +1,3 @@
-// 멀티 세션 영구 저장
-// Windows: %LOCALAPPDATA%\codewarp\sessions.json (sessions list)
-// macOS:   ~/Library/Application Support/codewarp/sessions.json
-// Linux:   ~/.local/share/codewarp/sessions.json
-//
-// 호환: 옛 단일 세션 파일(session.json)이 있으면 첫 회 load 시 자동 마이그레이션.
-
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -14,9 +7,8 @@ use crate::openrouter::ChatMessage;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedBlock {
     pub id: u64,
-    pub role: String, // "user" | "assistant"
+    pub role: String,
     pub content: String,
-    /// assistant 블록을 생성한 모델 ID (옛 데이터는 빈 문자열).
     #[serde(default)]
     pub model: String,
 }
@@ -28,7 +20,6 @@ pub struct PersistedSessionData {
     pub conversation: Vec<ChatMessage>,
     pub blocks: Vec<PersistedBlock>,
     pub next_block_id: u64,
-    /// stream 영역 absolute scroll y (마지막 위치). 세션별로 별도 보존.
     #[serde(default)]
     pub scroll_y: f32,
 }
@@ -39,10 +30,8 @@ pub struct PersistedAllSessions {
     pub active_idx: usize,
 }
 
-// ── 옛 단일 세션 호환 ──────────────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize)]
-struct OldPersistedSession {
+pub struct OldPersistedSession {
     pub conversation: Vec<ChatMessage>,
     pub blocks: Vec<PersistedBlock>,
     pub next_block_id: u64,
@@ -57,9 +46,7 @@ pub fn load_all() -> PersistedAllSessions {
     load_all_at(dir.as_deref())
 }
 
-/// 디렉토리 path를 인자로 받아 마이그레이션을 수행 — 테스트 가능 형태.
-fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions {
-    // 1) 새 형식 우선
+pub fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions {
     if let Some(d) = dir {
         let path = d.join("sessions.json");
         if let Ok(json) = std::fs::read_to_string(&path) {
@@ -73,7 +60,6 @@ fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions {
                 }
             }
         }
-        // 2) 옛 단일 세션 마이그레이션
         let old_path = d.join("session.json");
         if let Ok(json) = std::fs::read_to_string(&old_path) {
             if let Ok(old) = serde_json::from_str::<OldPersistedSession>(&json) {
@@ -91,7 +77,6 @@ fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions {
             }
         }
     }
-    // 3) 빈 시작
     PersistedAllSessions {
         sessions: vec![PersistedSessionData {
             id: 1,
@@ -111,100 +96,6 @@ pub fn save_all(p: &PersistedAllSessions) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_string_pretty(p).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())
-}
-
-// ── 즐겨찾기 모델 ID 리스트 (favorites.json) ─────────────────────────
-
-fn favorites_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|d| d.join("codewarp").join("favorites.json"))
-}
-
-pub fn read_favorites() -> Vec<String> {
-    let Some(path) = favorites_path() else {
-        return Vec::new();
-    };
-    let Ok(json) = std::fs::read_to_string(&path) else {
-        return Vec::new();
-    };
-    serde_json::from_str(&json).unwrap_or_default()
-}
-
-pub fn write_favorites(favs: &[String]) -> Result<(), String> {
-    let path = favorites_path().ok_or_else(|| "data_local_dir 없음".to_string())?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_string_pretty(favs).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())
-}
-
-// ── 모델별 누적 사용량 (usage.json) ─────────────────────────────────
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ModelUsage {
-    pub total_cost: f64,
-    pub prompt_tokens: u64,
-    pub completion_tokens: u64,
-    pub call_count: u64,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct UsageStore {
-    /// model id → 누적 사용량
-    pub by_model: std::collections::BTreeMap<String, ModelUsage>,
-}
-
-fn usage_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|d| d.join("codewarp").join("usage.json"))
-}
-
-pub fn load_usage() -> UsageStore {
-    let Some(path) = usage_path() else {
-        return UsageStore::default();
-    };
-    let Ok(json) = std::fs::read_to_string(&path) else {
-        return UsageStore::default();
-    };
-    serde_json::from_str(&json).unwrap_or_default()
-}
-
-// ── Crash recovery flag ─────────────────────────────────────────────
-
-fn codewarp_dir() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|d| d.join("codewarp"))
-}
-
-fn clean_shutdown_path() -> Option<PathBuf> {
-    codewarp_dir().map(|d| d.join(".clean_shutdown"))
-}
-
-pub fn mark_clean_shutdown() {
-    if let Some(path) = clean_shutdown_path() {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = std::fs::write(&path, "");
-    }
-}
-
-pub fn was_clean_shutdown() -> bool {
-    let Some(path) = clean_shutdown_path() else {
-        return true;
-    };
-    let exists = path.exists();
-    if exists {
-        let _ = std::fs::remove_file(&path);
-    }
-    exists
-}
-
-pub fn save_usage(usage: &UsageStore) -> Result<(), String> {
-    let path = usage_path().ok_or_else(|| "data_local_dir 없음".to_string())?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_string_pretty(usage).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
 
@@ -292,7 +183,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         std::fs::write(tmp.path().join("sessions.json"), "{ not valid json").unwrap();
         let p = load_all_at(Some(tmp.path()));
-        // 손상 → default 빈 세션
         assert_eq!(p.sessions.len(), 1);
         assert_eq!(p.sessions[0].title, "새 채팅");
     }
@@ -310,7 +200,6 @@ mod tests {
         )
         .unwrap();
         let p = load_all_at(Some(tmp.path()));
-        // 빈 sessions → 옛 형식 시도 → 없음 → default
         assert_eq!(p.sessions.len(), 1);
         assert_eq!(p.sessions[0].title, "새 채팅");
     }
@@ -344,7 +233,6 @@ mod tests {
     #[test]
     fn new_format_takes_precedence_over_old() {
         let tmp = TempDir::new().unwrap();
-        // 옛 형식
         let old = OldPersistedSession {
             conversation: Vec::new(),
             blocks: Vec::new(),
@@ -355,7 +243,6 @@ mod tests {
             serde_json::to_string(&old).unwrap(),
         )
         .unwrap();
-        // 새 형식 (다른 title)
         let new = PersistedAllSessions {
             sessions: vec![PersistedSessionData {
                 id: 42,
@@ -433,48 +320,5 @@ mod tests {
         let loaded = load_all_at(Some(&phantom));
         assert_eq!(loaded.sessions.len(), 1);
         assert_eq!(loaded.sessions[0].title, "새 채팅");
-    }
-
-    #[test]
-    fn favorites_serde_roundtrip() {
-        let favs = vec!["gpt-4o".to_string(), "claude-3.5".to_string()];
-        let json = serde_json::to_string(&favs).unwrap();
-        let loaded: Vec<String> = serde_json::from_str(&json).unwrap();
-        assert_eq!(loaded, favs);
-    }
-
-    #[test]
-    fn usage_serde_roundtrip() {
-        let mut usage = UsageStore::default();
-        usage.by_model.insert(
-            "gpt-4o".into(),
-            ModelUsage {
-                total_cost: 1.23,
-                prompt_tokens: 500,
-                completion_tokens: 300,
-                call_count: 10,
-            },
-        );
-        usage.by_model.insert(
-            "claude-3.5".into(),
-            ModelUsage {
-                total_cost: 0.45,
-                prompt_tokens: 200,
-                completion_tokens: 100,
-                call_count: 5,
-            },
-        );
-
-        let json = serde_json::to_string(&usage).unwrap();
-        let loaded: UsageStore = serde_json::from_str(&json).unwrap();
-        assert_eq!(loaded.by_model.len(), 2);
-        assert!((loaded.by_model["gpt-4o"].total_cost - 1.23).abs() < 1e-10);
-        assert_eq!(loaded.by_model["claude-3.5"].call_count, 5);
-    }
-
-    #[test]
-    fn usage_default_is_empty() {
-        let usage = UsageStore::default();
-        assert!(usage.by_model.is_empty());
     }
 }

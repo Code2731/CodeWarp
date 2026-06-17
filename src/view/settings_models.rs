@@ -78,27 +78,6 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
-        let mut presets_col =
-            column![text("추천 프리셋 (클릭 → 입력란에 채움)").size(12)].spacing(4);
-        for (i, p) in MODEL_PRESETS.iter().enumerate() {
-            presets_col = presets_col.push(
-                button(
-                    column![
-                        text(p.label).size(FS_SUBTITLE).font(semibold_font()),
-                        text(p.note).size(FS_MICRO),
-                        text(p.repo_id)
-                            .size(FS_MICRO)
-                            .font(Font::with_name("JetBrains Mono")),
-                    ]
-                    .spacing(2),
-                )
-                .on_press(Message::UsePreset(i))
-                .padding([6, 12])
-                .width(Length::Fill)
-                .style(secondary_btn),
-            );
-        }
-
         let repo_input = text_input(
             "HF repo (예: Qwen/Qwen2.5-Coder-7B-Instruct)",
             &self.hf_repo_input,
@@ -150,47 +129,6 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
-        let is_downloading = self.hf_dl.is_some();
-        let mut exl2_col =
-            column![text("EXL2 프리셋 (TabbyAPI용) — 클릭하면 바로 다운로드").size(FS_BODY),]
-                .spacing(4);
-        for (i, p) in EXL2_PRESETS.iter().enumerate() {
-            let downloaded_folder = downloaded_exl2_preset_folder(&self.model_dir_input, p);
-            let is_downloaded = downloaded_folder.is_some();
-            let title = if is_downloaded {
-                format!("✓ {} · 다운로드됨", p.label)
-            } else {
-                p.label.to_string()
-            };
-            let btn = button(
-                row![
-                    column![
-                        text(title).size(FS_SUBTITLE).font(semibold_font()),
-                        text(p.note).size(FS_MICRO),
-                        text(p.repo_id)
-                            .size(FS_MICRO)
-                            .font(Font::with_name("JetBrains Mono")),
-                    ]
-                    .spacing(2)
-                    .width(Length::Fill),
-                    text(p.vram).size(FS_LABEL),
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center),
-            )
-            .width(Length::Fill)
-            .padding([6, 12]);
-            exl2_col = exl2_col.push(if is_downloading {
-                btn.style(secondary_btn)
-            } else if let Some(folder_name) = downloaded_folder {
-                btn.on_press(Message::SelectDownloadedModel(folder_name))
-                    .style(primary_btn)
-            } else {
-                btn.on_press(Message::DownloadExl2Preset(i))
-                    .style(secondary_btn)
-            });
-        }
-
         container(
             column![
                 header,
@@ -202,11 +140,11 @@ impl App {
                     .font(semibold_font()),
                 dir_row,
                 Space::new().height(Length::Fixed(12.0)),
-                exl2_col,
+                self.view_exl2_presets(),
                 Space::new().height(Length::Fixed(12.0)),
                 text("HF 일반 모델 (safetensors · xLLM/vLLM용) — 클릭 → 입력란에 채움")
                     .size(FS_BODY),
-                presets_col,
+                self.view_model_presets(),
                 Space::new().height(Length::Fixed(8.0)),
                 text("또는 직접 입력").size(FS_LABEL).font(semibold_font()),
                 dl_row,

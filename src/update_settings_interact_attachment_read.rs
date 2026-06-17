@@ -1,69 +1,7 @@
-// update_settings_interact.rs — PTY/attachment/mention interaction methods
 use super::*;
 use iced::Task;
 
 impl App {
-    pub(crate) fn toggle_pty(&mut self) -> Task<Message> {
-        self.pty_visible = !self.pty_visible;
-        if self.pty_visible && self.pty_session.is_none() {
-            return Task::done(Message::PtyStart);
-        }
-        Task::none()
-    }
-    pub(crate) fn send_pty_input(&mut self) -> Task<Message> {
-        let line = self.pty_input.trim_end().to_string();
-        if let Some(s) = &self.pty_session {
-            s.write_line(&line);
-        }
-        self.pty_input.clear();
-        Task::none()
-    }
-    pub(crate) fn remove_attachment(&mut self, idx: usize) -> Task<Message> {
-        if idx < self.attached_files.len() {
-            let removed = self.attached_files.remove(idx);
-            let removed_name = removed
-                .0
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| removed.0.display().to_string());
-            self.status = format!(
-                "Removed attachment: {} ({} left)",
-                removed_name,
-                self.attached_files.len()
-            );
-        }
-        Task::none()
-    }
-    pub(crate) fn clear_attachments(&mut self) -> Task<Message> {
-        if !self.attached_files.is_empty() {
-            let removed_count = self.attached_files.len();
-            let removed_bytes: u64 = self
-                .attached_files
-                .iter()
-                .map(|(_, content)| content.len() as u64)
-                .sum();
-            self.attached_files.clear();
-            self.status = format!(
-                "Cleared attachments: {} files ({})",
-                removed_count,
-                fmt_bytes(removed_bytes)
-            );
-        }
-        Task::none()
-    }
-    pub(crate) fn move_mention_selection(&mut self, delta: i32) -> Task<Message> {
-        if !self.show_mention || self.mention_candidates.is_empty() {
-            return Task::none();
-        }
-        let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
-        let n = filtered.len();
-        if n == 0 {
-            return Task::none();
-        }
-        self.mention_selected =
-            (self.mention_selected as i64 + delta as i64).rem_euclid(n as i64) as usize;
-        Task::none()
-    }
     pub(crate) fn confirm_mention(&mut self) -> Task<Message> {
         if !self.show_mention {
             return Task::none();
@@ -109,73 +47,6 @@ impl App {
                 Err(msg) => Message::FileAttachError(msg),
             },
         )
-    }
-    pub(crate) fn load_mention_candidates(
-        &mut self,
-        paths: Vec<std::path::PathBuf>,
-    ) -> Task<Message> {
-        self.mention_candidates = paths;
-        Task::none()
-    }
-    pub(crate) fn close_mention(&mut self) {
-        self.show_mention = false;
-        self.mention_query.clear();
-        self.mention_selected = 0;
-    }
-    pub(crate) fn normalized_attachment_path(&self, path: &std::path::Path) -> std::path::PathBuf {
-        if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            self.cwd.join(path)
-        }
-    }
-    pub(crate) fn is_already_attached(&self, path: &std::path::Path) -> bool {
-        let needle = self.normalized_attachment_path(path);
-        self.attached_files
-            .iter()
-            .any(|(p, _)| self.normalized_attachment_path(p) == needle)
-    }
-    pub(crate) fn total_attached_bytes(&self) -> u64 {
-        self.attached_files
-            .iter()
-            .map(|(_, content)| content.len() as u64)
-            .sum()
-    }
-    pub(crate) fn push_pty_line(&mut self, line: String) {
-        self.pty_output.push_back(line);
-        if self.pty_output.len() > PTY_MAX_LINES {
-            self.pty_output.pop_front();
-        }
-    }
-    pub(crate) fn pty_start(&mut self) -> Task<Message> {
-        match pty::spawn_pty(&self.cwd) {
-            Ok((session, stream)) => {
-                self.pty_session = Some(session);
-                self.pty_output.clear();
-                self.status = "터미널 시작됨".into();
-                Task::run(stream, |event| match event {
-                    pty::PtyEvent::Line(l) => Message::PtyLine(l),
-                    pty::PtyEvent::Exited => Message::PtyExited,
-                })
-            }
-            Err(e) => {
-                self.status = format!("터미널 시작 실패: {e}");
-                Task::none()
-            }
-        }
-    }
-    pub(crate) fn on_pty_line(&mut self, line: String) -> Task<Message> {
-        let clean = pty::strip_ansi(&line);
-        if !clean.trim().is_empty() {
-            self.push_pty_line(clean);
-        }
-        Task::none()
-    }
-    pub(crate) fn on_pty_exited(&mut self) -> Task<Message> {
-        self.pty_session = None;
-        self.push_pty_line("-- 셸 종료 --".into());
-        self.status = "터미널 종료됨".into();
-        Task::none()
     }
     pub(crate) fn pick_attachment(&self) -> Task<Message> {
         let cwd = self.cwd.clone();

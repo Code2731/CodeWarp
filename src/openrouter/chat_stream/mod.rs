@@ -1,14 +1,16 @@
-// openrouter/chat_stream.rs — SSE streaming chat (openrouter child module)
+// openrouter/chat_stream — SSE streaming chat (openrouter child module)
 use std::sync::Arc;
 
 use futures_util::{Stream, StreamExt};
 
-use super::api_types::{apply_compat_auth_headers, fetch_non_stream_fallback, http_client};
+use super::api_types::http_client;
 use super::parse::{
     consume_sse_line, extract_non_stream_content, extract_plain_stream_token, extract_stream_text,
-    flush_pending_sse_data, parse_stream_chunks,
+    parse_stream_chunks,
 };
 use super::types::{ChatEvent, ChatMessage, ChatRequest};
+
+mod helpers;
 
 pub fn chat_stream(
     base_url: String,
@@ -34,17 +36,16 @@ pub fn chat_stream(
         };
 
         let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-        let mut req = client.post(&endpoint).json(&body);
-        if base_url.contains("openrouter.ai") {
-            req = req
-                .header("HTTP-Referer", "https://codewarp.app")
-                .header("X-Title", "CodeWarp");
-        }
-        req = apply_compat_auth_headers(req, &base_url, api_key.as_deref());
-
         const MAX_RETRIES: u32 = 3;
         let mut attempt = 0u32;
         let resp = loop {
+            let mut req = client.post(&endpoint).json(&body);
+            if base_url.contains("openrouter.ai") {
+                req = req
+                    .header("HTTP-Referer", "https://codewarp.app")
+                    .header("X-Title", "CodeWarp");
+            }
+            req = super::api_types::apply_compat_auth_headers(req, &base_url, api_key.as_deref());
             match req.send().await {
                 Ok(r) if r.status().is_success() => break r,
                 Ok(r) => {
@@ -54,13 +55,6 @@ pub fn chat_stream(
                         let delay = std::time::Duration::from_secs(1 << attempt);
                         tokio::time::sleep(delay).await;
                         attempt += 1;
-                        req = client.post(&endpoint).json(&body);
-                        if base_url.contains("openrouter.ai") {
-                            req = req
-                                .header("HTTP-Referer", "https://codewarp.app")
-                                .header("X-Title", "CodeWarp");
-                        }
-                        req = apply_compat_auth_headers(req, &base_url, api_key.as_deref());
                         continue;
                     }
                     yield ChatEvent::Error(format!("OpenRouter {}: {}", status, text));
@@ -71,13 +65,6 @@ pub fn chat_stream(
                         let delay = std::time::Duration::from_secs(1 << attempt);
                         tokio::time::sleep(delay).await;
                         attempt += 1;
-                        req = client.post(&endpoint).json(&body);
-                        if base_url.contains("openrouter.ai") {
-                            req = req
-                                .header("HTTP-Referer", "https://codewarp.app")
-                                .header("X-Title", "CodeWarp");
-                        }
-                        req = apply_compat_auth_headers(req, &base_url, api_key.as_deref());
                         continue;
                     }
                     yield ChatEvent::Error(e.to_string());
@@ -125,21 +112,12 @@ pub fn chat_stream(
                         }
                     }
                     if !emitted_any_token {
-                        match fetch_non_stream_fallback(
-                            &client,
-                            &endpoint,
-                            &base_url,
-                            api_key.as_deref(),
-                            &model,
-                            &messages,
-                            tools.as_ref(),
-                        )
-                        .await
-                        {
-                            Ok(Some(content)) if !content.is_empty() => {
-                                yield ChatEvent::Token(content);
-                            }
-                            Ok(_) => {}
+                        match helpers::fallback_to_non_stream(
+                            &client, &endpoint, &base_url, api_key.as_deref(),
+                            &model, &messages, tools.as_ref(),
+                        ).await {
+                            Ok(Some(content)) => yield ChatEvent::Token(content),
+                            Ok(None) => {}
                             Err(e) => {
                                 yield ChatEvent::Error(e);
                                 return;
@@ -195,65 +173,11 @@ pub fn chat_stream(
             }
         }
 
-        if !buffer.trim().is_empty() {
-            for line in buffer.lines() {
-                let Some(payload) = consume_sse_line(line, &mut pending_sse_data) else { continue };
-                if payload.trim() == "[DONE]" {
-                    continue;
-                }
-                let parsed_chunks = parse_stream_chunks(&payload);
-                if parsed_chunks.is_empty() {
-                    if let Some(text) = extract_plain_stream_token(&payload) {
-                        emitted_any_token = true;
-                        yield ChatEvent::Token(text);
-                    }
-                    continue;
-                }
-                for parsed in parsed_chunks {
-                    if generation_id.is_none() {
-                        if let Some(id) = parsed.id {
-                            generation_id = Some(id);
-                        }
-                    }
-                    for choice in parsed.choices {
-                        if let Some(reason) = choice.finish_reason.as_ref() {
-                            last_finish_reason = Some(reason.clone());
-                        }
-                        if let Some(text) = extract_stream_text(&choice) {
-                            emitted_any_token = true;
-                            yield ChatEvent::Token(text);
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(payload) = flush_pending_sse_data(&mut pending_sse_data) {
-            if payload.trim() != "[DONE]" {
-                let parsed_chunks = parse_stream_chunks(&payload);
-                if parsed_chunks.is_empty() {
-                    if let Some(text) = extract_plain_stream_token(&payload) {
-                        emitted_any_token = true;
-                        yield ChatEvent::Token(text);
-                    }
-                }
-                for parsed in parsed_chunks {
-                    if generation_id.is_none() {
-                        if let Some(id) = parsed.id {
-                            generation_id = Some(id);
-                        }
-                    }
-                    for choice in parsed.choices {
-                        if let Some(reason) = choice.finish_reason.as_ref() {
-                            last_finish_reason = Some(reason.clone());
-                        }
-                        if let Some(text) = extract_stream_text(&choice) {
-                            emitted_any_token = true;
-                            yield ChatEvent::Token(text);
-                        }
-                    }
-                }
-            }
+        for event in helpers::process_leftover_buffer(
+            &buffer, &mut pending_sse_data,
+            &mut generation_id, &mut last_finish_reason, &mut emitted_any_token,
+        ) {
+            yield event;
         }
 
         if !emitted_any_token {
@@ -266,21 +190,12 @@ pub fn chat_stream(
         }
 
         if !emitted_any_token {
-            match fetch_non_stream_fallback(
-                &client,
-                &endpoint,
-                &base_url,
-                api_key.as_deref(),
-                &model,
-                &messages,
-                tools.as_ref(),
-            )
-            .await
-            {
-                Ok(Some(content)) if !content.is_empty() => {
-                    yield ChatEvent::Token(content);
-                }
-                Ok(_) => {}
+            match helpers::fallback_to_non_stream(
+                &client, &endpoint, &base_url, api_key.as_deref(),
+                &model, &messages, tools.as_ref(),
+            ).await {
+                Ok(Some(content)) => yield ChatEvent::Token(content),
+                Ok(None) => {}
                 Err(e) => {
                     yield ChatEvent::Error(e);
                     return;

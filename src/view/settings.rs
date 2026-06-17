@@ -132,7 +132,7 @@ impl App {
             mcp_health,
             local_model_count,
         );
-        let (summary, active_header, active_action_hint) =
+        let (summary, active_panel) =
             self.view_settings_status_panel(active_health, local_model_count);
 
         let scroll_body = container(
@@ -141,8 +141,7 @@ impl App {
                 tabs,
                 summary,
                 Space::new().height(Length::Fixed(8.0)),
-                active_header,
-                active_action_hint,
+                active_panel,
                 active_section,
             ]
             .spacing(10)

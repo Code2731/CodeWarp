@@ -11,8 +11,11 @@ mod humanize_tests;
 mod parse;
 mod parse_sse;
 #[cfg(test)]
+mod sse_tests;
+#[cfg(test)]
 mod tests;
 mod types;
+mod types_chunk;
 
 pub use api::{get_account_info, get_generation, list_models};
 pub use api_types::{AuthKeyData, GenerationData};

@@ -9,6 +9,7 @@ mod humanize;
 #[cfg(test)]
 mod humanize_tests;
 mod parse;
+mod parse_sse;
 #[cfg(test)]
 mod tests;
 mod types;

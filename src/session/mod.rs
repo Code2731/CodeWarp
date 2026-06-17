@@ -1,5 +1,7 @@
 mod favorites;
 mod persist;
+#[cfg(test)]
+mod persist_tests;
 mod recovery;
 mod usage;
 

@@ -5,7 +5,7 @@ use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Font, Length};
 
 impl App {
-    pub(crate) fn view_sidebar_context_area(&self) -> Element<'_, Message> {
+    pub(super) fn view_sidebar_context_area(&self) -> Element<'_, Message> {
         let context_total_bytes: u64 = self
             .attached_files
             .iter()

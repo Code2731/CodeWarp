@@ -1,14 +1,14 @@
 // hf/helpers.rs — Revision & URL helpers (hf child module)
 use crate::hf::types::HF_BASE;
 
-pub(crate) fn normalize_revision_name(s: &str) -> String {
+pub(super) fn normalize_revision_name(s: &str) -> String {
     s.chars()
         .filter(|c| c.is_ascii_alphanumeric())
         .flat_map(|c| c.to_lowercase())
         .collect()
 }
 
-pub(crate) fn extract_bpw_value(s: &str) -> Option<f32> {
+pub(super) fn extract_bpw_value(s: &str) -> Option<f32> {
     let lower = s.to_lowercase();
     let bpw_idx = lower.find("bpw")?;
     let prefix = &lower[..bpw_idx];
@@ -35,7 +35,7 @@ pub(crate) fn extract_bpw_value(s: &str) -> Option<f32> {
     prefix[start..end].parse::<f32>().ok()
 }
 
-pub(crate) fn choose_revision_fallback(requested: &str, branches: &[String]) -> Option<String> {
+pub(super) fn choose_revision_fallback(requested: &str, branches: &[String]) -> Option<String> {
     if branches.is_empty() {
         return None;
     }
@@ -83,7 +83,7 @@ pub(crate) fn choose_revision_fallback(requested: &str, branches: &[String]) -> 
         .or_else(|| branches.first().cloned())
 }
 
-pub(crate) fn format_branch_suggestions(branches: &[String], limit: usize) -> String {
+pub(super) fn format_branch_suggestions(branches: &[String], limit: usize) -> String {
     let shown: Vec<&str> = branches
         .iter()
         .map(|b| b.trim())
@@ -100,7 +100,7 @@ pub(crate) fn format_branch_suggestions(branches: &[String], limit: usize) -> St
     text
 }
 
-pub(crate) fn annotate_revision_not_found_error(
+pub(super) fn annotate_revision_not_found_error(
     base: &str,
     requested: &str,
     branches: &[String],
@@ -115,7 +115,7 @@ pub(crate) fn annotate_revision_not_found_error(
     )
 }
 
-pub(crate) fn encode_path_segment(input: &str) -> String {
+pub(super) fn encode_path_segment(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for b in input.bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
@@ -127,7 +127,7 @@ pub(crate) fn encode_path_segment(input: &str) -> String {
     out
 }
 
-pub(crate) fn encode_repo_file_path(input: &str) -> String {
+pub(super) fn encode_repo_file_path(input: &str) -> String {
     input
         .split('/')
         .map(encode_path_segment)
@@ -135,7 +135,7 @@ pub(crate) fn encode_repo_file_path(input: &str) -> String {
         .join("/")
 }
 
-pub(crate) fn model_info_url(repo_id: &str, rev: &str) -> String {
+pub(super) fn model_info_url(repo_id: &str, rev: &str) -> String {
     if rev == "main" {
         format!("{}/api/models/{}", HF_BASE, repo_id)
     } else {
@@ -148,7 +148,7 @@ pub(crate) fn model_info_url(repo_id: &str, rev: &str) -> String {
     }
 }
 
-pub(crate) fn model_tree_url(repo_id: &str, rev: &str) -> String {
+pub(super) fn model_tree_url(repo_id: &str, rev: &str) -> String {
     format!(
         "{}/api/models/{}/tree/{}?recursive=true",
         HF_BASE,

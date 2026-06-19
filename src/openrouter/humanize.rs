@@ -1,5 +1,5 @@
 /// 연결/HTTP 에러 원문을 사용자 친화 actionable 메시지로 변환.
-pub fn humanize_error(raw: &str) -> String {
+pub(crate) fn humanize_error(raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
     if raw.contains("OpenRouter 401") || raw.contains("OpenRouter 403") {
         return "키 무효 — Settings에서 재발급/재입력".into();

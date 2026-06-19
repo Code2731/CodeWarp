@@ -1,7 +1,6 @@
-use super::ui::*;
+use crate::view::ui::*;
 use crate::*;
-use iced::widget::scrollable::Direction;
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
+use iced::widget::{button, column, container, row, text, text_input, Space};
 use iced::{Alignment, Element, Length, Theme};
 
 impl App {
@@ -55,94 +54,8 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
-        // @-mention 드롭다운 (show_mention 시 입력창 위에 표시)
-        let mention_popup: Element<Message> = if self.show_mention {
-            let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
-            if filtered.is_empty() {
-                Space::new().height(Length::Shrink).into()
-            } else {
-                let mut list = column![].spacing(2);
-                for (i, path) in filtered.iter().enumerate() {
-                    let label = path.to_string_lossy().to_string();
-                    let is_selected = i == self.mention_selected;
-                    let btn = button(text(label).size(FS_BODY))
-                        .on_press(Message::MentionConfirm)
-                        .padding([6, 10])
-                        .width(Length::Fill)
-                        .style(if is_selected {
-                            primary_btn
-                        } else {
-                            secondary_btn
-                        });
-                    list = list.push(btn);
-                }
-                container(
-                    scrollable(list)
-                        .direction(Direction::Vertical(app_vscrollbar()))
-                        .height(Length::Shrink),
-                )
-                .padding([4, 0])
-                .style(|theme: &Theme| {
-                    let p = theme.extended_palette();
-                    container::Style {
-                        background: Some(p.background.strong.color.into()),
-                        border: iced::Border {
-                            color: p.primary.base.color,
-                            width: 1.0,
-                            radius: 10.0.into(),
-                        },
-                        ..Default::default()
-                    }
-                })
-                .into()
-            }
-        } else {
-            Space::new().height(Length::Shrink).into()
-        };
-
-        // 첨부 파일 칩 행 (attached_files가 있을 때만)
-        let attach_row: Element<Message> = if !self.attached_files.is_empty() {
-            let mut chips = row![].spacing(6).align_y(Alignment::Center);
-            for (i, (path, _)) in self.attached_files.iter().enumerate() {
-                let rel_path = path.strip_prefix(&self.cwd).unwrap_or(path.as_path());
-                let name = shorten_tail(&rel_path.display().to_string(), 36);
-                chips = chips.push(
-                    container(
-                        row![
-                            text(format!("📄 {name}")).size(FS_LABEL),
-                            button(text("✕").size(FS_MICRO))
-                                .on_press(Message::RemoveAttachment(i))
-                                .padding([1, 4])
-                                .style(secondary_btn),
-                        ]
-                        .spacing(4)
-                        .align_y(Alignment::Center),
-                    )
-                    .padding([3, 8])
-                    .style(|theme: &Theme| {
-                        let p = theme.extended_palette();
-                        container::Style {
-                            background: Some(p.background.strong.color.into()),
-                            border: iced::Border {
-                                color: p.primary.weak.color,
-                                width: 1.0,
-                                radius: 12.0.into(),
-                            },
-                            ..Default::default()
-                        }
-                    }),
-                );
-            }
-            container(
-                scrollable(chips)
-                    .direction(Direction::Horizontal(hscrollbar()))
-                    .width(Length::Fill),
-            )
-            .padding([4, 0])
-            .into()
-        } else {
-            Space::new().height(Length::Shrink).into()
-        };
+        let mention_popup = self.view_mention_popup();
+        let attach_row = self.view_attach_row();
 
         let action_btn: Element<Message> =
             if self.streaming_block_id.is_some() || self.compare_pending {

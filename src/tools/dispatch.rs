@@ -3,7 +3,7 @@ use std::path::Path;
 use super::args::{GlobArgs, GrepArgs, ReadFileArgs, RunCommandArgs, WriteFileArgs};
 use super::exec;
 
-pub fn dispatch(name: &str, arguments_json: &str, cwd: &Path) -> String {
+pub(crate) fn dispatch(name: &str, arguments_json: &str, cwd: &Path) -> String {
     match name {
         "read_file" => match serde_json::from_str::<ReadFileArgs>(arguments_json) {
             Ok(args) => match exec::read_file(cwd, &args.path) {

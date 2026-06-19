@@ -2,7 +2,7 @@ use crate::*;
 use futures_util::StreamExt;
 use std::sync::Arc;
 
-pub(crate) async fn collect_chat_text(
+pub(super) async fn collect_chat_text(
     base_url: String,
     api_key: Option<String>,
     model: String,

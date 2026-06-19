@@ -1,5 +1,5 @@
-use super::settings_health::TabHealth;
-use super::ui::*;
+use super::TabHealth;
+use crate::view::ui::*;
 use crate::*;
 use iced::widget::{button, column, container, row, text, Space};
 use iced::{Alignment, Element, Length, Theme};

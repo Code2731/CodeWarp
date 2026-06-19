@@ -1,6 +1,6 @@
 use super::types::StreamChunk;
 
-pub(crate) fn normalize_stream_payload_line(line: &str) -> Option<&str> {
+pub(super) fn normalize_stream_payload_line(line: &str) -> Option<&str> {
     let trimmed = line.trim();
     let payload = trimmed
         .strip_prefix("data:")
@@ -13,7 +13,7 @@ pub(crate) fn normalize_stream_payload_line(line: &str) -> Option<&str> {
     }
 }
 
-pub(crate) fn flush_pending_sse_data(pending_data: &mut String) -> Option<String> {
+pub(super) fn flush_pending_sse_data(pending_data: &mut String) -> Option<String> {
     if pending_data.is_empty() {
         return None;
     }
@@ -26,7 +26,7 @@ pub(crate) fn flush_pending_sse_data(pending_data: &mut String) -> Option<String
     }
 }
 
-pub(crate) fn consume_sse_line(line: &str, pending_data: &mut String) -> Option<String> {
+pub(super) fn consume_sse_line(line: &str, pending_data: &mut String) -> Option<String> {
     let trimmed = line.trim_end_matches('\r').trim();
     if trimmed.is_empty() {
         return flush_pending_sse_data(pending_data);
@@ -54,7 +54,7 @@ pub(crate) fn consume_sse_line(line: &str, pending_data: &mut String) -> Option<
     normalize_stream_payload_line(trimmed).map(str::to_string)
 }
 
-pub(crate) fn parse_stream_chunks(payload: &str) -> Vec<StreamChunk> {
+pub(super) fn parse_stream_chunks(payload: &str) -> Vec<StreamChunk> {
     let trimmed = payload.trim();
     if trimmed.is_empty() {
         return Vec::new();
@@ -89,7 +89,7 @@ pub(crate) fn parse_stream_chunks(payload: &str) -> Vec<StreamChunk> {
     out
 }
 
-pub(crate) fn extract_plain_stream_token(payload: &str) -> Option<String> {
+pub(super) fn extract_plain_stream_token(payload: &str) -> Option<String> {
     let text = payload.trim();
     if text.is_empty() {
         return None;

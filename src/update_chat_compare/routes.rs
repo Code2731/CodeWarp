@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone)]
-pub(crate) struct ChatRoute {
+pub(super) struct ChatRoute {
     pub(crate) label: String,
     pub(crate) base_url: String,
     pub(crate) api_key: Option<String>,
@@ -9,7 +9,7 @@ pub(crate) struct ChatRoute {
 }
 
 impl App {
-    pub(crate) fn compare_routes(&self) -> Result<(ChatRoute, ChatRoute), String> {
+    pub(super) fn compare_routes(&self) -> Result<(ChatRoute, ChatRoute), String> {
         let selected = self.selected_option();
         let openrouter_model = selected
             .filter(|o| o.provider == LlmProvider::OpenRouter)

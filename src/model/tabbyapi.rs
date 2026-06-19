@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 /// 모델 매니저 다운로드 폴더 안의 받은 모델(서브폴더) 리스트.
 /// 빈 폴더는 모델 아님 — skip.
-pub(crate) fn has_model_weight_file(dir: &Path) -> bool {
+pub(super) fn has_model_weight_file(dir: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return false;
     };
@@ -35,11 +35,11 @@ pub(crate) fn has_model_weight_file(dir: &Path) -> bool {
     false
 }
 
-pub(crate) fn is_valid_tabbyapi_model_dir_direct(path: &Path) -> bool {
+pub(super) fn is_valid_tabbyapi_model_dir_direct(path: &Path) -> bool {
     path.is_dir() && path.join("config.json").is_file() && has_model_weight_file(path)
 }
 
-pub(crate) fn tabbyapi_direct_model_children(path: &Path) -> Vec<PathBuf> {
+pub(super) fn tabbyapi_direct_model_children(path: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(path) else {
         return Vec::new();
     };
@@ -50,7 +50,7 @@ pub(crate) fn tabbyapi_direct_model_children(path: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-pub(crate) fn extract_bpw_hint(text: &str) -> Option<String> {
+pub(super) fn extract_bpw_hint(text: &str) -> Option<String> {
     let lower = text.to_ascii_lowercase();
     let bytes = lower.as_bytes();
     for (idx, _) in lower.match_indices("bpw") {
@@ -70,7 +70,7 @@ pub(crate) fn extract_bpw_hint(text: &str) -> Option<String> {
     None
 }
 
-pub(crate) fn resolve_tabbyapi_model_dir_with_hint(
+pub(super) fn resolve_tabbyapi_model_dir_with_hint(
     path: &Path,
     hint: Option<&str>,
 ) -> Option<PathBuf> {
@@ -110,7 +110,7 @@ pub(crate) fn resolve_tabbyapi_model_dir(path: &Path) -> Option<PathBuf> {
     resolve_tabbyapi_model_dir_with_hint(path, None)
 }
 
-pub(crate) fn has_tabbyapi_model_dir(path: &Path) -> bool {
+pub(super) fn has_tabbyapi_model_dir(path: &Path) -> bool {
     is_valid_tabbyapi_model_dir_direct(path) || !tabbyapi_direct_model_children(path).is_empty()
 }
 
@@ -121,11 +121,11 @@ pub(crate) fn resolve_tabbyapi_model_dir_for_folder(
     resolve_tabbyapi_model_dir_with_hint(path, Some(folder_name))
 }
 
-pub(crate) fn is_downloaded_exl2_root(path: &Path) -> bool {
+pub(super) fn is_downloaded_exl2_root(path: &Path) -> bool {
     has_tabbyapi_model_dir(path)
 }
 
-pub(crate) fn is_downloaded_model_dir(path: &Path) -> bool {
+pub(super) fn is_downloaded_model_dir(path: &Path) -> bool {
     path.is_dir() && has_model_weight_file(path)
 }
 
@@ -160,7 +160,7 @@ pub(crate) fn downloaded_model_path(dir: &str, folder_name: &str) -> PathBuf {
     resolve_user_path(dir).join(folder_name)
 }
 
-pub(crate) fn exl2_repo_model_stem(repo_id: &str) -> Option<String> {
+pub(super) fn exl2_repo_model_stem(repo_id: &str) -> Option<String> {
     let name = repo_id.rsplit('/').next()?.trim();
     if name.is_empty() {
         return None;

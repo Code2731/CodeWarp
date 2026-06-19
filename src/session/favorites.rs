@@ -4,7 +4,7 @@ fn favorites_path() -> Option<PathBuf> {
     dirs::data_local_dir().map(|d| d.join("codewarp").join("favorites.json"))
 }
 
-pub fn read_favorites() -> Vec<String> {
+pub(crate) fn read_favorites() -> Vec<String> {
     let Some(path) = favorites_path() else {
         return Vec::new();
     };
@@ -14,7 +14,7 @@ pub fn read_favorites() -> Vec<String> {
     serde_json::from_str(&json).unwrap_or_default()
 }
 
-pub fn write_favorites(favs: &[String]) -> Result<(), String> {
+pub(crate) fn write_favorites(favs: &[String]) -> Result<(), String> {
     let path = favorites_path().ok_or_else(|| "data_local_dir 없음".to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

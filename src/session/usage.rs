@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ModelUsage {
+pub(crate) struct ModelUsage {
     pub total_cost: f64,
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
@@ -12,7 +12,7 @@ pub struct ModelUsage {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct UsageStore {
+pub(crate) struct UsageStore {
     pub by_model: BTreeMap<String, ModelUsage>,
 }
 
@@ -20,7 +20,7 @@ fn usage_path() -> Option<PathBuf> {
     dirs::data_local_dir().map(|d| d.join("codewarp").join("usage.json"))
 }
 
-pub fn load_usage() -> UsageStore {
+pub(crate) fn load_usage() -> UsageStore {
     let Some(path) = usage_path() else {
         return UsageStore::default();
     };
@@ -30,7 +30,7 @@ pub fn load_usage() -> UsageStore {
     serde_json::from_str(&json).unwrap_or_default()
 }
 
-pub fn save_usage(usage: &UsageStore) -> Result<(), String> {
+pub(crate) fn save_usage(usage: &UsageStore) -> Result<(), String> {
     let path = usage_path().ok_or_else(|| "data_local_dir 없음".to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

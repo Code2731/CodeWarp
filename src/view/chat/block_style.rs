@@ -1,7 +1,7 @@
 use iced::widget::container;
 use iced::Theme;
 
-pub(crate) fn block_container_style(
+pub(super) fn block_container_style(
     is_user: bool,
     is_error_assistant: bool,
 ) -> impl Fn(&Theme) -> container::Style {

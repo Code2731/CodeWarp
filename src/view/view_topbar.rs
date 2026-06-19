@@ -4,7 +4,7 @@ use iced::widget::{button, checkbox, combo_box, container, row, text, Space};
 use iced::{Alignment, Element, Length};
 
 impl App {
-    pub(crate) fn view_topbar(&self) -> Element<'_, Message> {
+    pub(super) fn view_topbar(&self) -> Element<'_, Message> {
         let model_picker: Element<Message> = if self.model_ids.is_empty() {
             container(text("모델 없음").size(FS_BODY))
                 .padding([6, 10])

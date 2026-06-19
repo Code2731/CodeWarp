@@ -4,7 +4,7 @@ use iced::widget::{container, row, text, Space};
 use iced::{Alignment, Element, Font, Length, Theme};
 
 impl App {
-    pub(crate) fn view_statusbar(&self) -> Element<'_, Message> {
+    pub(super) fn view_statusbar(&self) -> Element<'_, Message> {
         let model_label = self
             .selected_model
             .clone()

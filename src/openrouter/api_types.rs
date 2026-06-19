@@ -4,18 +4,18 @@ use serde::Deserialize;
 use super::types::ChatMessage;
 
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct AuthKeyData {
+pub(crate) struct AuthKeyData {
     pub usage: Option<f64>,
     pub limit: Option<f64>,
 }
 
 #[derive(Deserialize)]
-pub(crate) struct AuthKeyResponse {
+pub(super) struct AuthKeyResponse {
     pub(crate) data: AuthKeyData,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct GenerationData {
+pub(crate) struct GenerationData {
     pub model: Option<String>,
     pub total_cost: Option<f64>,
     pub native_tokens_prompt: Option<u64>,
@@ -23,18 +23,18 @@ pub struct GenerationData {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct GenerationResponse {
+pub(super) struct GenerationResponse {
     pub(crate) data: GenerationData,
 }
 
-pub(crate) fn http_client() -> Result<reqwest::Client, String> {
+pub(super) fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent("CodeWarp/0.2.0")
         .build()
         .map_err(|e| format!("HTTP client 생성 실패: {e}"))
 }
 
-pub(crate) fn apply_compat_auth_headers(
+pub(super) fn apply_compat_auth_headers(
     mut req: reqwest::RequestBuilder,
     base_url: &str,
     api_key: Option<&str>,
@@ -49,7 +49,7 @@ pub(crate) fn apply_compat_auth_headers(
     req
 }
 
-pub(crate) async fn fetch_non_stream_fallback(
+pub(super) async fn fetch_non_stream_fallback(
     client: &reqwest::Client,
     endpoint: &str,
     base_url: &str,

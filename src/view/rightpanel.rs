@@ -5,7 +5,7 @@ use iced::widget::{column, container, scrollable, text, Space};
 use iced::{Element, Font, Length, Theme};
 
 impl App {
-    pub(crate) fn view_rightpanel(&self) -> Element<'_, Message> {
+    pub(super) fn view_rightpanel(&self) -> Element<'_, Message> {
         // 세션 통계 — blocks/conversation에서 derive
         let user_msg_count = self
             .conversation

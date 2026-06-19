@@ -25,7 +25,7 @@ fn normalize_base(url: &str) -> String {
 
 /// `chat_stream`에 넘길 base URL ("/v1" 접두 포함).
 /// 사용자가 `/v1`을 이미 입력했으면 중복 추가하지 않음.
-pub fn chat_base(url: &str) -> String {
+pub(crate) fn chat_base(url: &str) -> String {
     let base = normalize_base(url);
     if base.ends_with("/v1") {
         base
@@ -38,7 +38,7 @@ pub fn chat_base(url: &str) -> String {
 /// `lower.contains`: OS/네트워크 에러 — 대소문자 OS별 차이 → 소문자 비교.
 /// `raw.contains`: 이 모듈의 `format!("Tabby {}: {}", status, body)` 출력 매칭 →
 ///                 포맷 변경 시 둘이 같이 움직여야 함 (KEEP IN SYNC with `list_models`).
-pub fn humanize_error(raw: &str) -> String {
+pub(crate) fn humanize_error(raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
     if lower.contains("relative url without a base") || lower.contains("builder error") {
         return "URL 형식 오류 — http://localhost:8080 처럼 스킴(http:// 또는 https://) 포함"
@@ -131,7 +131,10 @@ fn parse_model_ids(body: &str) -> Result<Vec<String>, String> {
 
 /// `GET {base}/v1/models` — Tabby가 서빙 중인 모델 ID 리스트.
 /// 연결 실패 시 Err. 빈 배열은 Ok(vec![])로 반환 (서버는 살아있지만 모델 없음).
-pub async fn list_models(base_url: String, token: Option<String>) -> Result<Vec<String>, String> {
+pub(crate) async fn list_models(
+    base_url: String,
+    token: Option<String>,
+) -> Result<Vec<String>, String> {
     // chat_base와 동일하게 /v1 중복 방지
     let v1 = chat_base(&base_url);
     let url = format!("{}/models", v1);

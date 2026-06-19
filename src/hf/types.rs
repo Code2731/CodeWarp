@@ -31,7 +31,7 @@ pub(crate) struct RepoBranch {
 }
 
 #[derive(Debug, Clone)]
-pub enum DownloadEvent {
+pub(crate) enum DownloadEvent {
     Started {
         total_files: usize,
     },

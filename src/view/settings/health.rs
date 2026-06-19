@@ -1,6 +1,6 @@
-pub(crate) use super::settings_health_tab::TabHealth;
+use super::TabHealth;
 
-use super::ui::*;
+use crate::view::ui::*;
 use crate::*;
 use iced::widget::{button, column, row, text};
 use iced::{Alignment, Element, Length, Theme};

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::openrouter::ChatMessage;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PersistedBlock {
+pub(crate) struct PersistedBlock {
     pub id: u64,
     pub role: String,
     pub content: String,
@@ -14,7 +14,7 @@ pub struct PersistedBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PersistedSessionData {
+pub(crate) struct PersistedSessionData {
     pub id: u64,
     pub title: String,
     pub conversation: Vec<ChatMessage>,
@@ -25,13 +25,13 @@ pub struct PersistedSessionData {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct PersistedAllSessions {
+pub(crate) struct PersistedAllSessions {
     pub sessions: Vec<PersistedSessionData>,
     pub active_idx: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct OldPersistedSession {
+pub(crate) struct OldPersistedSession {
     pub conversation: Vec<ChatMessage>,
     pub blocks: Vec<PersistedBlock>,
     pub next_block_id: u64,
@@ -41,12 +41,12 @@ fn sessions_path() -> Option<PathBuf> {
     dirs::data_local_dir().map(|d| d.join("codewarp").join("sessions.json"))
 }
 
-pub fn load_all() -> PersistedAllSessions {
+pub(crate) fn load_all() -> PersistedAllSessions {
     let dir = dirs::data_local_dir().map(|d| d.join("codewarp"));
     load_all_at(dir.as_deref())
 }
 
-pub fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions {
+pub(crate) fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions {
     if let Some(d) = dir {
         let path = d.join("sessions.json");
         if let Ok(json) = std::fs::read_to_string(&path) {
@@ -90,7 +90,7 @@ pub fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions {
     }
 }
 
-pub fn save_all(p: &PersistedAllSessions) -> Result<(), String> {
+pub(crate) fn save_all(p: &PersistedAllSessions) -> Result<(), String> {
     let path = sessions_path().ok_or_else(|| "data_local_dir 없음".to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

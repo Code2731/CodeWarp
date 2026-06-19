@@ -1,5 +1,5 @@
 /// HF 원문 오류를 사용자 행동 가능한 메시지로 변환.
-pub fn humanize_error(raw: &str) -> String {
+pub(crate) fn humanize_error(raw: &str) -> String {
     let lc = raw.to_lowercase();
 
     if contains_status(raw, 401) || contains_status(raw, 403) {
@@ -112,7 +112,7 @@ fn merge_hint(hints: &mut Vec<String>, candidate: String) {
     hints.push(candidate);
 }
 
-pub fn compose_hf_download_error(raw: &str) -> String {
+pub(crate) fn compose_hf_download_error(raw: &str) -> String {
     let humanized = humanize_error(raw);
     let mut hints: Vec<String> = Vec::new();
     for marker in HF_HINT_MARKERS {

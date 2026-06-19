@@ -1,4 +1,4 @@
-use super::settings_health::TabHealth;
+﻿use super::settings::TabHealth;
 use super::ui::*;
 use crate::*;
 use iced::widget::scrollable::Direction;
@@ -23,7 +23,7 @@ impl App {
         let header = row![
             text("Settings").size(18).font(bold_font()),
             Space::new().width(Length::Fill),
-            button(text("닫기").size(FS_BODY))
+            button(text("?リ린").size(FS_BODY))
                 .on_press(Message::CloseSettings)
                 .padding([4, 12])
                 .style(secondary_btn),

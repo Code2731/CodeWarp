@@ -4,7 +4,7 @@ use super::api_types::{
 };
 use super::types::{ModelsResponse, OpenRouterModel};
 
-pub async fn get_generation(api_key: String, id: String) -> Result<GenerationData, String> {
+pub(crate) async fn get_generation(api_key: String, id: String) -> Result<GenerationData, String> {
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     let client = http_client()?;
     let resp = client
@@ -24,7 +24,7 @@ pub async fn get_generation(api_key: String, id: String) -> Result<GenerationDat
     Ok(parsed.data)
 }
 
-pub async fn get_account_info(api_key: String) -> Result<AuthKeyData, String> {
+pub(crate) async fn get_account_info(api_key: String) -> Result<AuthKeyData, String> {
     let client = http_client()?;
     let resp = client
         .get("https://openrouter.ai/api/v1/auth/key")
@@ -43,7 +43,7 @@ pub async fn get_account_info(api_key: String) -> Result<AuthKeyData, String> {
     Ok(parsed.data)
 }
 
-pub async fn list_models(api_key: String) -> Result<Vec<OpenRouterModel>, String> {
+pub(crate) async fn list_models(api_key: String) -> Result<Vec<OpenRouterModel>, String> {
     let client = http_client()?;
     let resp = client
         .get("https://openrouter.ai/api/v1/models")

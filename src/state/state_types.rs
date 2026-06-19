@@ -1,5 +1,6 @@
 use super::*;
 
+#[derive(Debug)]
 pub(crate) struct HfDownload {
     pub(crate) folder_name: String,
     pub(crate) total_files: usize,
@@ -9,6 +10,7 @@ pub(crate) struct HfDownload {
     pub(crate) file_bytes_total: Option<u64>,
 }
 
+#[derive(Debug)]
 pub(crate) struct UiState {
     pub(crate) show_settings: bool,
     pub(crate) settings_tab: SettingsTab,
@@ -31,6 +33,7 @@ impl UiState {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct ModelFilterState {
     pub(crate) filter_coding: bool,
     pub(crate) filter_reasoning: bool,
@@ -53,7 +56,7 @@ impl ModelFilterState {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct McpInputState {
     pub(crate) name_input: String,
     pub(crate) command_input: String,

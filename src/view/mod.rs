@@ -1,40 +1,22 @@
 // view.rs — App 뷰 메서드 (main.rs child module)
 use super::*;
 mod chat;
-mod chat_block;
-mod chat_block_item;
-mod chat_block_style;
-mod chat_empty;
 mod pty;
 mod rightpanel;
 mod settings;
-mod settings_endpoint;
-mod settings_health;
-mod settings_health_panel;
-mod settings_health_panel_badge;
-mod settings_health_tab;
-mod settings_mcp;
-mod settings_models;
-mod settings_models_exl2;
-mod settings_models_presets;
-mod settings_provider;
-mod settings_runtime;
-mod settings_runtime_actions;
-mod settings_runtime_binary;
-mod settings_runtime_model;
+mod settings_view;
 mod sidebar;
 mod statusbar;
 mod ui;
 mod view_confirm;
-mod view_confirm_full;
+mod view_palette;
 mod view_topbar;
 mod view_viewer;
 
-use iced::widget::scrollable::Direction;
-use iced::widget::{button, column, container, row, scrollable, stack, text, text_input, Space};
+use iced::widget::{column, container, row, stack, text};
 use iced::{Element, Font, Length, Theme};
 pub(crate) use ui::*;
-pub(crate) use view_viewer::CodewarpViewer;
+use view_viewer::CodewarpViewer;
 
 /// 두 텍스트의 line-by-line diff를 색상 표시된 Element로 변환.
 /// 추가 라인은 녹색, 삭제 라인은 빨강, 동일 라인은 흐리게.
@@ -79,7 +61,7 @@ fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
 }
 
 /// 모달 오버레이: 반투명 백드롭 + 가운데 정렬된 콘텐츠 박스.
-/// content는 view_settings/view_write_confirm 같은 기존 화면 함수의 결과.
+/// content는 view_settings/view_palette 같은 기존 화면 함수의 결과.
 fn modal_overlay<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
     let modal_box = container(content)
         .padding(0)
@@ -148,70 +130,6 @@ impl App {
         col.push(statusbar)
             .width(Length::Fill)
             .height(Length::Fill)
-            .into()
-    }
-
-    fn view_command_palette(&self) -> Element<'_, Message> {
-        let header = text("명령 팔레트").size(18).font(bold_font());
-        let hint = column![
-            text("탐색  Esc 닫기 · Ctrl+K 토글").size(FS_LABEL),
-            text("작업  Ctrl+N 새 채팅 · Ctrl+, 설정").size(FS_LABEL),
-            text("모드  Ctrl+Shift+P 계획 · Ctrl+Shift+B 빌드").size(FS_LABEL),
-        ]
-        .spacing(2);
-        let input = text_input("명령 검색…", &self.ui.command_palette_input)
-            .on_input(Message::CommandPaletteChanged)
-            .on_submit(Message::ExecuteCommand(0))
-            .padding(10)
-            .size(FS_BODY)
-            .style(field_input);
-
-        let filtered = self.filtered_palette_commands();
-        let mut list = column![].spacing(4);
-        if filtered.is_empty() {
-            list = list.push(text("(매칭 없음)").size(FS_BODY));
-        } else {
-            for (i, cmd) in filtered.iter().enumerate() {
-                list = list.push(
-                    button(
-                        column![
-                            text(cmd.label).size(FS_SUBTITLE).font(semibold_font()),
-                            text(cmd.hint).size(FS_LABEL),
-                        ]
-                        .spacing(2),
-                    )
-                    .on_press(Message::ExecuteCommand(i))
-                    .padding([6, 10])
-                    .width(Length::Fill)
-                    .style(secondary_btn),
-                );
-            }
-        }
-
-        let body = column![
-            header,
-            hint,
-            Space::new().height(Length::Fixed(8.0)),
-            input,
-            Space::new().height(Length::Fixed(8.0)),
-            scrollable(list)
-                .direction(Direction::Vertical(app_vscrollbar(),))
-                .height(Length::Fixed(320.0)),
-            Space::new().height(Length::Fixed(8.0)),
-            row![
-                Space::new().width(Length::Fill),
-                button(text("닫기").size(FS_BODY))
-                    .on_press(Message::CloseCommandPalette)
-                    .padding([4, 12])
-                    .style(secondary_btn),
-            ],
-        ]
-        .spacing(4);
-
-        container(body)
-            .padding(20)
-            .width(Length::Fixed(560.0))
-            .style(panel_style)
             .into()
     }
 }

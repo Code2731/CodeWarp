@@ -169,65 +169,6 @@ impl App {
         }
     }
 
-    // ── Key persistence helpers ──────────────────────────────────
-
-    // ── Tabby connection helpers ──────────────────────────────────
-
-    // ── Inference/Model dir helpers ───────────────────────────────
-
-    // ── PTY helpers ───────────────────────────────────────────────
-
-    // ── Attachment helpers ────────────────────────────────────────
-
-    // ── Mention helpers ───────────────────────────────────────────
-
-    // ── Write confirm helpers ────────────────────────────────────
-
-    // ── HF token helpers ─────────────────────────────────────────
-
-    // ── HF preset helpers ────────────────────────────────────────
-
-    // ── File attachment result helpers ────────────────────────────
-
-    // ── Model select / account helpers ────────────────────────────
-
-    // ── Session lifecycle helpers ──────────────────────────────────
-
-    // ── MCP server helpers ────────────────────────────────────────
-
-    // ── Inference lifecycle helpers ────────────────────────────────
-
-    // ── Model dir / HF model helpers ──────────────────────────────
-
-    // ── Usage / write confirm helpers ──────────────────────────────
-
-    // ── Inference engine config helpers ───────────────────────────
-
-    // ── Tabby model fetch helpers ─────────────────────────────────
-
-    /// 현재 활성 필터/정렬을 적용해 model_options을 좁힌 결과.
-
-    /// 필터/즐겨찾기 변경 시 combo_box::State 재구성.
-
-    /// 현재 활성 세션 + 비활성 세션 모두를 디스크에 저장.
-
-    /// 현재 활성 세션 제목 자동 갱신 (첫 사용자 메시지 일부).
-
-    /// 현재 활성 세션을 inactive_sessions로 이동 (push 또는 update).
-
-    /// conversation 첫 위치에 cwd를 알려주는 system 메시지를 보장 (없으면 추가, 있으면 갱신).
-
-    /// pending_tool_calls를 conversation에 반영, 안전한 도구는 즉시 실행하고
-    /// mutating 도구가 있으면 사용자 승인 모달을 띄움. 모두 처리되면 새 chat_stream 트리거.
-
-    /// inference 서버 로그를 ring buffer에 push (cap 20).
-
-    /// 도구 실행 결과 chip 블록을 stream에 push (휘발성 — 세션 저장 안 됨).
-
-    /// 사용자 승인/거부 후 호출. true면 mutating 실행, false면 거부 결과를 conversation에 기록.
-
-    /// 누적된 conversation을 가지고 다음 chat_stream을 시작.
-
     pub(crate) fn subscription(&self) -> Subscription<Message> {
         let event_sub = iced::event::listen_with(on_event);
         let interval = if self.streaming_block_id.is_some() {

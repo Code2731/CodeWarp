@@ -2,9 +2,11 @@
 use super::*;
 
 mod state_new;
+mod state_restore;
 mod state_types;
 pub(crate) use state_types::*;
 
+#[derive(Debug)]
 pub(crate) struct InactiveSession {
     pub(crate) id: u64,
     pub(crate) title: String,

@@ -5,7 +5,7 @@ use iced::widget::{button, column, container, row, scrollable, text, text_input,
 use iced::{Alignment, Element, Font, Length};
 
 impl App {
-    pub(crate) fn view_pty_panel(&self) -> Element<'_, Message> {
+    pub(super) fn view_pty_panel(&self) -> Element<'_, Message> {
         // 헤더 행: 제목 + 버튼들
         let header = row![
             text("터미널").size(FS_SUBTITLE).font(semibold_font()),

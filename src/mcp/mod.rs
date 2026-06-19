@@ -3,7 +3,7 @@
 
 mod mcp_types;
 
-pub use mcp_types::*;
+pub(crate) use mcp_types::*;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
@@ -172,7 +172,7 @@ async fn read_response(
 }
 
 /// Spawn MCP server, call `tools/list`, return tool metadata.
-pub async fn list_tools(server: &McpServer) -> Result<Vec<McpTool>, String> {
+pub(crate) async fn list_tools(server: &McpServer) -> Result<Vec<McpTool>, String> {
     let result = rpc_call(&server.command, "tools/list", serde_json::json!({})).await?;
 
     let arr = result
@@ -204,7 +204,7 @@ pub async fn list_tools(server: &McpServer) -> Result<Vec<McpTool>, String> {
 }
 
 /// Spawn MCP server, call `tools/call`, return textual content.
-pub async fn call_tool(
+pub(crate) async fn call_tool(
     server: &McpServer,
     tool_name: &str,
     arguments: serde_json::Value,

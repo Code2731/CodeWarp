@@ -14,24 +14,24 @@ pub(super) struct GrepArgs {
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct WriteFileArgs {
+pub(crate) struct WriteFileArgs {
     pub path: String,
     pub content: String,
 }
 
 impl WriteFileArgs {
-    pub fn parse(arguments_json: &str) -> Result<Self, String> {
+    pub(crate) fn parse(arguments_json: &str) -> Result<Self, String> {
         serde_json::from_str(arguments_json).map_err(|e| e.to_string())
     }
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct RunCommandArgs {
+pub(crate) struct RunCommandArgs {
     pub command: String,
 }
 
 impl RunCommandArgs {
-    pub fn parse(arguments_json: &str) -> Result<Self, String> {
+    pub(crate) fn parse(arguments_json: &str) -> Result<Self, String> {
         serde_json::from_str(arguments_json).map_err(|e| e.to_string())
     }
 }

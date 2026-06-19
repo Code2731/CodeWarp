@@ -8,10 +8,10 @@ pub(crate) use error::*;
 pub(crate) use types::*;
 
 mod helpers;
-pub(crate) use helpers::*;
+use helpers::*;
 
 mod fetch;
-pub(crate) use fetch::*;
+use fetch::*;
 
 #[cfg(test)]
 mod tests;
@@ -20,7 +20,7 @@ mod tests;
 
 /// `repo_id` 예: "turboderp/Llama-3.2-1B-Instruct-exl2". siblings를
 /// `dest_dir/<folder_name>/{filename}`으로 저장. revision으로 branch 선택 (EXL2 bpw).
-pub fn download_repo(
+pub(crate) fn download_repo(
     repo_id: String,
     dest_dir: std::path::PathBuf,
     token: Option<String>,
@@ -36,89 +36,13 @@ pub fn download_repo(
         let mut rev = revision.as_deref().unwrap_or("main").to_string();
         let requested_rev = rev.clone();
 
-        let mut info: ModelInfo = match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
+        let mut info: ModelInfo = match fetch_model_info_with_fallback(
+            &client, &repo_id, token_ref, &mut rev, &requested_rev
+        ).await {
             Ok(v) => v,
             Err(e) => {
-                if rev != "main" && contains_status(&e, 404) {
-                    if let Some(branches) = fetch_repo_branches(&client, &repo_id, token_ref).await {
-                        if let Some(fallback) = choose_revision_fallback(&rev, &branches) {
-                            if !fallback.eq_ignore_ascii_case(&rev) {
-                                rev = fallback;
-                                match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
-                                    Ok(v2) => v2,
-                                    Err(e2) => {
-                                        let prev = rev.clone();
-                                        rev = "main".to_string();
-                                        match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
-                                            Ok(v3) => v3,
-                                            Err(e3) => {
-                                                let decorated = annotate_revision_not_found_error(
-                                                    &format!(
-                                                        "{} (fallback retry from '{}' to '{}' failed; main fallback from '{}' failed: {}; requested revision: '{}')",
-                                                        e2, requested_rev, prev, prev, e3, requested_rev
-                                                    ),
-                                                    &requested_rev,
-                                                    &branches,
-                                                );
-                                                yield DownloadEvent::Error(decorated);
-                                                return;
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                rev = "main".to_string();
-                                match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
-                                    Ok(v3) => v3,
-                                    Err(e3) => {
-                                        let decorated = annotate_revision_not_found_error(
-                                            &format!(
-                                                "{} (fallback matched requested revision '{}'; main fallback failed: {}; requested revision: '{}')",
-                                                e, requested_rev, e3, requested_rev
-                                            ),
-                                            &requested_rev,
-                                            &branches,
-                                        );
-                                        yield DownloadEvent::Error(decorated);
-                                        return;
-                                    }
-                                }
-                            }
-                        } else {
-                            rev = "main".to_string();
-                            match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
-                                Ok(v3) => v3,
-                                Err(e3) => {
-                                    let decorated = annotate_revision_not_found_error(
-                                        &format!(
-                                            "{} (no fallback branch match; main fallback failed: {}; requested revision: '{}')",
-                                            e, e3, requested_rev
-                                        ),
-                                        &requested_rev,
-                                        &branches,
-                                    );
-                                    yield DownloadEvent::Error(decorated);
-                                    return;
-                                }
-                            }
-                        }
-                    } else {
-                        rev = "main".to_string();
-                        match fetch_model_info(&client, &repo_id, token_ref, &rev).await {
-                            Ok(v3) => v3,
-                            Err(e3) => {
-                                yield DownloadEvent::Error(format!(
-                                    "{} (fallback lookup failed: branch refs unavailable; main fallback failed: {}; requested revision: '{}')",
-                                    e, e3, requested_rev
-                                ));
-                                return;
-                            }
-                        }
-                    }
-                } else {
-                    yield DownloadEvent::Error(e);
-                    return;
-                }
+                yield DownloadEvent::Error(e);
+                return;
             }
         };
         match fetch_model_tree(&client, &repo_id, token_ref, &rev).await {

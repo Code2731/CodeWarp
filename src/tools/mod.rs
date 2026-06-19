@@ -5,23 +5,23 @@ mod exec;
 #[cfg(test)]
 mod tests;
 
-pub use args::{RunCommandArgs, WriteFileArgs};
-pub use dispatch::dispatch;
+pub(crate) use args::{RunCommandArgs, WriteFileArgs};
+pub(crate) use dispatch::dispatch;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolKind {
+pub(crate) enum ToolKind {
     ReadOnly,
     Mutating,
 }
 
-pub fn tool_kind(name: &str) -> ToolKind {
+pub(crate) fn tool_kind(name: &str) -> ToolKind {
     match name {
         "write_file" | "run_command" => ToolKind::Mutating,
         _ => ToolKind::ReadOnly,
     }
 }
 
-pub fn tool_definitions(allow_mutating: bool) -> serde_json::Value {
+pub(crate) fn tool_definitions(allow_mutating: bool) -> serde_json::Value {
     let mut tools = read_only_tools();
     if allow_mutating {
         if let serde_json::Value::Array(arr) = &mut tools {

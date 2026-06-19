@@ -1,4 +1,4 @@
-use super::ui::*;
+use crate::view::ui::*;
 use crate::*;
 use iced::widget::{container, pick_list, text, text_input};
 use iced::{Element, Length};

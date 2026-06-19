@@ -4,7 +4,7 @@ use iced::widget::{column, row, text, Space};
 use iced::{Element, Font, Length};
 
 impl App {
-    pub(crate) fn view_usage_summary(&self) -> Element<'_, Message> {
+    pub(super) fn view_usage_summary(&self) -> Element<'_, Message> {
         const MODEL_ID_PREVIEW_MAX: usize = 24;
         if self.usage.by_model.is_empty() {
             return text("(사용 기록 없음)").size(FS_LABEL).into();

@@ -12,6 +12,7 @@ pub(crate) use block_apply::*;
 // ── Block types ─────────────────────────────────────────────────────
 
 /// 사용자 입력은 짧은 plain text, AI 응답은 read-only text_editor (부분 선택 + 복사 가능).
+#[derive(Debug)]
 pub(crate) enum BlockBody {
     User(String),
     Assistant(text_editor::Content),
@@ -57,6 +58,7 @@ pub(crate) enum ViewMode {
     Raw,
 }
 
+#[derive(Debug)]
 pub(crate) struct Block {
     pub(crate) id: u64,
     pub(crate) body: BlockBody,
@@ -72,7 +74,7 @@ pub(crate) struct Block {
 // ── Pending tool call ───────────────────────────────────────────────
 
 /// 도구 호출이 SSE delta로 부분씩 도착하는 동안 누적할 임시 구조.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct PendingToolCall {
     pub(crate) id: String,
     pub(crate) name: String,

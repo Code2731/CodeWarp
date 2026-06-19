@@ -6,7 +6,7 @@ use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Font, Length, Theme};
 
 impl App {
-    pub(crate) fn view_inline_confirm(&self) -> Element<'_, Message> {
+    pub(super) fn view_inline_confirm(&self) -> Element<'_, Message> {
         let n = self.pending_write_calls.len();
         let header = text(format!(
             "⚠ AI가 {}개 도구 실행을 요청했습니다 (카드 클릭으로 미리보기)",

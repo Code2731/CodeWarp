@@ -2,7 +2,7 @@
 use crate::hf::helpers::*;
 use crate::hf::types::*;
 
-pub(crate) async fn fetch_repo_branches(
+pub(super) async fn fetch_repo_branches(
     client: &reqwest::Client,
     repo_id: &str,
     token: Option<&str>,
@@ -30,7 +30,7 @@ pub(crate) async fn fetch_repo_branches(
     }
 }
 
-pub(crate) async fn fetch_model_tree(
+pub(super) async fn fetch_model_tree(
     client: &reqwest::Client,
     repo_id: &str,
     token: Option<&str>,
@@ -68,7 +68,7 @@ pub(crate) async fn fetch_model_tree(
     Ok(ModelInfo { siblings })
 }
 
-pub(crate) async fn fetch_model_info(
+pub(super) async fn fetch_model_info(
     client: &reqwest::Client,
     repo_id: &str,
     token: Option<&str>,
@@ -90,7 +90,85 @@ pub(crate) async fn fetch_model_info(
         .map_err(|e| format!("repo info 파싱 실패: {}", e))
 }
 
-pub(crate) fn http_client() -> Result<reqwest::Client, String> {
+pub(super) async fn fetch_model_info_with_fallback(
+    client: &reqwest::Client,
+    repo_id: &str,
+    token: Option<&str>,
+    rev: &mut String,
+    requested_rev: &str,
+) -> Result<ModelInfo, String> {
+    match fetch_model_info(client, repo_id, token, rev).await {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            if rev.as_str() != "main" && crate::hf::error::contains_status(&e, 404) {
+                if let Some(branches) = fetch_repo_branches(client, repo_id, token).await {
+                    if let Some(fallback) = choose_revision_fallback(rev, &branches) {
+                        if !fallback.eq_ignore_ascii_case(rev) {
+                            *rev = fallback;
+                            match fetch_model_info(client, repo_id, token, rev).await {
+                                Ok(v2) => Ok(v2),
+                                Err(e2) => {
+                                    let prev = rev.clone();
+                                    *rev = "main".to_string();
+                                    match fetch_model_info(client, repo_id, token, rev).await {
+                                        Ok(v3) => Ok(v3),
+                                        Err(e3) => Err(annotate_revision_not_found_error(
+                                            &format!(
+                                                "{} (fallback retry from '{}' to '{}' failed; main fallback from '{}' failed: {}; requested revision: '{}')",
+                                                e2, requested_rev, prev, prev, e3, requested_rev
+                                            ),
+                                            requested_rev,
+                                            &branches,
+                                        )),
+                                    }
+                                }
+                            }
+                        } else {
+                            *rev = "main".to_string();
+                            match fetch_model_info(client, repo_id, token, rev).await {
+                                Ok(v3) => Ok(v3),
+                                Err(e3) => Err(annotate_revision_not_found_error(
+                                    &format!(
+                                        "{} (fallback matched requested revision '{}'; main fallback failed: {}; requested revision: '{}')",
+                                        e, requested_rev, e3, requested_rev
+                                    ),
+                                    requested_rev,
+                                    &branches,
+                                )),
+                            }
+                        }
+                    } else {
+                        *rev = "main".to_string();
+                        match fetch_model_info(client, repo_id, token, rev).await {
+                            Ok(v3) => Ok(v3),
+                            Err(e3) => Err(annotate_revision_not_found_error(
+                                &format!(
+                                    "{} (no fallback branch match; main fallback failed: {}; requested revision: '{}')",
+                                    e, e3, requested_rev
+                                ),
+                                requested_rev,
+                                &branches,
+                            )),
+                        }
+                    }
+                } else {
+                    *rev = "main".to_string();
+                    match fetch_model_info(client, repo_id, token, rev).await {
+                        Ok(v3) => Ok(v3),
+                        Err(e3) => Err(format!(
+                            "{} (fallback lookup failed: branch refs unavailable; main fallback failed: {}; requested revision: '{}')",
+                            e, e3, requested_rev
+                        )),
+                    }
+                }
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+pub(super) fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent("CodeWarp/0.2.0")
         .build()

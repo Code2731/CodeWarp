@@ -12,7 +12,7 @@ use super::types::{ChatEvent, ChatMessage, ChatRequest};
 
 mod helpers;
 
-pub fn chat_stream(
+pub(crate) fn chat_stream(
     base_url: String,
     api_key: Option<String>,
     model: String,
@@ -29,7 +29,7 @@ pub fn chat_stream(
         };
         let body = ChatRequest {
             model: &model,
-            messages: &*messages,
+            messages: &messages,
             stream: true,
             tools: tools.as_ref(),
             tool_choice: tools.as_ref().map(|_| "auto"),

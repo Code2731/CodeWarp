@@ -1,15 +1,13 @@
-use serde_json;
-
 /// User-configured MCP server entry.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct McpServer {
+pub(crate) struct McpServer {
     pub name: String,
     pub command: String,
 }
 
 /// Tool metadata discovered from an MCP server.
 #[derive(Debug, Clone)]
-pub struct McpTool {
+pub(crate) struct McpTool {
     pub server_name: String,
     pub name: String,
     pub description: String,
@@ -17,7 +15,7 @@ pub struct McpTool {
 }
 
 impl McpTool {
-    pub fn to_openai_tool(&self) -> serde_json::Value {
+    pub(crate) fn to_openai_tool(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "function",
             "function": {
@@ -30,7 +28,7 @@ impl McpTool {
 }
 
 /// Extract text from `{content:[{type:"text",text:"..."}]}` response shape.
-pub fn extract_text_content(result: &serde_json::Value) -> String {
+pub(crate) fn extract_text_content(result: &serde_json::Value) -> String {
     let content = result
         .get("content")
         .and_then(|c| c.as_array())
@@ -55,7 +53,7 @@ pub fn extract_text_content(result: &serde_json::Value) -> String {
     }
 }
 
-pub fn save_servers(servers: &[McpServer]) -> Result<(), String> {
+pub(crate) fn save_servers(servers: &[McpServer]) -> Result<(), String> {
     let path = servers_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -64,7 +62,7 @@ pub fn save_servers(servers: &[McpServer]) -> Result<(), String> {
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
 
-pub fn load_servers() -> Vec<McpServer> {
+pub(crate) fn load_servers() -> Vec<McpServer> {
     let path = servers_path();
     let Ok(data) = std::fs::read_to_string(&path) else {
         return Vec::new();

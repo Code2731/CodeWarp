@@ -10,15 +10,17 @@ mod humanize;
 mod humanize_tests;
 mod parse;
 mod parse_sse;
+mod parse_values;
 #[cfg(test)]
 mod sse_tests;
 #[cfg(test)]
 mod tests;
 mod types;
 mod types_chunk;
+mod types_flexible;
 
-pub use api::{get_account_info, get_generation, list_models};
-pub use api_types::{AuthKeyData, GenerationData};
-pub use chat_stream::chat_stream;
-pub use humanize::humanize_error;
-pub use types::{ChatEvent, ChatMessage, OpenRouterModel, BASE_URL};
+pub(crate) use api::{get_account_info, get_generation, list_models};
+pub(crate) use api_types::{AuthKeyData, GenerationData};
+pub(crate) use chat_stream::chat_stream;
+pub(crate) use humanize::humanize_error;
+pub(crate) use types::{ChatEvent, ChatMessage, OpenRouterModel, BASE_URL};

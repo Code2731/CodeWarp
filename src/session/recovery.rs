@@ -8,7 +8,7 @@ fn clean_shutdown_path() -> Option<PathBuf> {
     codewarp_dir().map(|d| d.join(".clean_shutdown"))
 }
 
-pub fn mark_clean_shutdown() {
+pub(crate) fn mark_clean_shutdown() {
     if let Some(path) = clean_shutdown_path() {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -17,7 +17,7 @@ pub fn mark_clean_shutdown() {
     }
 }
 
-pub fn was_clean_shutdown() -> bool {
+pub(crate) fn was_clean_shutdown() -> bool {
     let Some(path) = clean_shutdown_path() else {
         return true;
     };

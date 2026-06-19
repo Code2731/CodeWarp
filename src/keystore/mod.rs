@@ -1,9 +1,70 @@
 // OS Credential Manager (Windows) / Keychain (macOS) / Secret Service (Linux)에
-// OpenRouter API 키를 저장.
+// 키/토큰 저장.
+
+#[macro_export]
+macro_rules! keystore_entry_std {
+    ($entry_fn:ident, $read_fn:ident, $write_fn:ident, $clear_fn:ident, $user:literal) => {
+        fn $entry_fn() -> Result<keyring::Entry, String> {
+            keyring::Entry::new("codewarp", $user).map_err(|e| e.to_string())
+        }
+        pub(crate) fn $read_fn() -> Option<String> {
+            $entry_fn().ok()?.get_password().ok()
+        }
+        pub(crate) fn $write_fn(value: &str) -> Result<(), String> {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return $clear_fn();
+            }
+            $entry_fn()?
+                .set_password(trimmed)
+                .map_err(|e| e.to_string())
+        }
+        pub(crate) fn $clear_fn() -> Result<(), String> {
+            match $entry_fn()?.delete_credential() {
+                Ok(_) => Ok(()),
+                Err(keyring::Error::NoEntry) => Ok(()),
+                Err(e) => Err(e.to_string()),
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! keystore_entry_no_clear {
+    ($entry_fn:ident, $read_fn:ident, $write_fn:ident, $user:literal) => {
+        fn $entry_fn() -> Result<keyring::Entry, String> {
+            keyring::Entry::new("codewarp", $user).map_err(|e| e.to_string())
+        }
+        pub(crate) fn $read_fn() -> Option<String> {
+            $entry_fn().ok()?.get_password().ok()
+        }
+        pub(crate) fn $write_fn(value: &str) -> Result<(), String> {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Ok(());
+            }
+            $entry_fn()?
+                .set_password(trimmed)
+                .map_err(|e| e.to_string())
+        }
+    };
+}
+#[macro_export]
+macro_rules! keystore_entry_no_clear_with_clear {
+    ($entry_fn:ident, $read_fn:ident, $write_fn:ident, $clear_fn:ident, $user:literal) => {
+        keystore_entry_no_clear!($entry_fn, $read_fn, $write_fn, $user);
+        pub(crate) fn $clear_fn() -> Result<(), String> {
+            match $entry_fn()?.delete_credential() {
+                Ok(_) => Ok(()),
+                Err(keyring::Error::NoEntry) => Ok(()),
+                Err(e) => Err(e.to_string()),
+            }
+        }
+    };
+}
 
 const SERVICE: &str = "codewarp";
 const USER: &str = "openrouter_api_key";
-const MODEL_USER: &str = "selected_model";
 const CWD_USER: &str = "working_directory";
 
 fn humanize_keyring_error(e: keyring::Error) -> String {
@@ -26,22 +87,18 @@ fn entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(SERVICE, USER).map_err(humanize_keyring_error)
 }
 
-fn model_entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(SERVICE, MODEL_USER).map_err(|e| e.to_string())
-}
-
 fn cwd_entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(SERVICE, CWD_USER).map_err(|e| e.to_string())
 }
 
-pub fn read_api_key() -> Result<String, String> {
+pub(crate) fn read_api_key() -> Result<String, String> {
     entry()?.get_password().map_err(|e| match e {
         keyring::Error::NoEntry => "API 키가 저장되어 있지 않습니다.".into(),
         other => humanize_keyring_error(other),
     })
 }
 
-pub fn write_api_key(key: &str) -> Result<(), String> {
+pub(crate) fn write_api_key(key: &str) -> Result<(), String> {
     let trimmed = key.trim();
     if trimmed.is_empty() {
         return Err("API 키가 비어 있습니다.".into());
@@ -49,7 +106,7 @@ pub fn write_api_key(key: &str) -> Result<(), String> {
     entry()?.set_password(trimmed).map_err(|e| e.to_string())
 }
 
-pub fn delete_api_key() -> Result<(), String> {
+pub(crate) fn delete_api_key() -> Result<(), String> {
     match entry()?.delete_credential() {
         Ok(_) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
@@ -57,39 +114,25 @@ pub fn delete_api_key() -> Result<(), String> {
     }
 }
 
-pub fn has_api_key() -> bool {
+pub(crate) fn has_api_key() -> bool {
     keyring::Entry::new(SERVICE, USER)
         .and_then(|e| e.get_password())
         .is_ok()
 }
 
-pub fn read_selected_model() -> Option<String> {
-    model_entry().ok()?.get_password().ok()
-}
+keystore_entry_no_clear_with_clear!(
+    model_entry,
+    read_selected_model,
+    write_selected_model,
+    clear_selected_model,
+    "selected_model"
+);
 
-pub fn write_selected_model(model: &str) -> Result<(), String> {
-    if model.trim().is_empty() {
-        return Ok(());
-    }
-    model_entry()?
-        .set_password(model)
-        .map_err(|e| e.to_string())
-}
-
-pub fn clear_selected_model() -> Result<(), String> {
-    let entry = model_entry()?;
-    match entry.delete_credential() {
-        Ok(_) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-pub fn read_cwd() -> Option<String> {
+pub(crate) fn read_cwd() -> Option<String> {
     cwd_entry().ok()?.get_password().ok()
 }
 
-pub fn write_cwd(path: &str) -> Result<(), String> {
+pub(crate) fn write_cwd(path: &str) -> Result<(), String> {
     if path.trim().is_empty() {
         return Ok(());
     }
@@ -99,6 +142,6 @@ pub fn write_cwd(path: &str) -> Result<(), String> {
 mod hf;
 mod inference;
 mod tabby;
-pub use hf::*;
-pub use inference::*;
-pub use tabby::*;
+pub(crate) use hf::*;
+pub(crate) use inference::*;
+pub(crate) use tabby::*;

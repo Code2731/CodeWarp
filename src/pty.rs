@@ -9,7 +9,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 /// PTY 이벤트 — Iced `Task::run`의 Item 타입.
 #[derive(Debug, Clone)]
-pub enum PtyEvent {
+pub(crate) enum PtyEvent {
     /// 한 줄 출력 (ANSI 포함 raw line)
     Line(String),
     /// PTY 프로세스 종료
@@ -18,32 +18,32 @@ pub enum PtyEvent {
 
 /// PTY 세션 write 핸들. Clone 가능 (Arc<Mutex> 내부).
 #[derive(Clone)]
-pub struct PtySession {
+pub(crate) struct PtySession {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
 impl PtySession {
-    pub fn write_line(&self, line: &str) {
+    pub(crate) fn write_line(&self, line: &str) {
         if let Ok(mut w) = self.writer.lock() {
             let _ = writeln!(w, "{}", line);
         }
     }
 
-    pub fn write_bytes(&self, bytes: &[u8]) {
+    pub(crate) fn write_bytes(&self, bytes: &[u8]) {
         if let Ok(mut w) = self.writer.lock() {
             let _ = w.write_all(bytes);
         }
     }
 
     /// Ctrl+C (ETX)
-    pub fn ctrl_c(&self) {
+    pub(crate) fn ctrl_c(&self) {
         self.write_bytes(&[0x03]);
     }
 }
 
 /// PTY 세션을 spawn하고 (session 핸들, 출력 line stream)을 반환.
 /// stream은 `Task::run`에 직접 전달 가능.
-pub fn spawn_pty(
+pub(crate) fn spawn_pty(
     cwd: &Path,
 ) -> Result<(PtySession, impl futures_util::Stream<Item = PtyEvent>), String> {
     let pty_system = native_pty_system();
@@ -107,7 +107,7 @@ pub fn spawn_pty(
 }
 
 /// ANSI escape를 제거해 plain text로 변환.
-pub fn strip_ansi(raw: &str) -> String {
+pub(crate) fn strip_ansi(raw: &str) -> String {
     strip_ansi_escapes::strip_str(raw)
 }
 

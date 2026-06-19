@@ -8,7 +8,7 @@ mod context;
 mod usage;
 
 impl App {
-    pub(crate) fn view_sidebar(&self) -> Element<'_, Message> {
+    pub(super) fn view_sidebar(&self) -> Element<'_, Message> {
         const CWD_PREVIEW_MAX: usize = 36;
         let cwd_display = self.cwd.display().to_string();
         let cwd_short = shorten_tail(&cwd_display, CWD_PREVIEW_MAX);

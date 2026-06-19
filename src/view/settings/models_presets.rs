@@ -1,4 +1,4 @@
-use super::ui::*;
+use crate::view::ui::*;
 use crate::*;
 use iced::widget::{button, column, text};
 use iced::{Element, Font, Length};

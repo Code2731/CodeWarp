@@ -4,7 +4,8 @@ use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Element, Font, Length, Theme};
 
 /// markdown::view_with용 커스텀 Viewer.
-pub(crate) struct CodewarpViewer;
+#[derive(Debug)]
+pub(super) struct CodewarpViewer;
 
 impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer {
     fn on_link_click(url: iced::widget::markdown::Uri) -> Message {

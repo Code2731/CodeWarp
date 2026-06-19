@@ -5,7 +5,7 @@ use super::super::parse::{
 };
 use super::super::types::{ChatEvent, ChatMessage};
 
-pub(crate) async fn fallback_to_non_stream(
+pub(super) async fn fallback_to_non_stream(
     client: &reqwest::Client,
     endpoint: &str,
     base_url: &str,
@@ -23,7 +23,7 @@ pub(crate) async fn fallback_to_non_stream(
     }
 }
 
-pub(crate) fn process_leftover_buffer(
+pub(super) fn process_leftover_buffer(
     buffer: &str,
     pending_sse_data: &mut String,
     generation_id: &mut Option<String>,

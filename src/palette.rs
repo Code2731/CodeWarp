@@ -9,6 +9,7 @@ pub(crate) enum PaletteAction {
     ToggleFavorite,
 }
 
+#[derive(Debug)]
 pub(crate) struct PaletteCommand {
     pub(crate) action: PaletteAction,
     pub(crate) label: &'static str,

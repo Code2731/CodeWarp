@@ -1,6 +1,6 @@
-use super::chat_block_style::block_container_style;
-use super::ui::*;
-use super::CodewarpViewer;
+use super::block_style::block_container_style;
+use crate::view::ui::*;
+use crate::view::CodewarpViewer;
 use crate::*;
 use iced::widget::markdown;
 use iced::widget::{button, column, container, row, text, text_editor, Space};

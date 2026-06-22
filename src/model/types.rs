@@ -1,26 +1,26 @@
 // model/types.rs — Core model types (model child module)
 use crate::util::fmt_context_length;
 
-/// 모델을 어느 백엔드로 라우팅할지. OpenAICompat은 사용자 임의 endpoint
-/// (xLLM / vLLM / Tabby / llama-server / Ollama 등 — 모두 OpenAI 호환).
+/// 모델을 어느 백엔드로 라우팅할지. `OpenAICompat은` 사용자 임의 endpoint
+/// (xLLM / vLLM / Tabby / llama-server / Ollama 등 — 모두 `OpenAI` 호환).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum LlmProvider {
     OpenRouter,
     OpenAICompat,
 }
 
-/// combo_box에 표시할 모델 항목 (가격 정보 포함).
+/// `combo_box에` 표시할 모델 항목 (가격 정보 포함).
 /// Display 형식: "[OR][KO]★ model-id  128k  $in/$out" 또는 "[xLLM] model-id  free"
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ModelOption {
     pub(crate) id: String,
     pub(crate) provider: LlmProvider,
-    /// OpenAICompat의 사용자 지정 라벨 (xLLM/TabbyML/TabbyAPI/Local 등). 빈 값이면 "Local".
-    /// OpenRouter일 땐 무의미 (Display에서 사용 안 함).
+    /// `OpenAICompat의` 사용자 지정 라벨 (xLLM/TabbyML/TabbyAPI/Local 등). 빈 값이면 "Local".
+    /// `OpenRouter일` 땐 무의미 (Display에서 사용 안 함).
     pub(crate) provider_label: String,
     /// 한국어 토크나이저 친화 모델 휴리스틱 결과
     pub(crate) ko_friendly: bool,
-    /// 즐겨찾기 여부 (refresh_model_combo에서 self.favorites 기준으로 set)
+    /// 즐겨찾기 여부 (`refresh_model_combo에서` self.favorites 기준으로 set)
     pub(crate) favorite: bool,
     /// context window 토큰 수 (있을 때만 표시)
     pub(crate) context_length: Option<u64>,
@@ -39,7 +39,7 @@ impl std::fmt::Display for ModelOption {
                 if label.is_empty() {
                     "[Local]".into()
                 } else {
-                    format!("[{}]", label)
+                    format!("[{label}]")
                 }
             }
         };
@@ -87,7 +87,7 @@ pub(crate) enum InferenceEngine {
     LlamaServer,
     TabbyMl,
     TabbyApi,
-    /// daemon 형태 — 이미 떠있다고 가정, CodeWarp는 spawn 안 함.
+    /// daemon 형태 — 이미 떠있다고 가정, `CodeWarp는` spawn 안 함.
     Ollama,
     /// 사용자가 직접 명령 입력
     Custom,
@@ -104,7 +104,7 @@ impl InferenceEngine {
         InferenceEngine::Custom,
     ];
 
-    pub(crate) fn label(&self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::XLlm => "xLLM",
             Self::VLlm => "vLLM",
@@ -116,7 +116,7 @@ impl InferenceEngine {
         }
     }
 
-    pub(crate) fn default_port(&self) -> u16 {
+    pub(crate) fn default_port(self) -> u16 {
         match self {
             Self::TabbyMl => 8080,
             Self::TabbyApi => TABBY_API_DEFAULT_PORT,
@@ -125,16 +125,13 @@ impl InferenceEngine {
         }
     }
 
-    pub(crate) fn shares_model_namespace(&self, other: InferenceEngine) -> bool {
+    pub(crate) fn shares_model_namespace(self, other: InferenceEngine) -> bool {
         matches!(
             (self, other),
-            (Self::XLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
-                | (Self::VLlm, Self::XLlm | Self::VLlm | Self::LlamaServer)
-                | (
-                    Self::LlamaServer,
-                    Self::XLlm | Self::VLlm | Self::LlamaServer
-                )
-                | (Self::TabbyMl, Self::TabbyMl)
+            (
+                Self::XLlm | Self::VLlm | Self::LlamaServer,
+                Self::XLlm | Self::VLlm | Self::LlamaServer
+            ) | (Self::TabbyMl, Self::TabbyMl)
                 | (Self::TabbyApi, Self::TabbyApi)
                 | (Self::Ollama, Self::Ollama)
                 | (Self::Custom, Self::Custom)
@@ -143,7 +140,7 @@ impl InferenceEngine {
 
     /// 모델 path/ID + port를 받아 spawn할 Command 인자 리스트 반환.
     /// `None`이면 spawn 안 함 (Ollama는 외부 daemon, Custom은 사용자 정의).
-    pub(crate) fn compose_command(&self, model: &str, port: u16) -> Option<Vec<String>> {
+    pub(crate) fn compose_command(self, model: &str, port: u16) -> Option<Vec<String>> {
         let port_s = port.to_string();
         match self {
             Self::XLlm => Some(vec![

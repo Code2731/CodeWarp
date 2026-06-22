@@ -29,7 +29,7 @@ pub(crate) fn spawn_inference_stream(
             }
         };
         if let Some(pid) = child.id() {
-            yield Message::InferenceLogLine(format!("[pid:{}] {} {}", pid, program, args.join(" ")));
+            yield Message::InferenceLogLine(format!("[pid:{pid}] {program} {}", args.join(" ")));
         }
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -50,7 +50,7 @@ pub(crate) fn spawn_inference_stream(
             tokio::spawn(async move {
                 let mut lines = BufReader::new(err).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    if tx.send(format!("[err] {}", line)).is_err() {
+                    if tx.send(format!("[err] {line}")).is_err() {
                         break;
                     }
                 }
@@ -93,8 +93,7 @@ pub(crate) fn humanize_inference_spawn_error(program: &str, err: &std::io::Error
     ) && err.kind() == std::io::ErrorKind::NotFound
     {
         return format!(
-            "{} binary was not found. Set Runtime > binary path to the executable (for example xllm.exe) or add it to PATH. Raw error: {}",
-            program_name, raw
+            "{program_name} binary was not found. Set Runtime > binary path to the executable (for example xllm.exe) or add it to PATH. Raw error: {raw}"
         );
     }
 
@@ -102,8 +101,7 @@ pub(crate) fn humanize_inference_spawn_error(program: &str, err: &std::io::Error
         && err.kind() == std::io::ErrorKind::NotFound
     {
         return format!(
-            "{} binary was not found. Set Runtime > binary path to the executable or add it to PATH. Raw error: {}",
-            program_name, raw
+            "{program_name} binary was not found. Set Runtime > binary path to the executable or add it to PATH. Raw error: {raw}"
         );
     }
 
@@ -118,13 +116,12 @@ pub(crate) fn humanize_inference_spawn_error(program: &str, err: &std::io::Error
             || raw.contains("연결")
         {
             return format!(
-                "Tabby executable could not be started. The tabby/tabby.exe/tabby.cmd/tabby.bat on PATH may not be a runnable TabbyML server CLI, or there may be a permission/alias issue: {}",
-                raw
+                "Tabby executable could not be started. The tabby/tabby.exe/tabby.cmd/tabby.bat on PATH may not be a runnable TabbyML server CLI, or there may be a permission/alias issue: {raw}"
             );
         }
     }
 
-    format!("{}: {}", program, raw)
+    format!("{program}: {raw}")
 }
 
 #[cfg(test)]

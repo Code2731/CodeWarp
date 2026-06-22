@@ -54,7 +54,7 @@ fn humanize_unknown_passes_through() {
 #[test]
 fn humanize_matches_list_models_format() {
     for status in [401, 402, 403, 404, 429, 500, 502, 503] {
-        let synthetic = format!("OpenRouter {}: anything", status);
+        let synthetic = format!("OpenRouter {status}: anything");
         let msg = humanize_error(&synthetic);
         assert_ne!(msg, synthetic, "status {} should be humanized", status);
     }

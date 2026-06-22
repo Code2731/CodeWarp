@@ -63,7 +63,7 @@ pub(crate) fn shorten_tail(s: &str, max_chars: usize) -> String {
         .into_iter()
         .rev()
         .collect();
-    format!("…{}", tail)
+    format!("…{tail}")
 }
 
 #[cfg(test)]

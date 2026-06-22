@@ -1,10 +1,13 @@
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{
+    bold_font, context_item_style, panel_style, secondary_btn, semibold_font, FS_BODY, FS_LABEL,
+    FS_SUBTITLE, FS_TITLE, PAD_MD, PAD_XS, PANEL_SECTION_GAP_LG, SPACE_SM, SPACE_XS, SPACE_XXS,
+};
+use crate::{App, Message};
 use iced::widget::{button, column, container, row, text, Space};
 use iced::{Alignment, Element, Font, Length};
 
 impl App {
-    pub(crate) fn view_empty_chat(&self) -> Element<'_, Message> {
+    pub(crate) fn view_empty_chat() -> Element<'static, Message> {
         const EXAMPLES: &[&str] = &[
             "이 프로젝트의 의존성을 알려줘",
             "src/main.rs의 첫 30줄을 요약해줘",
@@ -27,7 +30,7 @@ impl App {
         .spacing(SPACE_SM);
         for ex in EXAMPLES {
             examples_col = examples_col.push(
-                button(text(format!("▸ {}", ex)).size(FS_SUBTITLE))
+                button(text(format!("▸ {ex}")).size(FS_SUBTITLE))
                     .on_press(Message::InputChanged((*ex).to_string()))
                     .padding([7, 12])
                     .width(Length::Fill)

@@ -1,5 +1,8 @@
 // update_chat_stream_done.rs — Chat stream Done/Error handlers (main.rs child module)
-use super::*;
+use super::{
+    keystore, markdown, openrouter, parse_apply_candidates, App, Arc, BlockBody, ChatMessage,
+    Message, MAX_MID_STREAM_RETRIES, MAX_TOOL_ROUNDS,
+};
 use iced::widget::text_editor;
 use iced::Task;
 
@@ -7,20 +10,20 @@ impl App {
     pub(crate) fn handle_chat_done(
         &mut self,
         ai_id: u64,
-        finish_reason: Option<String>,
+        finish_reason: Option<&String>,
         generation_id: Option<String>,
     ) -> Task<Message> {
         let assistant_text = self.streaming_raw.clone();
 
         let has_tools = !self.pending_tool_calls.is_empty()
-            && (finish_reason.as_deref() == Some("tool_calls") || finish_reason.is_none());
+            && (finish_reason.map(String::as_str) == Some("tool_calls") || finish_reason.is_none());
 
         if has_tools && self.tool_round < MAX_TOOL_ROUNDS {
             return self.run_tool_round(assistant_text);
         }
 
         if self.tool_round >= MAX_TOOL_ROUNDS && !self.pending_tool_calls.is_empty() {
-            self.status = format!("최대 도구 라운드 {} 초과", MAX_TOOL_ROUNDS);
+            self.status = format!("최대 도구 라운드 {MAX_TOOL_ROUNDS} 초과");
         } else {
             self.status = "준비됨".into();
         }
@@ -37,9 +40,7 @@ impl App {
             }
         }
 
-        if !final_text.is_empty() {
-            Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(final_text.clone()));
-        } else {
+        if final_text.is_empty() {
             self.status =
                 "[WARN] 모델이 빈 응답을 반환했습니다. Provider/Runtime 로그를 확인해 주세요."
                     .into();
@@ -52,6 +53,8 @@ impl App {
                     }
                 }
             }
+        } else {
+            Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(final_text.clone()));
         }
 
         let candidates = parse_apply_candidates(&final_text);
@@ -81,7 +84,7 @@ impl App {
         Task::none()
     }
 
-    pub(crate) fn handle_chat_error(&mut self, ai_id: u64, error: String) -> Task<Message> {
+    pub(crate) fn handle_chat_error(&mut self, ai_id: u64, error: &str) -> Task<Message> {
         if !self.streaming_raw.is_empty()
             && self.mid_stream_retries < MAX_MID_STREAM_RETRIES
             && !error.contains("OpenRouter 401")
@@ -114,7 +117,7 @@ impl App {
                         "\n\n"
                     };
                     let final_text = std::mem::take(&mut self.streaming_raw);
-                    let full = format!("{}{}[ERROR] {}", final_text, prefix, error);
+                    let full = format!("{final_text}{prefix}[ERROR] {error}");
                     *content = text_editor::Content::with_text(&full);
                     self.blocks[idx].md_items = markdown::parse(&full).collect();
                 }
@@ -125,14 +128,11 @@ impl App {
         self.streaming_raw.clear();
         self.abort_handle = None;
         self.pending_tool_calls.clear();
-        let humanized = openrouter::humanize_error(&error);
+        let humanized = openrouter::humanize_error(error);
         if error.contains("OpenRouter 401") || error.contains("OpenRouter 402") {
-            self.status = format!(
-                "[WARN] {} | Open Settings and check API key / credits",
-                humanized
-            );
+            self.status = format!("[WARN] {humanized} | Open Settings and check API key / credits");
         } else {
-            self.status = format!("[ERROR] {}", humanized);
+            self.status = format!("[ERROR] {humanized}");
         }
         Task::none()
     }

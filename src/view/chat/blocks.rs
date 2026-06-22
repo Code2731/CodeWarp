@@ -1,5 +1,5 @@
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{app_vscrollbar, SCROLL_GUTTER_PAD_X};
+use crate::{last_assistant_block_idx, last_user_block_idx, App, Message};
 use iced::widget::scrollable::Direction;
 use iced::widget::{column, container, scrollable};
 use iced::{Element, Length};
@@ -7,7 +7,7 @@ use iced::{Element, Length};
 impl App {
     pub(crate) fn view_blocks(&self) -> Element<'_, Message> {
         if self.blocks.is_empty() {
-            self.view_empty_chat()
+            Self::view_empty_chat()
         } else {
             let last_user_idx = last_user_block_idx(&self.blocks);
             let last_asst_idx = last_assistant_block_idx(&self.blocks);

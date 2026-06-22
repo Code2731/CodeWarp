@@ -1,5 +1,5 @@
 // update_settings_mcp.rs — MCP server management methods (main.rs child module)
-use super::*;
+use super::{mcp, App, Message};
 use iced::Task;
 
 impl App {
@@ -46,7 +46,7 @@ impl App {
     }
     pub(crate) fn on_mcp_tools_loaded(
         &mut self,
-        server_name: String,
+        server_name: &str,
         tools: Vec<mcp::McpTool>,
     ) -> Task<Message> {
         self.mcp_tools.retain(|t| t.server_name != server_name);
@@ -55,7 +55,7 @@ impl App {
         self.status = format!("MCP [{server_name}] tool {count}개 로드 완료");
         Task::none()
     }
-    pub(crate) fn on_mcp_tools_failed(&mut self, msg: String) -> Task<Message> {
+    pub(crate) fn on_mcp_tools_failed(&mut self, msg: &str) -> Task<Message> {
         self.status = format!("MCP tool 로드 실패: {msg}");
         Task::none()
     }
@@ -96,7 +96,7 @@ mod tests {
             },
         ];
 
-        let _ = app.on_mcp_tools_loaded("fs".into(), new_tools);
+        let _ = app.on_mcp_tools_loaded("fs", new_tools);
         assert_eq!(app.mcp_tools.len(), 3);
         assert!(app.mcp_tools.iter().any(|t| t.server_name == "old-server"));
         assert!(app.mcp_tools.iter().any(|t| t.name == "write"));
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn on_mcp_tools_failed_shows_error_in_status() {
         let (mut app, _) = App::new();
-        let _ = app.on_mcp_tools_failed("connection refused".into());
+        let _ = app.on_mcp_tools_failed("connection refused");
         assert!(app.status.contains("MCP tool 로드 실패"));
         assert!(app.status.contains("connection refused"));
     }

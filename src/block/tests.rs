@@ -4,7 +4,7 @@ use iced::widget::text_editor;
 fn ub(id: u64) -> Block {
     Block {
         id,
-        body: BlockBody::User(format!("u{}", id)),
+        body: BlockBody::User(format!("u{id}")),
         view_mode: ViewMode::Rendered,
         md_items: Vec::new(),
         model: None,
@@ -14,7 +14,7 @@ fn ub(id: u64) -> Block {
 fn ab(id: u64) -> Block {
     Block {
         id,
-        body: BlockBody::Assistant(text_editor::Content::with_text(&format!("a{}", id))),
+        body: BlockBody::Assistant(text_editor::Content::with_text(&format!("a{id}"))),
         view_mode: ViewMode::Rendered,
         md_items: Vec::new(),
         model: None,

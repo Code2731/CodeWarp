@@ -1,5 +1,5 @@
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{field_input, panel_style, secondary_btn, semibold_font, FS_BODY, FS_LABEL};
+use crate::{App, InferenceEngine, Message};
 use iced::widget::{button, container, row, text, text_input, Space};
 use iced::{Alignment, Element, Length};
 

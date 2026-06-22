@@ -1,6 +1,6 @@
 use super::TabHealth;
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{primary_btn, semibold_font, FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE};
+use crate::{App, Message, SettingsTab};
 use iced::widget::{button, column, container, row, text, Space};
 use iced::{Alignment, Element, Length, Theme};
 
@@ -84,7 +84,7 @@ impl App {
         }
     }
 
-    pub(crate) fn view_settings_status_badge(&self, health: TabHealth) -> Element<'_, Message> {
+    pub(crate) fn view_settings_status_badge(health: TabHealth) -> Element<'static, Message> {
         let label = match health {
             TabHealth::Good => "정상",
             TabHealth::Warn => "설정 필요",
@@ -127,7 +127,6 @@ impl App {
         .into()
     }
     pub(crate) fn view_settings_active_action_hint(
-        &self,
         health: TabHealth,
         title: &str,
         action_text: String,
@@ -139,7 +138,7 @@ impl App {
                 .size(FS_SUBTITLE)
                 .font(semibold_font()),
             Space::new().width(Length::Fill),
-            self.view_settings_status_badge(health),
+            Self::view_settings_status_badge(health),
         ]
         .align_y(Alignment::Center);
         let quick_btn: Element<Message> = button(text(quick_label).size(FS_BODY))

@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    build_file_context, last_user_block_idx, openrouter, snap_to_end, truncate_after_last_user,
+    AgentMode, App, Block, BlockBody, ChatMessage, Message, ViewMode,
+};
 use iced::widget::text_editor;
 use iced::Task;
 
@@ -76,7 +79,7 @@ impl App {
                 return Task::none();
             }
             s if s.starts_with('/') => {
-                self.status = format!("알 수 없는 슬래시 명령: {}", s);
+                self.status = format!("알 수 없는 슬래시 명령: {s}");
                 return Task::none();
             }
             _ => {}
@@ -100,11 +103,11 @@ impl App {
         };
 
         self.ensure_system_message();
-        let user_msg = if !self.attached_files.is_empty() {
+        let user_msg = if self.attached_files.is_empty() {
+            text.clone()
+        } else {
             let ctx = build_file_context(&self.attached_files);
             format!("{ctx}\n\n{text}")
-        } else {
-            text.clone()
         };
         std::sync::Arc::make_mut(&mut self.conversation).push(ChatMessage::user(user_msg));
         self.attached_files.clear();

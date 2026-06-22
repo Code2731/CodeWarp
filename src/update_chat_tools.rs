@@ -1,14 +1,14 @@
 // update_chat_tools.rs — Tool execution update methods (main.rs child module)
-use super::*;
+use super::{mcp, openrouter, session, tools, App, Arc, ChatMessage, Message, MAX_TOOL_ROUNDS};
 use iced::Task;
 
 impl App {
     pub(crate) fn on_mcp_tool_result(
         &mut self,
-        tool_call_id: String,
+        tool_call_id: &str,
         result: String,
     ) -> Task<Message> {
-        Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(&tool_call_id, result));
+        Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(tool_call_id, result));
         self.tool_round += 1;
         self.kick_chat_stream()
     }

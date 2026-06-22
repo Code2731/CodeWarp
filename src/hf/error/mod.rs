@@ -87,7 +87,7 @@ fn extract_hf_error_hint(raw: &str, marker: &str) -> Option<String> {
     let idx = raw_lc.find(&marker_lc)?;
     let tail = &raw[idx..];
     let cut = find_hint_boundary(tail);
-    let head = cut.map(|i| &tail[..i]).unwrap_or(tail);
+    let head = cut.map_or(tail, |i| &tail[..i]);
     let head = head.strip_suffix(')').unwrap_or(head).trim();
     if head.is_empty() {
         None

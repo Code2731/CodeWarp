@@ -1,5 +1,8 @@
 // update_settings.rs — Settings/UI App update methods (main.rs child module)
-use super::*;
+use super::{
+    is_korean_friendly, keystore, openrouter, parse_price_per_million, App, LlmProvider, Message,
+    ModelOption, PaletteCommand, EXL2_PRESETS, MODEL_PRESETS, PALETTE_COMMANDS,
+};
 
 use iced::Task;
 
@@ -14,7 +17,7 @@ impl App {
     pub(crate) fn on_hf_token_saved(&mut self, result: Result<(), String>) -> Task<Message> {
         match result {
             Ok(()) => self.status = "HF 토큰 저장됨".into(),
-            Err(e) => self.status = format!("HF 토큰 저장 실패: {}", e),
+            Err(e) => self.status = format!("HF 토큰 저장 실패: {e}"),
         }
         Task::none()
     }
@@ -37,7 +40,7 @@ impl App {
             );
             return Task::done(Message::StartHfDownload);
         }
-        self.status = format!("잘못된 프리셋 인덱스: {}", idx);
+        self.status = format!("잘못된 프리셋 인덱스: {idx}");
         Task::none()
     }
     pub(crate) fn select_model(&mut self, opt: ModelOption) -> Task<Message> {
@@ -110,20 +113,19 @@ impl App {
                     }
                 }
                 self.models = models;
-                self.status = format!("모델 {} 로드됨", n);
+                self.status = format!("모델 {n} 로드됨");
             }
             Err(e) => self.status = format!("페치 실패: {}", openrouter::humanize_error(&e)),
         }
         Task::none()
     }
-    pub(crate) fn fetch_account_cmd(&mut self) -> Task<Message> {
-        let key = match keystore::read_api_key() {
-            Ok(k) => k,
-            Err(_) => return Task::none(),
+    pub(crate) fn fetch_account_cmd() -> Task<Message> {
+        let Ok(key) = keystore::read_api_key() else {
+            return Task::none();
         };
         Task::perform(openrouter::get_account_info(key), Message::AccountLoaded)
     }
-    pub(crate) fn pick_cwd(&self) -> Task<Message> {
+    pub(crate) fn pick_cwd() -> Task<Message> {
         Task::perform(
             async {
                 rfd::AsyncFileDialog::new()

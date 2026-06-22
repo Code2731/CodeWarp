@@ -1,6 +1,9 @@
 // view_palette.rs — Command palette view (view child module)
-use super::ui::*;
-use crate::*;
+use super::ui::{
+    app_vscrollbar, bold_font, field_input, panel_style, secondary_btn, semibold_font, FS_BODY,
+    FS_LABEL, FS_SUBTITLE,
+};
+use crate::{App, Message};
 use iced::widget::scrollable::Direction;
 use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
 use iced::{Element, Length};

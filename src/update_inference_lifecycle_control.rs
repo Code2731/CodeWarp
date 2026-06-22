@@ -1,24 +1,24 @@
 // update_inference_lifecycle_control.rs — Inference lifecycle control (main.rs child module)
-use super::*;
+use super::{keystore, kill_pid, App, LlmProvider, Message};
 use iced::Task;
 
 impl App {
-    pub(crate) fn set_inference_binary(&mut self, value: String) -> Task<Message> {
-        self.inference_binary_path = value.clone();
-        let _ = keystore::write_inference_binary(&value);
+    pub(crate) fn set_inference_binary(&mut self, value: &str) -> Task<Message> {
+        self.inference_binary_path = value.to_string();
+        let _ = keystore::write_inference_binary(value);
         Task::none()
     }
-    pub(crate) fn set_model_dir(&mut self, value: String) -> Task<Message> {
-        self.model_dir_input = value.clone();
-        let _ = keystore::write_model_dir(&value);
+    pub(crate) fn set_model_dir(&mut self, value: &str) -> Task<Message> {
+        self.model_dir_input = value.to_string();
+        let _ = keystore::write_model_dir(value);
         self.sync_selected_local_model_for_model_dir();
         Task::none()
     }
     pub(crate) fn stop_inference(&mut self) -> Task<Message> {
         if let Some(pid) = self.inference_pid.take() {
             kill_pid(pid);
-            self.status = format!("inference 서버 중지 (pid {})", pid);
-            self.push_inference_log(format!("[stopped] pid {}", pid));
+            self.status = format!("inference 서버 중지 (pid {pid})");
+            self.push_inference_log(format!("[stopped] pid {pid}"));
         }
         self.tabby_connect_retry_left = 0;
         self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
@@ -48,24 +48,24 @@ impl App {
             .rev()
             .find(|line| line.starts_with("[spawn 실패]") || line.starts_with("[err]"))
             .cloned();
-        self.push_inference_log(format!("[exited] code {}", code));
+        self.push_inference_log(format!("[exited] code {code}"));
         self.inference_pid = None;
         self.tabby_connect_retry_left = 0;
         self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
-        self.status = format!("inference 서버 종료 (exit {})", code);
+        self.status = format!("inference 서버 종료 (exit {code})");
         self.tabby_status = Some(Err("inference 서버 종료됨".into()));
         let status = if code == -1 {
             last_error
                 .and_then(|line| line.strip_prefix("[spawn 실패] ").map(str::to_string))
                 .unwrap_or_else(|| "inference 서버 시작 실패".into())
         } else if code == 0 {
-            format!("inference 서버 종료 (exit {})", code)
+            format!("inference 서버 종료 (exit {code})")
         } else if let Some(line) = last_error {
-            format!("inference 서버 종료 (exit {}) — {}", code, line)
+            format!("inference 서버 종료 (exit {code}) — {line}")
         } else {
-            format!("inference 서버 종료 (exit {})", code)
+            format!("inference 서버 종료 (exit {code})")
         };
-        self.status = status.clone();
+        self.status.clone_from(&status);
         self.tabby_status = Some(Err(status));
         self.model_options
             .retain(|o| o.provider != LlmProvider::OpenAICompat);

@@ -1,5 +1,5 @@
 // update_chat_session.rs — Session management update methods (main.rs child module)
-use super::*;
+use super::{persisted_to_block, session, App, Arc, BlockBody, InactiveSession, Message};
 use iced::Task;
 
 impl App {

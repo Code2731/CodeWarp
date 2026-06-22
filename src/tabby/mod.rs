@@ -17,7 +17,7 @@ fn normalize_base(url: &str) -> String {
     if trimmed.is_empty() {
         "http://localhost:8080".into()
     } else if !trimmed.contains("://") {
-        format!("http://{}", trimmed)
+        format!("http://{trimmed}")
     } else {
         trimmed.to_string()
     }
@@ -30,7 +30,7 @@ pub(crate) fn chat_base(url: &str) -> String {
     if base.ends_with("/v1") {
         base
     } else {
-        format!("{}/v1", base)
+        format!("{base}/v1")
     }
 }
 
@@ -97,7 +97,7 @@ fn extract_model_ids_from_array(items: &[Value]) -> Vec<String> {
             ["id", "name", "model", "model_name"]
                 .iter()
                 .find_map(|k| obj.get(*k).and_then(|v| v.as_str()))
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
         } else {
             None
         };
@@ -117,7 +117,7 @@ fn parse_model_ids(body: &str) -> Result<Vec<String>, String> {
     }
 
     let v: Value =
-        serde_json::from_str(body).map_err(|e| format!("Tabby /v1/models 파싱 실패: {}", e))?;
+        serde_json::from_str(body).map_err(|e| format!("Tabby /v1/models 파싱 실패: {e}"))?;
 
     if let Some(items) = v.get("data").and_then(|d| d.as_array()) {
         return Ok(extract_model_ids_from_array(items));
@@ -137,7 +137,7 @@ pub(crate) async fn list_models(
 ) -> Result<Vec<String>, String> {
     // chat_base와 동일하게 /v1 중복 방지
     let v1 = chat_base(&base_url);
-    let url = format!("{}/models", v1);
+    let url = format!("{v1}/models");
     let client = http_client()?;
     let token_ref = token.as_deref();
 
@@ -150,7 +150,7 @@ pub(crate) async fn list_models(
 
     // Compatibility fallback for TabbyAPI variants.
     if matches!(resp.status().as_u16(), 404 | 405) {
-        let legacy_url = format!("{}/model/list", v1);
+        let legacy_url = format!("{v1}/model/list");
         let legacy_req = apply_token_headers(client.get(&legacy_url), token_ref);
         let legacy_resp = legacy_req.send().await.map_err(|e| e.to_string())?;
         if legacy_resp.status().is_success() {
@@ -159,14 +159,14 @@ pub(crate) async fn list_models(
         }
         let status = legacy_resp.status();
         let body = legacy_resp.text().await.unwrap_or_default();
-        return Err(format!("Tabby {}: {}", status, body));
+        return Err(format!("Tabby {status}: {body}"));
     }
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         // KEEP IN SYNC: humanize_error가 "Tabby {status}" prefix를 매칭함
-        return Err(format!("Tabby {}: {}", status, body));
+        return Err(format!("Tabby {status}: {body}"));
     }
 
     Ok(Vec::new())

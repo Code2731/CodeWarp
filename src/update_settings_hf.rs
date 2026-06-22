@@ -1,5 +1,9 @@
 // update_settings_hf.rs — HF download management methods (main.rs child module)
-use super::*;
+use super::{
+    default_models_dir, default_tabbyapi_runtime_dir, downloaded_model_path,
+    find_tabbyapi_launcher, hf, keystore, resolve_tabbyapi_model_dir_for_folder, resolve_user_path,
+    App, HfDownload, InferenceEngine, Message, TABBY_API_DEFAULT_PORT,
+};
 use iced::Task;
 
 impl App {
@@ -19,13 +23,13 @@ impl App {
         let mut dir = self.model_dir_input.trim().to_string();
         if dir.is_empty() {
             dir = default_models_dir();
-            self.status = format!("다운로드 경로 자동 설정: {}", dir);
+            self.status = format!("다운로드 경로 자동 설정: {dir}");
         }
         let resolved_dir = resolve_user_path(&dir);
         dir = resolved_dir.display().to_string();
-        self.model_dir_input = dir.clone();
+        self.model_dir_input.clone_from(&dir);
         if let Err(e) = std::fs::create_dir_all(&resolved_dir) {
-            self.status = format!("다운로드 경로 생성 실패 ({}): {}", dir, e);
+            self.status = format!("다운로드 경로 생성 실패 ({dir}): {e}");
             return Task::none();
         }
         let _ = keystore::write_model_dir(&dir);
@@ -47,7 +51,7 @@ impl App {
             file_bytes_done: 0,
             file_bytes_total: None,
         });
-        self.status = format!("다운로드 시작: {}", repo);
+        self.status = format!("다운로드 시작: {repo}");
         let (task, handle) = Task::run(
             hf::download_repo(
                 repo,
@@ -62,15 +66,15 @@ impl App {
         self.hf_abort_handle = Some(handle);
         task
     }
-    pub(crate) fn on_hf_download_event(&mut self, ev: hf::DownloadEvent) -> Task<Message> {
+    pub(crate) fn on_hf_download_event(&mut self, ev: &hf::DownloadEvent) -> Task<Message> {
         if let Some(dl) = self.hf_dl.as_mut() {
-            match &ev {
+            match ev {
                 hf::DownloadEvent::Started { total_files } => {
                     dl.total_files = *total_files;
                 }
                 hf::DownloadEvent::FileStart { idx, name, size } => {
                     dl.file_idx = *idx;
-                    dl.file_name = name.clone();
+                    dl.file_name.clone_from(name);
                     dl.file_bytes_done = 0;
                     dl.file_bytes_total = *size;
                 }
@@ -118,8 +122,7 @@ impl App {
                         let _ = keystore::write_openai_compat_label("TabbyAPI");
                     }
                     self.status = format!(
-                        "다운로드 완료: {} — Runtime에서 시작을 누른 뒤 연결 테스트",
-                        folder_name
+                        "다운로드 완료: {folder_name} — Runtime에서 시작을 누른 뒤 연결 테스트"
                     );
                     self.hf_dl = None;
                     self.hf_abort_handle = None;

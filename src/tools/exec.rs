@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,20 +11,16 @@ pub(super) fn glob_files(
     max_results: usize,
 ) -> Result<Vec<String>, String> {
     let glob = globset::Glob::new(pattern)
-        .map_err(|e| format!("glob 패턴 오류: {}", e))?
+        .map_err(|e| format!("glob 패턴 오류: {e}"))?
         .compile_matcher();
     let mut results = Vec::new();
     for entry in ignore::WalkBuilder::new(cwd).build() {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+        let Ok(entry) = entry else { continue };
         if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
-        let rel = match entry.path().strip_prefix(cwd) {
-            Ok(p) => p,
-            Err(_) => continue,
+        let Ok(rel) = entry.path().strip_prefix(cwd) else {
+            continue;
         };
         if glob.is_match(rel) {
             results.push(rel.display().to_string().replace('\\', "/"));
@@ -40,23 +37,18 @@ pub(super) fn grep_files(
     pattern: &str,
     max_lines: usize,
 ) -> Result<Vec<String>, String> {
-    let re = regex::Regex::new(pattern).map_err(|e| format!("정규식 오류: {}", e))?;
+    let re = regex::Regex::new(pattern).map_err(|e| format!("정규식 오류: {e}"))?;
     let mut results = Vec::new();
     for entry in ignore::WalkBuilder::new(cwd).build() {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+        let Ok(entry) = entry else { continue };
         if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
-        let rel = match entry.path().strip_prefix(cwd) {
-            Ok(p) => p,
-            Err(_) => continue,
+        let Ok(rel) = entry.path().strip_prefix(cwd) else {
+            continue;
         };
-        let content = match fs::read_to_string(entry.path()) {
-            Ok(s) => s,
-            Err(_) => continue,
+        let Ok(content) = fs::read_to_string(entry.path()) else {
+            continue;
         };
         let rel_str = rel.display().to_string().replace('\\', "/");
         for (lineno, line) in content.lines().enumerate() {
@@ -66,7 +58,7 @@ pub(super) fn grep_files(
                 } else {
                     line.to_string()
                 };
-                results.push(format!("{}:{}: {}", rel_str, lineno + 1, line_trimmed));
+                results.push(format!("{rel_str}:{}: {line_trimmed}", lineno + 1));
                 if results.len() >= max_lines {
                     return Ok(results);
                 }
@@ -79,38 +71,39 @@ pub(super) fn grep_files(
 pub(super) fn run_command(cwd: &Path, command: &str) -> String {
     use std::process::Command;
 
-    let mut cmd;
+    let mut run_cmd;
     #[cfg(windows)]
     {
-        cmd = Command::new("cmd");
-        cmd.args(["/C", command]);
+        run_cmd = Command::new("cmd");
+        run_cmd.args(["/C", command]);
     }
     #[cfg(not(windows))]
     {
-        cmd = Command::new("sh");
-        cmd.args(["-c", command]);
+        run_cmd = Command::new("sh");
+        run_cmd.args(["-c", command]);
     }
-    cmd.current_dir(cwd);
+    run_cmd.current_dir(cwd);
 
-    let output = match cmd.output() {
+    let output = match run_cmd.output() {
         Ok(o) => o,
-        Err(e) => return format!("[error] 명령 실행 실패: {}", e),
+        Err(e) => return format!("[error] 명령 실행 실패: {e}"),
     };
 
     let mut result = String::new();
     let code = output.status.code().unwrap_or(-1);
-    result.push_str(&format!("$ {}\n", command));
-    result.push_str(&format!("exit code: {}\n", code));
+    let _ = writeln!(result, "$ {command}");
+    let _ = writeln!(result, "exit code: {code}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.trim().is_empty() {
         result.push_str("--- stdout ---\n");
         if stdout.len() > MAX_CMD_OUTPUT {
             result.push_str(&stdout[..MAX_CMD_OUTPUT]);
-            result.push_str(&format!(
+            let _ = write!(
+                result,
                 "\n…(stdout {} bytes 잘림)\n",
                 stdout.len() - MAX_CMD_OUTPUT
-            ));
+            );
         } else {
             result.push_str(&stdout);
         }
@@ -123,10 +116,11 @@ pub(super) fn run_command(cwd: &Path, command: &str) -> String {
         result.push_str("--- stderr ---\n");
         if stderr.len() > MAX_CMD_OUTPUT {
             result.push_str(&stderr[..MAX_CMD_OUTPUT]);
-            result.push_str(&format!(
+            let _ = write!(
+                result,
                 "\n…(stderr {} bytes 잘림)",
                 stderr.len() - MAX_CMD_OUTPUT
-            ));
+            );
         } else {
             result.push_str(&stderr);
         }
@@ -143,13 +137,13 @@ pub(super) fn write_file(cwd: &Path, rel_path: &str, content: &str) -> Result<()
     let parent = joined
         .parent()
         .ok_or_else(|| "부모 경로 없음".to_string())?;
-    fs::create_dir_all(parent).map_err(|e| format!("부모 디렉토리 생성 실패: {}", e))?;
+    fs::create_dir_all(parent).map_err(|e| format!("부모 디렉토리 생성 실패: {e}"))?;
     let parent_canonical = parent
         .canonicalize()
-        .map_err(|e| format!("부모 경로 해석 실패 ({}): {}", parent.display(), e))?;
+        .map_err(|e| format!("부모 경로 해석 실패 ({}): {e}", parent.display()))?;
     let cwd_canonical = cwd
         .canonicalize()
-        .map_err(|e| format!("작업 디렉토리 해석 실패: {}", e))?;
+        .map_err(|e| format!("작업 디렉토리 해석 실패: {e}"))?;
     if !parent_canonical.starts_with(&cwd_canonical) {
         return Err(format!(
             "작업 디렉토리 밖 경로: {}",
@@ -167,10 +161,10 @@ pub(super) fn read_file(cwd: &Path, rel_path: &str) -> Result<String, String> {
     let joined = cwd.join(&candidate);
     let canonical = joined
         .canonicalize()
-        .map_err(|e| format!("경로 해석 실패 ({}): {}", joined.display(), e))?;
+        .map_err(|e| format!("경로 해석 실패 ({}): {e}", joined.display()))?;
     let cwd_canonical = cwd
         .canonicalize()
-        .map_err(|e| format!("작업 디렉토리 해석 실패: {}", e))?;
+        .map_err(|e| format!("작업 디렉토리 해석 실패: {e}"))?;
     if !canonical.starts_with(&cwd_canonical) {
         return Err(format!(
             "작업 디렉토리 밖 접근 차단: {}",

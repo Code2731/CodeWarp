@@ -1,5 +1,11 @@
-﻿// state.rs — Core application state types (child module of main)
-use super::*;
+// state.rs — Core application state types (child module of main)
+use super::{
+    combo_box, default_tabbyapi_runtime_dir, find_tabbyapi_launcher, keystore, kill_pid, mcp,
+    persisted_to_block, pty, session, task, AgentMode, Arc, AuthKeyData, Block, ChatMessage, Color,
+    HashSet, InferenceEngine, LlmProvider, Message, ModelOption, OpenRouterModel, PathBuf,
+    PendingToolCall, ScrollId, SettingsTab, SortMode, Task, Theme, SIDEBAR_WIDTH,
+    TABBY_API_DEFAULT_PORT,
+};
 
 mod state_new;
 mod state_restore;
@@ -16,6 +22,7 @@ pub(crate) struct InactiveSession {
     pub(crate) scroll_y: f32,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct App {
     pub(crate) has_key: bool,
     pub(crate) key_input: String,

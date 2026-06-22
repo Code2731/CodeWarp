@@ -1,5 +1,5 @@
 // update_settings_interact_pty.rs — PTY interaction methods
-use super::*;
+use super::{pty, App, Message, PTY_MAX_LINES};
 use iced::Task;
 
 impl App {
@@ -41,8 +41,8 @@ impl App {
             }
         }
     }
-    pub(crate) fn on_pty_line(&mut self, line: String) -> Task<Message> {
-        let clean = pty::strip_ansi(&line);
+    pub(crate) fn on_pty_line(&mut self, line: &str) -> Task<Message> {
+        let clean = pty::strip_ansi(line);
         if !clean.trim().is_empty() {
             self.push_pty_line(clean);
         }

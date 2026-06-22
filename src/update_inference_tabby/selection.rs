@@ -1,4 +1,4 @@
-use super::*;
+use super::{keystore, openrouter, tabby, tools, App, LlmProvider, ModelOption};
 
 impl App {
     pub(crate) fn selected_option(&self) -> Option<&ModelOption> {
@@ -17,8 +17,7 @@ impl App {
     pub(crate) fn selected_model_exists_in_options(&self) -> bool {
         self.selected_model
             .as_deref()
-            .map(|id| self.model_options.iter().any(|o| o.id == id))
-            .unwrap_or(false)
+            .is_some_and(|id| self.model_options.iter().any(|o| o.id == id))
     }
     pub(crate) fn selected_provider(&self) -> Option<LlmProvider> {
         self.selected_option().map(|o| o.provider)
@@ -41,7 +40,7 @@ impl App {
         let provider = self
             .selected_option()
             .map(|o| o.provider)
-            .ok_or_else(|| format!("선택된 모델을 찾을 수 없습니다: {}", id))?;
+            .ok_or_else(|| format!("선택된 모델을 찾을 수 없습니다: {id}"))?;
         match provider {
             LlmProvider::OpenRouter => {
                 let key = keystore::read_api_key()?;

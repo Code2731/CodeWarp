@@ -1,4 +1,5 @@
 use super::*;
+use crate::{Block, ChatEvent, ViewMode};
 
 #[test]
 fn chat_chunk_done_builds_content_from_streaming_raw() {

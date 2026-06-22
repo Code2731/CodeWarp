@@ -1,5 +1,5 @@
 // update_chat_ui.rs — Chat UI interaction update methods (main.rs child module)
-use super::*;
+use super::{App, BlockBody, Message, ViewMode};
 use iced::{widget::markdown, Task};
 
 impl App {
@@ -42,18 +42,18 @@ impl App {
         Task::none()
     }
     pub(crate) fn on_link_clicked(&mut self, uri: &markdown::Uri) -> Task<Message> {
-        let url = uri.to_string();
-        let lower = url.to_ascii_lowercase();
+        let uri_str = uri.to_string();
+        let lower = uri_str.to_ascii_lowercase();
         if lower.starts_with("javascript:") {
             self.status = "차단된 링크 스킴입니다.".into();
             return Task::none();
         }
-        match webbrowser::open(&url) {
-            Ok(_) => {
-                self.status = format!("브라우저에서 열기: {}", url);
+        match webbrowser::open(&uri_str) {
+            Ok(()) => {
+                self.status = format!("브라우저에서 열기: {uri_str}");
             }
             Err(e) => {
-                self.status = format!("링크 열기 실패: {}", e);
+                self.status = format!("링크 열기 실패: {e}");
             }
         }
         Task::none()
@@ -72,6 +72,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Block;
+    use std::sync::Arc;
 
     #[test]
     fn toggle_block_view_to_rendered_triggers_markdown_parse() {

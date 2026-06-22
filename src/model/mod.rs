@@ -16,7 +16,6 @@ mod engine_tests;
 /// 모델 ID에 한국어 친화로 알려진 패턴이 들어있는지.
 /// 휴리스틱 — 누락/오탐 가능. 화이트리스트 갱신은 여기 한 줄.
 pub(crate) fn is_korean_friendly(id: &str) -> bool {
-    let s = id.to_lowercase();
     const PATTERNS: &[&str] = &[
         "claude",
         "gpt-4o",
@@ -42,6 +41,7 @@ pub(crate) fn is_korean_friendly(id: &str) -> bool {
         "ko-llama",
         "42dot",
     ];
+    let s = id.to_lowercase();
     PATTERNS.iter().any(|p| s.contains(p))
 }
 

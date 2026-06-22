@@ -1,5 +1,5 @@
-use super::super::ui::*;
-use crate::*;
+use super::super::ui::{semibold_font, shorten_tail, FS_LABEL};
+use crate::{session, App, Message};
 use iced::widget::{column, row, text, Space};
 use iced::{Element, Font, Length};
 
@@ -36,7 +36,7 @@ impl App {
             row![
                 text("총합").size(FS_LABEL).font(semibold_font()),
                 Space::new().width(Length::Fill),
-                text(format!("${:.4}", total))
+                text(format!("${total:.4}"))
                     .size(FS_LABEL)
                     .font(Font::with_name("JetBrains Mono")),
             ]

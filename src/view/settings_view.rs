@@ -1,11 +1,12 @@
-﻿use super::settings::TabHealth;
-use super::ui::*;
-use crate::*;
+use super::settings::TabHealth;
+use super::ui::{app_vscrollbar, bold_font, secondary_btn, FS_BODY};
+use crate::{list_downloaded_models, App, Message, SettingsTab};
 use iced::widget::scrollable::Direction;
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length, Theme};
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn view_settings(&self) -> Element<'_, Message> {
         let provider_health = self.compute_provider_health();
         let runtime_health = self.compute_runtime_health();

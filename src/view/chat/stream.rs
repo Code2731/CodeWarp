@@ -1,9 +1,13 @@
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{
+    danger_btn, field_input, panel_style, primary_btn, secondary_btn, semibold_font, FS_BODY,
+    FS_LABEL, FS_MICRO, FS_SUBTITLE,
+};
+use crate::{AgentMode, App, Message};
 use iced::widget::{button, column, container, row, text, text_input, Space};
 use iced::{Alignment, Element, Length, Theme};
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn view_stream(&self) -> Element<'_, Message> {
         let blocks_view: Element<Message> = self.view_blocks();
 

@@ -1,10 +1,15 @@
-use super::*;
+use super::{
+    combo_box, keystore, mcp, session, AgentMode, App, Arc, Color, InferenceEngine, McpInputState,
+    Message, ModelFilterState, PathBuf, ScrollId, Task, Theme, UiState, SIDEBAR_WIDTH,
+};
 
 impl App {
+    #[allow(clippy::unused_self)]
     pub(crate) fn title(&self) -> String {
         "CodeWarp".to_string()
     }
 
+    #[allow(clippy::unused_self)]
     pub(crate) fn theme(&self) -> Theme {
         Theme::custom(
             "CodeWarp Dark".to_string(),

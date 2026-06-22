@@ -1,5 +1,8 @@
 // update_chat_tools_writes.rs — Tool write-approval methods (main.rs child module)
-use super::*;
+use super::{
+    summarize_tool_result, tools, App, Arc, Block, BlockBody, ChatMessage, Message, ViewMode,
+    MAX_TOOL_ROUNDS,
+};
 use iced::Task;
 
 impl App {
@@ -105,13 +108,13 @@ impl App {
             }
         }
         let summary = if success {
-            format!("{} ({} bytes)", path, content.len())
+            format!("{path} ({} bytes)", content.len())
         } else {
-            format!("실패: {}", path)
+            format!("실패: {path}")
         };
         self.push_tool_result_block("apply".into(), summary, success);
         self.status = if success {
-            format!("적용됨: {}", path)
+            format!("적용됨: {path}")
         } else {
             result
         };

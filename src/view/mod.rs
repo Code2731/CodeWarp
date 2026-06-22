@@ -1,5 +1,5 @@
 // view.rs — App 뷰 메서드 (main.rs child module)
-use super::*;
+use super::{hscrollbar, App, Color, Message};
 mod chat;
 mod pty;
 mod rightpanel;
@@ -33,7 +33,7 @@ fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
     for (count, change) in diff.iter_all_changes().enumerate() {
         if count >= MAX_LINES {
             col = col.push(
-                text(format!("…(diff 라인 {}+ 생략)", MAX_LINES))
+                text(format!("…(diff 라인 {MAX_LINES}+ 생략)"))
                     .size(11)
                     .color(equal),
             );
@@ -46,9 +46,9 @@ fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
         };
         let raw = change.value().trim_end_matches('\n');
         let line_text = if raw.len() > 200 {
-            format!("{} {}…", sign, &raw[..200])
+            format!("{sign} {}…", &raw[..200])
         } else {
-            format!("{} {}", sign, raw)
+            format!("{sign} {raw}")
         };
         col = col.push(
             text(line_text)
@@ -61,8 +61,8 @@ fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
 }
 
 /// 모달 오버레이: 반투명 백드롭 + 가운데 정렬된 콘텐츠 박스.
-/// content는 view_settings/view_palette 같은 기존 화면 함수의 결과.
-fn modal_overlay<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
+/// `content`는 `view_settings`/`view_palette` 같은 기존 화면 함수의 결과.
+fn modal_overlay(content: Element<'_, Message>) -> Element<'_, Message> {
     let modal_box = container(content)
         .padding(0)
         .width(Length::Shrink)

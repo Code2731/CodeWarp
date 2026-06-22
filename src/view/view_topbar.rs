@@ -1,5 +1,8 @@
-use super::ui::*;
-use crate::*;
+use super::ui::{
+    panel_style, secondary_btn, topbar_style, CONTROL_PAD_X, CONTROL_PAD_Y, FS_BODY, TOPBAR_PAD_X,
+    TOPBAR_PAD_Y, TOPBAR_ROW_SPACING,
+};
+use crate::{App, Message};
 use iced::widget::{button, checkbox, combo_box, container, row, text, Space};
 use iced::{Alignment, Element, Length};
 
@@ -34,8 +37,7 @@ impl App {
         let is_fav = self
             .selected_model
             .as_ref()
-            .map(|id| self.model_filter.favorites.contains(id))
-            .unwrap_or(false);
+            .is_some_and(|id| self.model_filter.favorites.contains(id));
         let fav_btn = button(text(if is_fav { "★" } else { "☆" }).size(16))
             .on_press(Message::ToggleFavorite)
             .padding([CONTROL_PAD_Y, CONTROL_PAD_X])

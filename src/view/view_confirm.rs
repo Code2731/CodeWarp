@@ -1,16 +1,18 @@
 use super::render_diff;
-use super::ui::*;
-use crate::*;
+use super::ui::{
+    app_vscrollbar, danger_btn, primary_btn, secondary_btn, semibold_font, FS_BODY, FS_LABEL,
+};
+use crate::{tools, App, Message};
 use iced::widget::scrollable::Direction;
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Font, Length, Theme};
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub(super) fn view_inline_confirm(&self) -> Element<'_, Message> {
         let n = self.pending_write_calls.len();
         let header = text(format!(
-            "⚠ AI가 {}개 도구 실행을 요청했습니다 (카드 클릭으로 미리보기)",
-            n
+            "⚠ AI가 {n}개 도구 실행을 요청했습니다 (카드 클릭으로 미리보기)"
         ))
         .size(FS_BODY)
         .font(semibold_font());
@@ -42,16 +44,16 @@ impl App {
                             };
                             (summary, expanded)
                         }
-                        Err(e) => (format!("{} [err] {}", arrow, e), None),
+                        Err(e) => (format!("{arrow} [err] {e}"), None),
                     },
                     "run_command" => match tools::RunCommandArgs::parse(&tc.arguments) {
                         Ok(args) => {
-                            let summary = format!("{} 🖥  $ {}", arrow, args.command);
+                            let summary = format!("{arrow} 🖥  $ {}", args.command);
                             (summary, None)
                         }
-                        Err(e) => (format!("{} [err] {}", arrow, e), None),
+                        Err(e) => (format!("{arrow} [err] {e}"), None),
                     },
-                    _ => (format!("{} [?] {}", arrow, tc.name), None),
+                    _ => (format!("{arrow} [?] {}", tc.name), None),
                 };
 
             let summary_btn: Element<Message> = button(text(summary_text).size(FS_BODY).font(

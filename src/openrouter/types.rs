@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// OpenRouter chat 호출 base URL (endpoint 직전).
+/// `OpenRouter` chat 호출 base URL (endpoint 직전).
 pub(crate) const BASE_URL: &str = "https://openrouter.ai/api/v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

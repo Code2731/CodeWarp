@@ -1,4 +1,4 @@
-use super::*;
+use super::PathBuf;
 
 pub(crate) fn is_loopback_url(url: &str) -> bool {
     let lower = url.trim().to_ascii_lowercase();
@@ -65,9 +65,9 @@ pub(crate) fn runtime_command_exists(command: &str) -> bool {
                 .and_then(|v| v.into_string().ok())
                 .map(|v| {
                     v.split(';')
-                        .map(|e| e.trim())
+                        .map(str::trim)
                         .filter(|e| !e.is_empty())
-                        .map(|e| e.to_ascii_lowercase())
+                        .map(str::to_ascii_lowercase)
                         .collect::<Vec<_>>()
                 })
                 .filter(|v| !v.is_empty())

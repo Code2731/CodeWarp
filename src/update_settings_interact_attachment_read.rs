@@ -1,4 +1,4 @@
-use super::*;
+use super::{fmt_bytes, fuzzy_match_paths, App, Message, MAX_ATTACH_BYTES};
 use iced::Task;
 
 impl App {
@@ -25,6 +25,7 @@ impl App {
                 let content = tokio::fs::read_to_string(&full_path)
                     .await
                     .map_err(|e| format!("File read failed: {e}"))?;
+                #[allow(clippy::cast_possible_truncation)]
                 if content.len() > MAX_ATTACH_BYTES as usize {
                     return Err(format!(
                         "Attachment too large (max {}): {}",
@@ -79,6 +80,7 @@ impl App {
                 let content = tokio::fs::read_to_string(&path)
                     .await
                     .map_err(|e| format!("File read failed: {e}"))?;
+                #[allow(clippy::cast_possible_truncation)]
                 if content.len() > MAX_ATTACH_BYTES as usize {
                     return Err(format!(
                         "Attachment too large (max {}): {}",
@@ -113,6 +115,7 @@ impl App {
                 let content = tokio::fs::read_to_string(&path)
                     .await
                     .map_err(|e| format!("File read failed: {e}"))?;
+                #[allow(clippy::cast_possible_truncation)]
                 if content.len() > MAX_ATTACH_BYTES as usize {
                     return Err(format!(
                         "Attachment too large (max {}): {}",

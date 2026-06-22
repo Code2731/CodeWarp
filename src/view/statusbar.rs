@@ -1,5 +1,7 @@
-use super::ui::*;
-use crate::*;
+use super::ui::{
+    semibold_font, topbar_style, FS_LABEL, STATUSBAR_PAD_X, STATUSBAR_PAD_Y, STATUSBAR_ROW_SPACING,
+};
+use crate::{App, Message};
 use iced::widget::{container, row, text, Space};
 use iced::{Alignment, Element, Font, Length, Theme};
 
@@ -12,13 +14,13 @@ impl App {
         let credit_label = match &self.account {
             Some(a) => match (a.usage, a.limit) {
                 (Some(u), Some(l)) => format!("잔액: ${:.2} / ${:.2}", (l - u).max(0.0), l),
-                (Some(u), None) => format!("사용: ${:.4}", u),
+                (Some(u), None) => format!("사용: ${u:.4}"),
                 _ => "잔액: -".into(),
             },
             None => "잔액: -".into(),
         };
         let last_cost_label = match self.last_response_cost {
-            Some(c) if c > 0.0 => format!("최근: ${:.4}", c),
+            Some(c) if c > 0.0 => format!("최근: ${c:.4}"),
             _ => String::new(),
         };
         let streaming_indicator: Element<Message> = if self.streaming_block_id.is_some() {
@@ -68,7 +70,7 @@ impl App {
         }
         bar = bar
             .push(text(credit_label).size(FS_LABEL))
-            .push(text(format!("모델: {}", model_label)).size(FS_LABEL))
+            .push(text(format!("모델: {model_label}")).size(FS_LABEL))
             .push(
                 text(if self.has_key {
                     "키: 등록됨"

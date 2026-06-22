@@ -1,5 +1,5 @@
 // update_chat_stream.rs — Chat stream event dispatcher (main.rs child module)
-use super::*;
+use super::{snap_to_end, App, ChatEvent, Message, PendingToolCall};
 use iced::Task;
 
 impl App {
@@ -36,10 +36,10 @@ impl App {
                 finish_reason,
                 generation_id,
             } => {
-                return self.handle_chat_done(ai_id, finish_reason, generation_id);
+                return self.handle_chat_done(ai_id, finish_reason.as_ref(), generation_id);
             }
             ChatEvent::Error(e) => {
-                return self.handle_chat_error(ai_id, e);
+                return self.handle_chat_error(ai_id, &e);
             }
         }
         if self.follow_bottom {
@@ -53,6 +53,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Block, BlockBody, ViewMode};
+    use std::sync::Arc;
 
     #[test]
     fn chat_chunk_tokens_append_to_assistant_block_without_editor_focus() {

@@ -1,4 +1,4 @@
-use super::*;
+use super::{session, HashSet, SettingsTab, SortMode};
 
 #[derive(Debug)]
 pub(crate) struct HfDownload {
@@ -33,6 +33,7 @@ impl UiState {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub(crate) struct ModelFilterState {
     pub(crate) filter_coding: bool,

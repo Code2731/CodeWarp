@@ -1,6 +1,6 @@
 // ── Presets ─────────────────────────────────────────────────────────
 
-/// 추천 프리셋 — 클릭 시 hf_repo_input에 채움.
+/// 추천 프리셋 — 클릭 시 `hf_repo_input에` 채움.
 #[derive(Debug)]
 pub(crate) struct ModelPreset {
     pub(crate) repo_id: &'static str,
@@ -36,7 +36,7 @@ pub(crate) const MODEL_PRESETS: &[ModelPreset] = &[
     },
 ];
 
-/// EXL2 프리셋 — TabbyAPI용. 클릭하면 해당 branch를 바로 다운로드.
+/// EXL2 프리셋 — `TabbyAPI용`. 클릭하면 해당 branch를 바로 다운로드.
 #[derive(Debug)]
 pub(crate) struct Exl2Preset {
     pub(crate) repo_id: &'static str,

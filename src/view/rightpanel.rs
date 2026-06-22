@@ -1,5 +1,8 @@
-use super::ui::*;
-use crate::*;
+use super::ui::{
+    app_vscrollbar, panel_style, semibold_font, FS_BODY, FS_LABEL, PAD_LG, PANEL_SECTION_GAP_LG,
+    RIGHT_PANEL_WIDTH, SCROLL_GUTTER_PAD_X, SPACE_SM,
+};
+use crate::{App, BlockBody, Message, MAX_TOOL_ROUNDS};
 use iced::widget::scrollable::Direction;
 use iced::widget::{column, container, scrollable, text, Space};
 use iced::{Element, Font, Length, Theme};
@@ -30,10 +33,9 @@ impl App {
 
         let stats = column![
             text("세션 통계").size(FS_LABEL).font(semibold_font()),
-            text(format!("· 메시지: {}", user_msg_count)).size(FS_BODY),
+            text(format!("· 메시지: {user_msg_count}")).size(FS_BODY),
             text(format!(
-                "· 도구 호출: {} (✓{} ✗{})",
-                tool_count, success_count, fail_count
+                "· 도구 호출: {tool_count} (✓{success_count} ✗{fail_count})"
             ))
             .size(FS_BODY),
             text(format!("· 모드: {}", self.agent_mode.label())).size(FS_BODY),
@@ -48,7 +50,7 @@ impl App {
         } else {
             for (name, summary, success) in tool_results.iter().rev() {
                 let icon = if *success { "✓" } else { "✗" };
-                let line = text(format!("{} {} → {}", icon, name, summary))
+                let line = text(format!("{icon} {name} → {summary}"))
                     .size(FS_LABEL)
                     .font(Font::with_name("JetBrains Mono"));
                 log_col = log_col.push(line);

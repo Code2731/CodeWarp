@@ -36,7 +36,9 @@ pub(crate) fn extract_text_content(result: &serde_json::Value) -> String {
             arr.iter()
                 .filter_map(|item| {
                     if item.get("type")?.as_str()? == "text" {
-                        item.get("text")?.as_str().map(|s| s.to_string())
+                        item.get("text")?
+                            .as_str()
+                            .map(std::string::ToString::to_string)
                     } else {
                         None
                     }

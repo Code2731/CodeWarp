@@ -1,5 +1,8 @@
 // update_inference_spawn.rs — Runtime spawn resolution (main.rs child module)
-use super::*;
+use super::{
+    is_loopback_url, is_tabbyapi_launcher_path, list_downloaded_models, resolve_binary_from_dir,
+    tabby, tabby_connection_error_looks_unreachable, App, InferenceEngine, PathBuf,
+};
 
 impl App {
     pub(crate) fn resolve_runtime_spawn_command(
@@ -14,8 +17,7 @@ impl App {
                     program
                 } else if std::path::Path::new(override_path).is_dir() {
                     resolve_binary_from_dir(std::path::Path::new(override_path), &program)
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_else(|| override_path.to_string())
+                        .map_or_else(|| override_path.to_string(), |p| p.display().to_string())
                 } else {
                     override_path.to_string()
                 };
@@ -28,7 +30,7 @@ impl App {
             override_path.to_string()
         };
         let script_path = std::path::Path::new(&script);
-        let work_dir = script_path.parent().map(|p| p.to_path_buf());
+        let work_dir = script_path.parent().map(std::path::Path::to_path_buf);
         let file_name = script_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -57,7 +59,7 @@ impl App {
         #[cfg(not(windows))]
         {
             if ext == "sh" {
-                return (format!("./{}", file_name), args, work_dir);
+                return (format!("./{file_name}"), args, work_dir);
             }
             if ext == "py" {
                 let mut final_args = vec![file_name];
@@ -83,7 +85,7 @@ impl App {
                     .into();
             }
             if let Ok(port) = self.inference_port_input.trim().parse::<u16>() {
-                let expected_base = format!("http://localhost:{}", port);
+                let expected_base = format!("http://localhost:{port}");
                 let normalized_current = self
                     .tabby_url_input
                     .trim()
@@ -95,8 +97,7 @@ impl App {
                     && !normalized_current.eq_ignore_ascii_case(&expected_base)
                 {
                     return format!(
-                        "Provider URL과 Runtime 포트가 다릅니다. Runtime 포트가 {} 이므로 Provider URL을 {} 로 맞춘 뒤 연결 테스트해 주세요.",
-                        port, expected_base
+                        "Provider URL과 Runtime 포트가 다릅니다. Runtime 포트가 {port} 이므로 Provider URL을 {expected_base} 로 맞춘 뒤 연결 테스트해 주세요."
                     );
                 }
             }

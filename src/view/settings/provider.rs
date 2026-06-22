@@ -1,9 +1,13 @@
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{
+    bold_font, danger_btn, field_input, panel_style, primary_btn, secondary_btn, semibold_font,
+    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, SPACE_XS, SPACE_XXS,
+};
+use crate::{downloaded_exl2_preset_folder, App, Message, EXL2_PRESETS};
 use iced::widget::{button, column, container, row, text, text_input, Space};
 use iced::{Alignment, Element, Length};
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn view_provider_tab(&self) -> Element<'_, Message> {
         let key_status = if self.has_key {
             text("OpenRouter 키: 저장됨").size(FS_SUBTITLE)

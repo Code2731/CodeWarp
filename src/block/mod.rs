@@ -11,7 +11,7 @@ pub(crate) use block_apply::*;
 
 // ── Block types ─────────────────────────────────────────────────────
 
-/// 사용자 입력은 짧은 plain text, AI 응답은 read-only text_editor (부분 선택 + 복사 가능).
+/// 사용자 입력은 짧은 plain text, AI 응답은 read-only `text_editor` (부분 선택 + 복사 가능).
 #[derive(Debug)]
 pub(crate) enum BlockBody {
     User(String),
@@ -54,7 +54,7 @@ impl BlockBody {
 pub(crate) enum ViewMode {
     /// 마크다운으로 예쁘게 렌더. 코드 블록은 syntax highlight.
     Rendered,
-    /// 원문(read-only text_editor). 기본 assistant 보기이며 부분 선택 + Ctrl+C 가능.
+    /// 원문(read-only `text_editor`). 기본 assistant 보기이며 부분 선택 + Ctrl+C 가능.
     Raw,
 }
 
@@ -129,14 +129,14 @@ pub(crate) fn truncate_after_last_user(conv: &mut Vec<crate::openrouter::ChatMes
     }
 }
 
-/// 가장 마지막 BlockBody::User 인덱스 (없으면 None).
+/// 가장 마지막 `BlockBody::User` 인덱스 (없으면 None).
 pub(crate) fn last_user_block_idx(blocks: &[Block]) -> Option<usize> {
     blocks
         .iter()
         .rposition(|b| matches!(b.body, BlockBody::User(_)))
 }
 
-/// 가장 마지막 BlockBody::Assistant 인덱스 (없으면 None).
+/// 가장 마지막 `BlockBody::Assistant` 인덱스 (없으면 None).
 pub(crate) fn last_assistant_block_idx(blocks: &[Block]) -> Option<usize> {
     blocks
         .iter()

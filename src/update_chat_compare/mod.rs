@@ -1,5 +1,8 @@
 // update_chat_compare — Compare mode update methods (main.rs child module)
-use super::*;
+use super::{
+    build_file_context, keystore, openrouter, snap_to_end, tabby, App, Block, BlockBody,
+    ChatMessage, LlmProvider, Message, ViewMode,
+};
 use iced::widget::text_editor;
 use iced::Task;
 
@@ -31,11 +34,10 @@ impl App {
             Ok(_) => "[Tabby] 빈 응답".into(),
             Err(e) => format!("[ERROR] {}", tabby::humanize_error(&e)),
         };
-        self.fill_assistant_block(openrouter_block_id, openrouter_text.clone());
-        self.fill_assistant_block(tabby_block_id, tabby_text.clone());
+        self.fill_assistant_block(openrouter_block_id, &openrouter_text);
+        self.fill_assistant_block(tabby_block_id, &tabby_text);
         std::sync::Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(format!(
-            "[OpenRouter]\n{}\n\n[Tabby]\n{}",
-            openrouter_text, tabby_text
+            "[OpenRouter]\n{openrouter_text}\n\n[Tabby]\n{tabby_text}"
         )));
         self.compare_pending = false;
         self.status = "Compare 응답 완료".into();
@@ -57,11 +59,11 @@ impl App {
         };
 
         self.ensure_system_message();
-        let user_msg = if !self.attached_files.is_empty() {
+        let user_msg = if self.attached_files.is_empty() {
+            text.clone()
+        } else {
             let ctx = build_file_context(&self.attached_files);
             format!("{ctx}\n\n{text}")
-        } else {
-            text.clone()
         };
         std::sync::Arc::make_mut(&mut self.conversation).push(ChatMessage::user(user_msg));
         self.attached_files.clear();

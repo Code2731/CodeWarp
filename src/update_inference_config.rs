@@ -1,5 +1,10 @@
 // update_inference_config.rs — Inference configuration update methods (main.rs child module)
-use super::*;
+use super::{
+    default_tabbyapi_runtime_dir, downloaded_model_path, extract_loopback_port,
+    find_tabbyapi_launcher, install_tabbyapi_runtime, is_loopback_url, keystore,
+    resolve_tabbyapi_model_dir_for_folder, validate_tabbyapi_launcher_path, App, InferenceEngine,
+    Message, SettingsTab, TABBY_API_DEFAULT_PORT,
+};
 use iced::Task;
 
 impl App {
@@ -16,16 +21,16 @@ impl App {
         }
         Task::none()
     }
-    pub(crate) fn select_downloaded_model(&mut self, folder_name: String) -> Task<Message> {
-        let model_path = downloaded_model_path(&self.model_dir_input, &folder_name);
+    pub(crate) fn select_downloaded_model(&mut self, folder_name: &str) -> Task<Message> {
+        let model_path = downloaded_model_path(&self.model_dir_input, folder_name);
         let Some(resolved_model_path) =
-            resolve_tabbyapi_model_dir_for_folder(&model_path, &folder_name)
+            resolve_tabbyapi_model_dir_for_folder(&model_path, folder_name)
         else {
             let msg = format!(
                 "TabbyAPI 모델 폴더를 확정할 수 없습니다: {} (config.json+가중치 파일이 필요하며, 여러 하위 모델이면 폴더 이름에 bpw 힌트가 포함되어야 합니다.)",
                 model_path.display()
             );
-            self.status = msg.clone();
+            self.status.clone_from(&msg);
             self.tabby_status = Some(Err(msg));
             return Task::none();
         };
@@ -46,10 +51,8 @@ impl App {
             let _ = keystore::write_openai_compat_label("TabbyAPI");
         }
         self.ui.settings_tab = SettingsTab::Runtime;
-        self.status = format!(
-            "다운로드된 모델 선택됨: {} — Runtime에서 시작 후 연결 테스트",
-            folder_name
-        );
+        self.status =
+            format!("다운로드된 모델 선택됨: {folder_name} — Runtime에서 시작 후 연결 테스트");
         Task::none()
     }
     pub(crate) fn select_inference_engine(&mut self, engine: InferenceEngine) -> Task<Message> {
@@ -76,9 +79,9 @@ impl App {
         }
         Task::none()
     }
-    pub(crate) fn set_inference_port(&mut self, value: String) -> Task<Message> {
+    pub(crate) fn set_inference_port(&mut self, value: &str) -> Task<Message> {
         let prev_port = self.inference_port_input.trim().parse::<u16>().ok();
-        self.inference_port_input = value.clone();
+        self.inference_port_input = value.to_string();
         if let Ok(new_port) = value.trim().parse::<u16>() {
             if matches!(
                 self.inference_engine,
@@ -94,7 +97,7 @@ impl App {
                     || (is_loopback_url(current_url)
                         && (current_url_port == prev_port || current_url_port.is_none()));
                 if should_sync {
-                    self.tabby_url_input = format!("http://localhost:{}", new_port);
+                    self.tabby_url_input = format!("http://localhost:{new_port}");
                     let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
                 }
             }
@@ -109,7 +112,7 @@ impl App {
             let s = path.display().to_string();
             if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
                 if let Err(msg) = validate_tabbyapi_launcher_path(&s) {
-                    self.status = msg.clone();
+                    self.status.clone_from(&msg);
                     self.tabby_status = Some(Err(msg));
                     return Task::none();
                 }
@@ -124,7 +127,7 @@ impl App {
         }
         Task::none()
     }
-    pub(crate) fn pick_inference_binary(&self) -> Task<Message> {
+    pub(crate) fn pick_inference_binary() -> Task<Message> {
         Task::perform(
             async {
                 rfd::AsyncFileDialog::new()
@@ -154,9 +157,9 @@ impl App {
             Ok(launcher) => {
                 let s = launcher.display().to_string();
                 self.inference_engine = InferenceEngine::TabbyApi;
-                self.inference_binary_path = s.clone();
+                self.inference_binary_path.clone_from(&s);
                 self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
-                self.tabby_url_input = format!("http://localhost:{}", TABBY_API_DEFAULT_PORT);
+                self.tabby_url_input = format!("http://localhost:{TABBY_API_DEFAULT_PORT}");
                 self.openai_compat_label = "TabbyAPI".into();
                 let _ = keystore::write_inference_binary(&s);
                 let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
@@ -169,8 +172,7 @@ impl App {
             }
             Err(e) => {
                 self.status = format!(
-                    "TabbyAPI 런타임 설치 실패: {}. Git/Python 설치와 네트워크를 확인해 주세요.",
-                    e
+                    "TabbyAPI 런타임 설치 실패: {e}. Git/Python 설치와 네트워크를 확인해 주세요."
                 );
                 self.tabby_status = Some(Err(self.status.clone()));
             }

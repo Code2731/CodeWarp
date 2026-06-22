@@ -1,12 +1,15 @@
 use super::block_style::block_container_style;
-use crate::view::ui::*;
+use crate::view::ui::{
+    primary_btn, secondary_btn, semibold_font, FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE,
+};
 use crate::view::CodewarpViewer;
-use crate::*;
+use crate::{App, Block, BlockBody, Message, ViewMode};
 use iced::widget::markdown;
 use iced::widget::{button, column, container, row, text, text_editor, Space};
 use iced::{Alignment, Element, Font, Length, Theme};
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn view_block_item<'a>(
         &'a self,
         b: &'a Block,
@@ -23,7 +26,7 @@ impl App {
         {
             let icon = if *success { "✓" } else { "✗" };
             let chip = container(
-                text(format!("{} {} → {}", icon, name, summary))
+                text(format!("{icon} {name} → {summary}"))
                     .size(FS_LABEL)
                     .font(Font::with_name("JetBrains Mono")),
             )
@@ -107,7 +110,7 @@ impl App {
                 .into()
         };
         let model_label: Element<Message> = match &b.model {
-            Some(m) => text(format!("· {}", m)).size(FS_MICRO).into(),
+            Some(m) => text(format!("· {m}")).size(FS_MICRO).into(),
             None => Space::new()
                 .width(Length::Shrink)
                 .height(Length::Shrink)
@@ -154,14 +157,14 @@ impl App {
         let is_error_assistant =
             matches!(&b.body, BlockBody::Assistant(_)) && b.body.to_text().contains("[ERROR]");
         let block_view =
-            container(column![header, body_view, self.view_block_apply_section(b),].spacing(6))
+            container(column![header, body_view, Self::view_block_apply_section(b),].spacing(6))
                 .padding(12)
                 .width(Length::Fill)
                 .style(block_container_style(is_user, is_error_assistant));
         block_view.into()
     }
 
-    fn view_block_apply_section<'a>(&'a self, b: &'a Block) -> Element<'a, Message> {
+    fn view_block_apply_section(b: &Block) -> Element<'_, Message> {
         if b.apply_candidates.is_empty() {
             return Space::new().height(Length::Shrink).into();
         }

@@ -1,9 +1,13 @@
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{
+    danger_btn, field_input, panel_style, primary_btn, secondary_btn, semibold_font, FS_BODY,
+    FS_LABEL,
+};
+use crate::{fmt_bytes, list_downloaded_models, App, Message};
 use iced::widget::{button, column, container, row, text, text_input, Space};
 use iced::{Alignment, Element, Font, Length};
 
 impl App {
+    #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
     pub(crate) fn view_model_manager(&self) -> Element<'_, Message> {
         let header = text("모델 매니저 (HuggingFace 다운로드)")
             .size(14)
@@ -20,8 +24,7 @@ impl App {
         } else {
             container(
                 text(format!(
-                    "로컬 모델 {}개가 준비되어 있습니다.",
-                    local_model_count
+                    "로컬 모델 {local_model_count}개가 준비되어 있습니다."
                 ))
                 .size(FS_LABEL),
             )
@@ -144,7 +147,7 @@ impl App {
                 Space::new().height(Length::Fixed(12.0)),
                 text("HF 일반 모델 (safetensors · xLLM/vLLM용) — 클릭 → 입력란에 채움")
                     .size(FS_BODY),
-                self.view_model_presets(),
+                Self::view_model_presets(),
                 Space::new().height(Length::Fixed(8.0)),
                 text("또는 직접 입력").size(FS_LABEL).font(semibold_font()),
                 dl_row,

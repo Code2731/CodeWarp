@@ -1,5 +1,7 @@
 // update_settings_ui.rs — Settings UI toggle/input/palette methods (main.rs child module)
-use super::*;
+use super::{
+    keystore, session, AgentMode, App, Message, PaletteAction, SettingsTab, SIDEBAR_WIDTH,
+};
 use crate::view::{SIDEBAR_WIDTH_COMPACT, SIDEBAR_WIDTH_WIDE};
 use iced::Task;
 
@@ -159,7 +161,7 @@ impl App {
         maybe_path: Option<std::path::PathBuf>,
     ) -> Task<Message> {
         if let Some(path) = maybe_path {
-            self.cwd = path.clone();
+            self.cwd.clone_from(&path);
             let _ = keystore::write_cwd(&path.display().to_string());
             self.status = format!("작업 폴더: {}", path.display());
             self.ensure_system_message();

@@ -8,7 +8,7 @@ pub(crate) async fn get_generation(api_key: String, id: String) -> Result<Genera
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     let client = http_client()?;
     let resp = client
-        .get(format!("https://openrouter.ai/api/v1/generation?id={}", id))
+        .get(format!("https://openrouter.ai/api/v1/generation?id={id}"))
         .bearer_auth(&api_key)
         .header("HTTP-Referer", "https://codewarp.app")
         .header("X-Title", "CodeWarp")
@@ -18,7 +18,7 @@ pub(crate) async fn get_generation(api_key: String, id: String) -> Result<Genera
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("generation {}: {}", status, body));
+        return Err(format!("generation {status}: {body}"));
     }
     let parsed: GenerationResponse = resp.json().await.map_err(|e| e.to_string())?;
     Ok(parsed.data)
@@ -37,7 +37,7 @@ pub(crate) async fn get_account_info(api_key: String) -> Result<AuthKeyData, Str
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("OpenRouter {}: {}", status, body));
+        return Err(format!("OpenRouter {status}: {body}"));
     }
     let parsed: AuthKeyResponse = resp.json().await.map_err(|e| e.to_string())?;
     Ok(parsed.data)
@@ -56,7 +56,7 @@ pub(crate) async fn list_models(api_key: String) -> Result<Vec<OpenRouterModel>,
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("OpenRouter {}: {}", status, body));
+        return Err(format!("OpenRouter {status}: {body}"));
     }
     let parsed: ModelsResponse = resp.json().await.map_err(|e| e.to_string())?;
     Ok(parsed.data)

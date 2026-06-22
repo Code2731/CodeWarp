@@ -1,9 +1,9 @@
-use super::*;
+use super::{hscrollbar, Color, Message};
 use iced::widget::scrollable::Direction;
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Element, Font, Length, Theme};
 
-/// markdown::view_with용 커스텀 Viewer.
+/// `markdown::view_with`용 커스텀 `Viewer`.
 #[derive(Debug)]
 pub(super) struct CodewarpViewer;
 

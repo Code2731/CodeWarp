@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{App, Message};
 use iced::widget::{row, text};
 use iced::{Alignment, Element, Theme};
 
@@ -11,8 +11,8 @@ impl App {
             Unknown,
         }
         let (kind, label): (Kind, String) = match &self.tabby_status {
-            Some(Ok(s)) => (Kind::Ok, format!("연결됨 — {}", s)),
-            Some(Err(e)) => (Kind::Err, format!("끊김 — {}", e)),
+            Some(Ok(s)) => (Kind::Ok, format!("연결됨 — {s}")),
+            Some(Err(e)) => (Kind::Err, format!("끊김 — {e}")),
             None => (Kind::Unknown, "endpoint 미시도".into()),
         };
         let dot = text("●").size(size).style(move |theme: &Theme| {

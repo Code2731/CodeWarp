@@ -1,5 +1,5 @@
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{danger_btn, panel_style, primary_btn, semibold_font, FS_LABEL, FS_MICRO};
+use crate::{App, InferenceEngine, Message};
 use iced::widget::{button, column, container, row, text, Space};
 use iced::{Alignment, Element, Font, Length, Theme};
 
@@ -10,7 +10,7 @@ impl App {
 
         if running {
             let running_label = if let Some(pid) = self.inference_pid {
-                format!("● 실행 중 (pid {})", pid)
+                format!("● 실행 중 (pid {pid})")
             } else {
                 "● 실행 중".to_string()
             };

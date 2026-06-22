@@ -1,5 +1,5 @@
 // update_chat.rs — Chat-related App update methods (main.rs child module)
-use super::*;
+use super::{AgentMode, App, Arc, ChatMessage};
 
 impl App {
     pub(crate) fn ensure_system_message(&mut self) {

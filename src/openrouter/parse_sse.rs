@@ -2,10 +2,7 @@ use super::types::StreamChunk;
 
 pub(super) fn normalize_stream_payload_line(line: &str) -> Option<&str> {
     let trimmed = line.trim();
-    let payload = trimmed
-        .strip_prefix("data:")
-        .map(str::trim)
-        .unwrap_or(trimmed);
+    let payload = trimmed.strip_prefix("data:").map_or(trimmed, str::trim);
     if payload.is_empty() {
         None
     } else {
@@ -65,12 +62,11 @@ pub(super) fn parse_stream_chunks(payload: &str) -> Vec<StreamChunk> {
     let mut stream_items = Vec::new();
     let mut had_error = false;
     for item in serde_json::Deserializer::from_str(trimmed).into_iter::<StreamChunk>() {
-        match item {
-            Ok(chunk) => stream_items.push(chunk),
-            Err(_) => {
-                had_error = true;
-                break;
-            }
+        if let Ok(chunk) = item {
+            stream_items.push(chunk)
+        } else {
+            had_error = true;
+            break;
         }
     }
     if !stream_items.is_empty() && !had_error {

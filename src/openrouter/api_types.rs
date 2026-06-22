@@ -79,7 +79,7 @@ pub(super) async fn fetch_non_stream_fallback(
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("OpenRouter {}: {}", status, text));
+        return Err(format!("OpenRouter {status}: {text}"));
     }
     let raw = resp.text().await.unwrap_or_default();
     Ok(extract_non_stream_content(raw.trim()))

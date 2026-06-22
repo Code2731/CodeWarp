@@ -22,17 +22,18 @@ pub(super) fn has_model_weight_file(dir: &Path) -> bool {
             continue;
         };
         let file_name = file_name.to_ascii_lowercase();
-        if file_name.ends_with(".safetensors")
-            || file_name.ends_with(".bin")
-            || file_name.ends_with(".gguf")
-            || file_name.ends_with(".pt")
-            || file_name.ends_with(".pth")
-        {
+        if file_name.ends_with(".safetensors") || is_model_extension(&file_name) {
             return true;
         }
     }
 
     false
+}
+
+fn is_model_extension(name: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .is_some_and(|ext| matches!(ext.to_str(), Some("bin" | "gguf" | "pt" | "pth")))
 }
 
 pub(super) fn is_valid_tabbyapi_model_dir_direct(path: &Path) -> bool {

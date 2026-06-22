@@ -1,3 +1,8 @@
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 pub(crate) fn build_window_icon() -> Option<iced::window::Icon> {
     const SIZE: u32 = 64;
     const CENTER: f32 = (SIZE as f32 - 1.0) / 2.0;

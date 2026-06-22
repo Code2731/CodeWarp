@@ -1,5 +1,8 @@
 // update_inference_tabby_fetch.rs — Tabby model fetch/retry methods (main.rs child module)
-use super::*;
+use super::{
+    is_korean_friendly, keystore, tabby, tabby_connection_error_looks_unreachable, App,
+    LlmProvider, Message, ModelOption, TABBY_CONNECT_RETRY_DELAY_SECS,
+};
 use iced::Task;
 
 impl App {
@@ -49,7 +52,7 @@ impl App {
                 } else {
                     format!("{}개", ids.len())
                 };
-                self.status = format!("Tabby 연결됨 — {}", label);
+                self.status = format!("Tabby 연결됨 — {label}");
                 self.tabby_status = Some(Ok(label));
                 let provider_label = self.openai_compat_label.clone();
                 let mut first_tabby_id: Option<String> = None;
@@ -71,15 +74,12 @@ impl App {
                     });
                 }
                 if let Some(id) = first_tabby_id {
-                    let selected_is_tabby = self
-                        .selected_model
-                        .as_deref()
-                        .map(|selected| {
+                    let selected_is_tabby =
+                        self.selected_model.as_deref().is_some_and(|selected| {
                             self.model_options.iter().any(|o| {
                                 o.provider == LlmProvider::OpenAICompat && o.id == selected
                             })
-                        })
-                        .unwrap_or(false);
+                        });
                     if !selected_is_tabby {
                         self.selected_model = Some(id.clone());
                         self.selected_model_provider = Some(LlmProvider::OpenAICompat);
@@ -96,8 +96,7 @@ impl App {
                     self.tabby_connect_retry_left -= 1;
                     let remain = self.tabby_connect_retry_left;
                     self.status = format!(
-                        "Tabby 연결 재시도 예정: {} ({}초 뒤 자동 재시도, 남은 {}회)",
-                        actionable, TABBY_CONNECT_RETRY_DELAY_SECS, remain
+                        "Tabby 연결 재시도 예정: {actionable} ({TABBY_CONNECT_RETRY_DELAY_SECS}초 뒤 자동 재시도, 남은 {remain}회)"
                     );
                     self.tabby_status = Some(Err(actionable));
                     return Task::perform(
@@ -109,12 +108,12 @@ impl App {
                         },
                         {
                             let generation = self.tabby_retry_generation;
-                            move |_| Message::FetchTabbyModelsRetry(generation)
+                            move |()| Message::FetchTabbyModelsRetry(generation)
                         },
                     );
                 }
                 self.tabby_connect_retry_left = 0;
-                self.status = format!("Tabby 연결 실패: {}", actionable);
+                self.status = format!("Tabby 연결 실패: {actionable}");
                 self.tabby_status = Some(Err(actionable));
             }
         }

@@ -1,5 +1,9 @@
-use super::ui::*;
-use crate::*;
+use super::ui::{
+    app_vscrollbar, danger_btn, panel_style, primary_btn, secondary_btn, semibold_font,
+    shorten_tail, FS_BODY, FS_LABEL, FS_SUBTITLE, PAD_LG, PAD_MD, PAD_XS, SCROLL_GUTTER_PAD_X,
+    SPACE_SM, SPACE_XS,
+};
+use crate::{App, Message};
 use iced::widget::scrollable::Direction;
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length, Theme};
@@ -8,6 +12,7 @@ mod context;
 mod usage;
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub(super) fn view_sidebar(&self) -> Element<'_, Message> {
         const CWD_PREVIEW_MAX: usize = 36;
         let cwd_display = self.cwd.display().to_string();
@@ -18,7 +23,7 @@ impl App {
             self.current_session_title.clone()
         };
         let mut sessions_col = column![container(
-            text(format!("📌 {}", active_label))
+            text(format!("📌 {active_label}"))
                 .size(FS_BODY)
                 .font(semibold_font())
         )
@@ -73,7 +78,7 @@ impl App {
                     .into()
             };
             let row_widget = row![
-                button(text(format!("📂 {}", title)).size(FS_BODY))
+                button(text(format!("📂 {title}")).size(FS_BODY))
                     .on_press(Message::SwitchSession(s.id))
                     .padding([4, 8])
                     .width(Length::Fill)

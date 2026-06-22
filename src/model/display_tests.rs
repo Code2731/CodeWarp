@@ -85,7 +85,7 @@ fn oai_opt(id: &str, label: &str) -> ModelOption {
 #[test]
 fn display_openrouter_basic() {
     let m = or_opt("gpt-4o");
-    let s = format!("{}", m);
+    let s = format!("{m}");
     assert!(s.starts_with("[OR]"), "got: {}", s);
     assert!(s.contains("gpt-4o"));
 }
@@ -93,7 +93,7 @@ fn display_openrouter_basic() {
 #[test]
 fn display_openai_compat_with_label() {
     let m = oai_opt("qwen2.5-coder", "xLLM");
-    let s = format!("{}", m);
+    let s = format!("{m}");
     assert!(s.starts_with("[xLLM]"), "got: {}", s);
     assert!(s.contains("qwen2.5-coder"));
 }
@@ -101,14 +101,14 @@ fn display_openai_compat_with_label() {
 #[test]
 fn display_openai_compat_empty_label_defaults_to_local() {
     let m = oai_opt("starcoder", "");
-    let s = format!("{}", m);
+    let s = format!("{m}");
     assert!(s.starts_with("[Local]"), "got: {}", s);
 }
 
 #[test]
 fn display_openai_compat_whitespace_label_defaults() {
     let m = oai_opt("foo", "   ");
-    let s = format!("{}", m);
+    let s = format!("{m}");
     assert!(s.starts_with("[Local]"), "got: {}", s);
 }
 
@@ -120,7 +120,7 @@ fn display_combined_tags() {
     m.context_length = Some(200_000);
     m.prompt_per_million = Some(3.0);
     m.completion_per_million = Some(15.0);
-    let s = format!("{}", m);
+    let s = format!("{m}");
     assert!(s.contains("[OR]"));
     assert!(s.contains("[KO]"));
     assert!(s.contains("★"));
@@ -133,7 +133,7 @@ fn display_openai_compat_free_marker() {
     let mut m = oai_opt("local-model", "xLLM");
     m.prompt_per_million = Some(0.0);
     m.completion_per_million = Some(0.0);
-    let s = format!("{}", m);
+    let s = format!("{m}");
     assert!(s.contains("[xLLM]"));
     assert!(s.contains("free"));
 }

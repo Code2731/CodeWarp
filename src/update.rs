@@ -1,9 +1,10 @@
 // update.rs — App update 메서드 (main.rs child module)
-use super::*;
+use super::{on_event, session, App, Message};
 use iced::{Subscription, Task};
 use std::time::Duration;
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::OpenSettings => self.open_settings_overlay(),
@@ -17,12 +18,12 @@ impl App {
             Message::TabbyUrlChanged(v) => self.set_tabby_url(v),
             Message::TabbyTokenChanged(v) => self.set_tabby_token(v),
             Message::ToggleTabbyTokenVisible => self.toggle_tabby_token_visible(),
-            Message::InferenceCommandChanged(v) => self.set_inference_command(v),
+            Message::InferenceCommandChanged(v) => self.set_inference_command(&v),
             Message::SelectInferenceEngine(e) => self.select_inference_engine(e),
             Message::SelectInferenceModel(m) => self.set_inference_model(m),
-            Message::InferencePortChanged(v) => self.set_inference_port(v),
-            Message::InferenceBinaryChanged(v) => self.set_inference_binary(v),
-            Message::PickInferenceBinary => self.pick_inference_binary(),
+            Message::InferencePortChanged(v) => self.set_inference_port(&v),
+            Message::InferenceBinaryChanged(v) => self.set_inference_binary(&v),
+            Message::PickInferenceBinary => App::pick_inference_binary(),
             Message::InferenceBinaryPicked(maybe) => self.on_inference_binary_picked(maybe),
             Message::InstallTabbyApiRuntime => self.install_tabbyapi_runtime_cmd(),
             Message::TabbyApiRuntimeInstalled(result) => self.on_tabbyapi_runtime_installed(result),
@@ -42,7 +43,7 @@ impl App {
             Message::ToggleHfTokenVisible => self.toggle_hf_token_visible(),
             Message::SaveHfToken => self.save_hf_token(),
             Message::HfTokenSaved(r) => self.on_hf_token_saved(r),
-            Message::ModelDirChanged(v) => self.set_model_dir(v),
+            Message::ModelDirChanged(v) => self.set_model_dir(&v),
             Message::PickModelDir => Task::perform(
                 async {
                     rfd::AsyncFileDialog::new()
@@ -57,10 +58,10 @@ impl App {
             Message::UsePreset(idx) => self.apply_model_preset(idx),
             Message::DownloadExl2Preset(idx) => self.prepare_exl2_preset_download(idx),
             Message::SelectDownloadedModel(folder_name) => {
-                self.select_downloaded_model(folder_name)
+                self.select_downloaded_model(&folder_name)
             }
             Message::StartHfDownload => self.start_hf_download(),
-            Message::HfDownloadEvent(ev) => self.on_hf_download_event(ev),
+            Message::HfDownloadEvent(ev) => self.on_hf_download_event(&ev),
             Message::CancelHfDownload => self.cancel_hf_download(),
             Message::RegenerateLast => self.regenerate_last(),
             Message::ApplyChange(block_id, idx) => self.apply_change(block_id, idx),
@@ -68,7 +69,7 @@ impl App {
 
             // ── 파일 컨텍스트 첨부 ────────────────────────────────
             Message::FileDropped(path) => self.on_file_dropped(path),
-            Message::FileDragHover => self.file_drag_hover(),
+            Message::FileDragHover => Self::file_drag_hover(),
             Message::FileReadDone(path, content) => self.on_file_read_done(path, content),
             Message::FileAttachError(msg) => self.file_attach_error(msg),
 
@@ -78,17 +79,17 @@ impl App {
             Message::AddMcpServer => self.add_mcp_server(),
             Message::RemoveMcpServer(idx) => self.remove_mcp_server(idx),
             Message::McpToolsLoaded(server_name, tools) => {
-                self.on_mcp_tools_loaded(server_name, tools)
+                self.on_mcp_tools_loaded(&server_name, tools)
             }
-            Message::McpToolsFailed(msg) => self.on_mcp_tools_failed(msg),
+            Message::McpToolsFailed(msg) => self.on_mcp_tools_failed(&msg),
             Message::McpToolResult(tool_call_id, result) => {
-                self.on_mcp_tool_result(tool_call_id, result)
+                self.on_mcp_tool_result(&tool_call_id, result)
             }
 
             // ── PTY 터미널 ─────────────────────────────────────────
             Message::PtyToggle => self.toggle_pty(),
             Message::PtyStart => self.pty_start(),
-            Message::PtyLine(line) => self.on_pty_line(line),
+            Message::PtyLine(line) => self.on_pty_line(&line),
             Message::PtyExited => self.on_pty_exited(),
             Message::PtyInputChanged(v) => self.set_pty_input(v),
             Message::PtySend => self.send_pty_input(),
@@ -114,7 +115,7 @@ impl App {
             Message::FetchModels => self.fetch_models_cmd(),
             Message::ModelsLoaded(r) => self.on_models_loaded(r),
             Message::SelectModel(opt) => self.select_model(opt),
-            Message::FetchAccount => self.fetch_account_cmd(),
+            Message::FetchAccount => App::fetch_account_cmd(),
             Message::AccountLoaded(r) => self.on_account_loaded(r),
             Message::InputChanged(v) => self.on_input_changed(v),
             Message::Send => self.send_message(),
@@ -137,7 +138,7 @@ impl App {
             Message::EditorAction(id, action) => self.on_editor_action(id, action),
             Message::ToggleBlockView(id) => self.toggle_block_view(id),
             Message::LinkClicked(uri) => self.on_link_clicked(&uri),
-            Message::PickCwd => self.pick_cwd(),
+            Message::PickCwd => App::pick_cwd(),
             Message::PickAttachment => self.pick_attachment(),
             Message::AttachmentPicked(maybe_path) => self.on_attachment_picked(maybe_path),
             Message::ApproveWrites => self.approve_pending_writes(),

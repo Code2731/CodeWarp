@@ -1,5 +1,5 @@
 // update_chat_stream_helpers.rs — Chat stream helper utilities (main.rs child module)
-use super::*;
+use super::{markdown, openrouter, App, Arc, BlockBody, ChatMessage, Message};
 use iced::Task;
 
 impl App {
@@ -41,12 +41,12 @@ impl App {
         self.tool_round = 0;
         self.mid_stream_retries = 0;
     }
-    pub(crate) fn fill_assistant_block(&mut self, block_id: u64, text: String) {
+    pub(crate) fn fill_assistant_block(&mut self, block_id: u64, text: &str) {
         if let Some(idx) = self.streaming_block_idx {
             if idx < self.blocks.len() && self.blocks[idx].id == block_id {
                 if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
-                    *content = iced::widget::text_editor::Content::with_text(&text);
-                    self.blocks[idx].md_items = markdown::parse(&text).collect();
+                    *content = iced::widget::text_editor::Content::with_text(text);
+                    self.blocks[idx].md_items = markdown::parse(text).collect();
                 }
             }
         }
@@ -101,6 +101,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Block, PendingToolCall, ViewMode};
 
     fn assistant_block_with_text(id: u64, text: &str) -> Block {
         Block {

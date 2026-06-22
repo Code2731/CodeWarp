@@ -1,5 +1,5 @@
 // update_helpers_tabbyapi.rs — TabbyAPI helper functions (main.rs child module)
-use super::*;
+use super::{resolve_user_path, PathBuf, TABBY_API_REPO_URL};
 
 pub(crate) const TABBY_CONNECT_RETRIES_AFTER_START: u8 = 3;
 pub(crate) const TABBY_CONNECT_RETRY_DELAY_SECS: u64 = 4;

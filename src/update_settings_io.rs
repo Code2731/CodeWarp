@@ -1,5 +1,5 @@
 // update_settings_io.rs — Authentication/credentials input and save/clear methods
-use super::*;
+use super::{keystore, App, LlmProvider, Message};
 use iced::Task;
 
 impl App {
@@ -23,9 +23,9 @@ impl App {
         self.show_tabby_token = !self.show_tabby_token;
         Task::none()
     }
-    pub(crate) fn set_inference_command(&mut self, value: String) -> Task<Message> {
-        self.inference_command_input = value.clone();
-        let _ = keystore::write_inference_command(&value);
+    pub(crate) fn set_inference_command(&mut self, value: &str) -> Task<Message> {
+        self.inference_command_input = value.to_string();
+        let _ = keystore::write_inference_command(value);
         Task::none()
     }
     pub(crate) fn set_inference_model(&mut self, value: String) -> Task<Message> {
@@ -58,7 +58,7 @@ impl App {
         self.pty_output.clear();
         Task::none()
     }
-    pub(crate) fn file_drag_hover(&mut self) -> Task<Message> {
+    pub(crate) fn file_drag_hover() -> Task<Message> {
         Task::none()
     }
     pub(crate) fn file_attach_error(&mut self, msg: String) -> Task<Message> {
@@ -85,7 +85,7 @@ impl App {
                 Task::done(Message::FetchModels)
             }
             Err(e) => {
-                self.status = format!("저장 실패: {}", e);
+                self.status = format!("저장 실패: {e}");
                 Task::none()
             }
         }
@@ -106,7 +106,7 @@ impl App {
                 let _ = keystore::clear_selected_model();
                 self.status = "키 삭제됨".into();
             }
-            Err(e) => self.status = format!("삭제 실패: {}", e),
+            Err(e) => self.status = format!("삭제 실패: {e}"),
         }
         Task::none()
     }
@@ -116,7 +116,7 @@ impl App {
         let new_label = self.openai_compat_label.clone();
         for opt in &mut self.model_options {
             if opt.provider == LlmProvider::OpenAICompat {
-                opt.provider_label = new_label.clone();
+                opt.provider_label.clone_from(&new_label);
             }
         }
         self.refresh_model_combo();
@@ -145,7 +145,7 @@ impl App {
                     return Task::done(Message::FetchTabbyModels);
                 }
             }
-            Err(e) => self.status = format!("Tabby 저장 실패: {}", e),
+            Err(e) => self.status = format!("Tabby 저장 실패: {e}"),
         }
         Task::none()
     }

@@ -13,6 +13,7 @@ use crate::tools;
 // ── Formatting ──────────────────────────────────────────────────────
 
 /// 바이트 수를 KB/MB/GB 단위로 표시 (1024 진법).
+#[allow(clippy::cast_precision_loss)]
 pub(crate) fn fmt_bytes(n: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = 1024 * 1024;
@@ -24,10 +25,11 @@ pub(crate) fn fmt_bytes(n: u64) -> String {
     } else if n >= KB {
         format!("{:.0} KB", n as f64 / KB as f64)
     } else {
-        format!("{} B", n)
+        format!("{n} B")
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub(crate) fn fmt_context_length(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
@@ -73,7 +75,7 @@ pub(crate) fn extract_mention_query(input: &str) -> Option<&str> {
     Some(rest)
 }
 
-/// PathBuf 목록을 query로 fuzzy filter (대소문자 무시, 부분 포함).
+/// `PathBuf` 목록을 query로 fuzzy filter (대소문자 무시, 부분 포함).
 pub(crate) fn fuzzy_match_paths(
     candidates: &[PathBuf],
     query: &str,
@@ -103,15 +105,12 @@ pub(crate) fn build_file_context(files: &[(PathBuf, String)]) -> String {
         .join("\n\n")
 }
 
-/// cwd 기준으로 파일 목록을 비동기 수집 (최대 200개, max_depth=5).
+/// cwd 기준으로 파일 목록을 비동기 수집 (최대 200개, `max_depth=5`).
 pub(crate) async fn collect_mention_candidates(cwd: PathBuf) -> Vec<PathBuf> {
     tokio::task::spawn_blocking(move || {
         let mut results = Vec::new();
         for entry in ignore::WalkBuilder::new(&cwd).max_depth(Some(5)).build() {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
+            let Ok(entry) = entry else { continue };
             if !entry.file_type().is_some_and(|ft| ft.is_file()) {
                 continue;
             }
@@ -162,18 +161,20 @@ pub(crate) fn hscrollbar() -> Scrollbar {
 
 // ── Tool result summarizer ──────────────────────────────────────────
 
-/// 도구 호출 결과를 ToolResult 칩에 표시할 한 줄 요약 + 성공 여부로 변환.
+/// 도구 호출 결과를 `ToolResult` 칩에 표시할 한 줄 요약 + 성공 여부로 변환.
 pub(crate) fn summarize_tool_result(name: &str, args_json: &str, result: &str) -> (String, bool) {
     let lower = result.to_ascii_lowercase();
     let success =
         !(result.starts_with("Error") || lower.contains("[err]") || lower.starts_with("error"));
     let summary = match name {
-        "write_file" => tools::WriteFileArgs::parse(args_json)
-            .map(|a| format!("{} ({} bytes)", a.path, a.content.len()))
-            .unwrap_or_else(|_| "?".into()),
-        "run_command" => tools::RunCommandArgs::parse(args_json)
-            .map(|a| format!("$ {}", a.command.chars().take(60).collect::<String>()))
-            .unwrap_or_else(|_| "?".into()),
+        "write_file" => tools::WriteFileArgs::parse(args_json).map_or_else(
+            |_| "?".into(),
+            |a| format!("{} ({} bytes)", a.path, a.content.len()),
+        ),
+        "run_command" => tools::RunCommandArgs::parse(args_json).map_or_else(
+            |_| "?".into(),
+            |a| format!("$ {}", a.command.chars().take(60).collect::<String>()),
+        ),
         _ => result
             .lines()
             .next()

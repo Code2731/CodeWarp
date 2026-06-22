@@ -12,6 +12,7 @@ use super::types::{ChatEvent, ChatMessage, ChatRequest};
 
 mod helpers;
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn chat_stream(
     base_url: String,
     api_key: Option<String>,
@@ -35,8 +36,8 @@ pub(crate) fn chat_stream(
             tool_choice: tools.as_ref().map(|_| "auto"),
         };
 
-        let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
         const MAX_RETRIES: u32 = 3;
+        let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
         let mut attempt = 0u32;
         let resp = loop {
             let mut req = client.post(&endpoint).json(&body);
@@ -57,7 +58,7 @@ pub(crate) fn chat_stream(
                         attempt += 1;
                         continue;
                     }
-                    yield ChatEvent::Error(format!("OpenRouter {}: {}", status, text));
+                    yield ChatEvent::Error(format!("OpenRouter {status}: {text}"));
                     return;
                 }
                 Err(e) => {
@@ -89,10 +90,7 @@ pub(crate) fn chat_stream(
                     return;
                 }
             };
-            let text = match std::str::from_utf8(&chunk) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
+            let Ok(text) = std::str::from_utf8(&chunk) else { continue };
             buffer.push_str(text);
             raw_capture.push_str(text);
 

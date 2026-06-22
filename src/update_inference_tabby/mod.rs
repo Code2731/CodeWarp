@@ -1,5 +1,8 @@
 // update_inference_tabby — Model selection & provider resolution (main.rs child module)
-use super::*;
+use super::{
+    categorize_model, combo_box, keystore, openrouter, tabby, tools, App, LlmProvider,
+    ModelCategory, ModelOption, SortMode,
+};
 
 mod selection;
 #[cfg(test)]

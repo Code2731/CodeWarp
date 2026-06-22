@@ -64,7 +64,7 @@ async fn rpc_call(
     method: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let parts = parse_command(command).map_err(|e| format!("MCP {}", e))?;
+    let parts = parse_command(command).map_err(|e| format!("MCP {e}"))?;
     let (program, args) = parts.split_first().ok_or("빈 명령")?;
 
     let mut child = Command::new(program)
@@ -155,7 +155,7 @@ async fn read_response(
             Err(_) => continue, // Ignore non-JSON lines.
         };
 
-        if val.get("id").and_then(|v| v.as_u64()) != Some(expected_id) {
+        if val.get("id").and_then(serde_json::Value::as_u64) != Some(expected_id) {
             continue;
         }
 

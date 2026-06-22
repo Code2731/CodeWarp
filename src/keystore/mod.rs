@@ -67,7 +67,7 @@ const SERVICE: &str = "codewarp";
 const USER: &str = "openrouter_api_key";
 const CWD_USER: &str = "working_directory";
 
-fn humanize_keyring_error(e: keyring::Error) -> String {
+fn humanize_keyring_error(e: &keyring::Error) -> String {
     match &e {
         keyring::Error::NoStorageAccess(_) => "자격 증명 저장소에 접근할 수 없습니다.".into(),
         keyring::Error::PlatformFailure(_) => "OS 자격 증명 저장소 오류입니다.".into(),
@@ -84,7 +84,7 @@ fn humanize_keyring_error(e: keyring::Error) -> String {
 }
 
 fn entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(SERVICE, USER).map_err(humanize_keyring_error)
+    keyring::Entry::new(SERVICE, USER).map_err(|e| humanize_keyring_error(&e))
 }
 
 fn cwd_entry() -> Result<keyring::Entry, String> {
@@ -94,7 +94,7 @@ fn cwd_entry() -> Result<keyring::Entry, String> {
 pub(crate) fn read_api_key() -> Result<String, String> {
     entry()?.get_password().map_err(|e| match e {
         keyring::Error::NoEntry => "API 키가 저장되어 있지 않습니다.".into(),
-        other => humanize_keyring_error(other),
+        ref other => humanize_keyring_error(other),
     })
 }
 
@@ -108,8 +108,7 @@ pub(crate) fn write_api_key(key: &str) -> Result<(), String> {
 
 pub(crate) fn delete_api_key() -> Result<(), String> {
     match entry()?.delete_credential() {
-        Ok(_) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
 }

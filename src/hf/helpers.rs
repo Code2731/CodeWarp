@@ -1,10 +1,11 @@
 // hf/helpers.rs — Revision & URL helpers (hf child module)
 use crate::hf::types::HF_BASE;
+use std::fmt::Write;
 
 pub(super) fn normalize_revision_name(s: &str) -> String {
     s.chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .flat_map(|c| c.to_lowercase())
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
         .collect()
 }
 
@@ -66,7 +67,8 @@ pub(super) fn choose_revision_fallback(requested: &str, branches: &[String]) -> 
                 let dist = (v - target).abs();
                 match &best {
                     Some((best_dist, best_name))
-                        if dist > *best_dist || (dist == *best_dist && b >= best_name) => {}
+                        if dist > *best_dist
+                            || ((dist - *best_dist).abs() < f32::EPSILON && b >= best_name) => {}
                     _ => best = Some((dist, b.clone())),
                 }
             }
@@ -95,7 +97,7 @@ pub(super) fn format_branch_suggestions(branches: &[String], limit: usize) -> St
     }
     let mut text = shown.join(", ");
     if branches.len() > shown.len() {
-        text.push_str(&format!(" ... +{} more", branches.len() - shown.len()));
+        let _ = write!(text, " ... +{} more", branches.len() - shown.len());
     }
     text
 }
@@ -109,10 +111,7 @@ pub(super) fn annotate_revision_not_found_error(
     if suggested.is_empty() {
         return base.to_string();
     }
-    format!(
-        "{} (requested revision: '{}'; available branches: {})",
-        base, requested, suggested
-    )
+    format!("{base} (requested revision: '{requested}'; available branches: {suggested})")
 }
 
 pub(super) fn encode_path_segment(input: &str) -> String {
@@ -121,7 +120,7 @@ pub(super) fn encode_path_segment(input: &str) -> String {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
             out.push(b as char);
         } else {
-            out.push_str(&format!("%{b:02X}"));
+            let _ = write!(out, "%{b:02X}");
         }
     }
     out
@@ -137,7 +136,7 @@ pub(super) fn encode_repo_file_path(input: &str) -> String {
 
 pub(super) fn model_info_url(repo_id: &str, rev: &str) -> String {
     if rev == "main" {
-        format!("{}/api/models/{}", HF_BASE, repo_id)
+        format!("{HF_BASE}/api/models/{repo_id}")
     } else {
         format!(
             "{}/api/models/{}/revision/{}",

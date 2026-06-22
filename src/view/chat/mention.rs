@@ -1,6 +1,8 @@
 // chat_mention.rs — Mention popup + attachment row (view child module)
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{
+    app_vscrollbar, primary_btn, secondary_btn, shorten_tail, FS_BODY, FS_LABEL, FS_MICRO,
+};
+use crate::{fuzzy_match_paths, hscrollbar, App, Message};
 use iced::widget::scrollable::Direction;
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length, Theme};
@@ -54,7 +56,9 @@ impl App {
     }
 
     pub(crate) fn view_attach_row(&self) -> Element<'_, Message> {
-        if !self.attached_files.is_empty() {
+        if self.attached_files.is_empty() {
+            Space::new().height(Length::Shrink).into()
+        } else {
             let mut chips = row![].spacing(6).align_y(Alignment::Center);
             for (i, (path, _)) in self.attached_files.iter().enumerate() {
                 let rel_path = path.strip_prefix(&self.cwd).unwrap_or(path.as_path());
@@ -93,8 +97,6 @@ impl App {
             )
             .padding([4, 0])
             .into()
-        } else {
-            Space::new().height(Length::Shrink).into()
         }
     }
 }

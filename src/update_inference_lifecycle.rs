@@ -1,8 +1,14 @@
 // update_inference_lifecycle.rs — Inference lifecycle management (main.rs child module)
-use super::*;
+use super::{
+    expected_binary_name, keystore, mcp, resolve_tabbyapi_model_dir, resolve_user_path,
+    runtime_command_exists, spawn_inference_stream, validate_tabbyapi_launcher_path,
+    write_tabbyapi_config_for_launcher, App, InferenceEngine, Message, TABBY_API_DEFAULT_PORT,
+    TABBY_CONNECT_RETRIES_AFTER_START,
+};
 use iced::Task;
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn start_inference(&mut self) -> Task<Message> {
         if self.inference_pid.is_some() {
             self.status = "이미 실행 중".into();
@@ -23,7 +29,7 @@ impl App {
                 let parts = match mcp::parse_command(cmd_str) {
                     Ok(v) => v,
                     Err(e) => {
-                        self.status = format!("시작 명령 파싱 실패: {}", e);
+                        self.status = format!("시작 명령 파싱 실패: {e}");
                         return Task::none();
                     }
                 };
@@ -33,7 +39,7 @@ impl App {
                 (p, parts.into_iter().skip(1).collect::<Vec<_>>())
             }
             InferenceEngine::Ollama => {
-                self.tabby_url_input = format!("http://localhost:{}", port);
+                self.tabby_url_input = format!("http://localhost:{port}");
                 let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
                 if self.openai_compat_label.trim().is_empty() {
                     self.openai_compat_label = "Ollama".into();
@@ -51,7 +57,7 @@ impl App {
                         "모델 선택 안 됨"
                     }
                     .to_string();
-                    self.status = msg.clone();
+                    self.status.clone_from(&msg);
                     if matches!(eng, InferenceEngine::TabbyApi) {
                         self.tabby_status = Some(Err(msg));
                     }
@@ -60,7 +66,7 @@ impl App {
                 if matches!(eng, InferenceEngine::TabbyApi) {
                     let launcher = self.inference_binary_path.trim();
                     if let Err(msg) = validate_tabbyapi_launcher_path(launcher) {
-                        self.status = msg.clone();
+                        self.status.clone_from(&msg);
                         self.tabby_status = Some(Err(msg));
                         return Task::none();
                     }
@@ -72,7 +78,7 @@ impl App {
                                 "TabbyAPI 모델 폴더가 완전하지 않습니다: {} (config.json과 실제 모델 가중치 파일이 필요합니다.)",
                                 model_path.display()
                             );
-                            self.status = msg.clone();
+                            self.status.clone_from(&msg);
                             self.tabby_status = Some(Err(msg));
                             return Task::none();
                         };
@@ -80,7 +86,7 @@ impl App {
                         if let Err(e) =
                             write_tabbyapi_config_for_launcher(launcher, &resolved_model, port)
                         {
-                            self.status = e.clone();
+                            self.status.clone_from(&e);
                             self.tabby_status = Some(Err(e));
                             return Task::none();
                         }
@@ -90,10 +96,9 @@ impl App {
                 if matches!(eng, InferenceEngine::TabbyMl) && std::path::Path::new(&model).exists()
                 {
                     let msg = format!(
-                        "EXL2 로컬 폴더는 TabbyAPI용입니다. TabbyAPI(Start.bat 또는 python main.py)를 실행한 뒤 Provider URL을 http://localhost:{} 로 연결 테스트해 주세요.",
-                        TABBY_API_DEFAULT_PORT
+                        "EXL2 로컬 폴더는 TabbyAPI용입니다. TabbyAPI(Start.bat 또는 python main.py)를 실행한 뒤 Provider URL을 http://localhost:{TABBY_API_DEFAULT_PORT} 로 연결 테스트해 주세요."
                     );
-                    self.status = msg.clone();
+                    self.status.clone_from(&msg);
                     self.tabby_status = Some(Err(msg));
                     return Task::none();
                 }
@@ -123,7 +128,7 @@ impl App {
             }
         };
 
-        self.tabby_url_input = format!("http://localhost:{}", port);
+        self.tabby_url_input = format!("http://localhost:{port}");
         let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
         if self.openai_compat_label.trim().is_empty() {
             let label = self
@@ -133,7 +138,7 @@ impl App {
                 .next()
                 .unwrap_or("Local")
                 .to_string();
-            self.openai_compat_label = label.clone();
+            self.openai_compat_label.clone_from(&label);
             let _ = keystore::write_openai_compat_label(&label);
         }
 
@@ -151,8 +156,7 @@ impl App {
             {
                 let expected = expected_binary_name(&program_hint);
                 self.status = format!(
-                    "Runtime binary path '{}' is a directory, but '{}' was not found inside it. Select the executable file directly or place '{}' in that folder.",
-                    override_path, expected, expected
+                    "Runtime binary path '{override_path}' is a directory, but '{expected}' was not found inside it. Select the executable file directly or place '{expected}' in that folder."
                 );
                 return Task::none();
             }
@@ -169,7 +173,7 @@ impl App {
         self.inference_log.clear();
         self.tabby_connect_retry_left = TABBY_CONNECT_RETRIES_AFTER_START;
         self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
-        self.status = format!("실행 시작: {} {}", final_program, args.join(" "));
+        self.status = format!("실행 시작: {final_program} {}", args.join(" "));
         Task::batch(vec![
             Task::run(
                 spawn_inference_stream(final_program, args, work_dir),
@@ -181,7 +185,7 @@ impl App {
                 },
                 {
                     let generation = self.tabby_retry_generation;
-                    move |_| Message::FetchTabbyModelsRetry(generation)
+                    move |()| Message::FetchTabbyModelsRetry(generation)
                 },
             ),
         ])

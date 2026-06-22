@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    default_tabbyapi_runtime_dir, find_tabbyapi_launcher, keystore, mcp, persisted_to_block,
+    session, App, Arc, InactiveSession, InferenceEngine, Message, Task, TABBY_API_DEFAULT_PORT,
+};
 
 impl App {
     pub(super) fn auto_attach_tabbyapi(&mut self) {
@@ -9,7 +12,7 @@ impl App {
                 self.inference_engine = InferenceEngine::TabbyApi;
                 self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
                 if self.tabby_url_input.trim().is_empty() {
-                    self.tabby_url_input = format!("http://localhost:{}", TABBY_API_DEFAULT_PORT);
+                    self.tabby_url_input = format!("http://localhost:{TABBY_API_DEFAULT_PORT}");
                 }
                 self.inference_binary_path = launcher.display().to_string();
                 let _ = keystore::write_inference_binary(&self.inference_binary_path);

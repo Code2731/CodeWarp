@@ -1,6 +1,6 @@
 use super::TabHealth;
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::FS_LABEL;
+use crate::{App, Message};
 use iced::widget::{row, text};
 use iced::Element;
 
@@ -30,7 +30,7 @@ impl App {
         let (active_tab_title, active_action, quick_label, quick_msg) =
             self.settings_tab_data(local_model_count);
 
-        let hint = self.view_settings_active_action_hint(
+        let hint = Self::view_settings_active_action_hint(
             active_health,
             active_tab_title,
             active_action,

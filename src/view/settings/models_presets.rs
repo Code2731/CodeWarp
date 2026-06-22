@@ -1,10 +1,10 @@
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{secondary_btn, semibold_font, FS_MICRO, FS_SUBTITLE};
+use crate::{App, Message, MODEL_PRESETS};
 use iced::widget::{button, column, text};
 use iced::{Element, Font, Length};
 
 impl App {
-    pub(crate) fn view_model_presets(&self) -> Element<'_, Message> {
+    pub(crate) fn view_model_presets() -> Element<'static, Message> {
         let mut col = column![text("추천 프리셋 (클릭 → 입력란에 채움)").size(12)].spacing(4);
         for (i, p) in MODEL_PRESETS.iter().enumerate() {
             col = col.push(

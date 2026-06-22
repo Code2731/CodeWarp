@@ -1,16 +1,15 @@
 // update_settings_interact_attachment.rs — attachment/mention methods (main.rs child module)
-use super::*;
+use super::{fmt_bytes, fuzzy_match_paths, App, Message};
 use iced::Task;
 
 impl App {
     pub(crate) fn remove_attachment(&mut self, idx: usize) -> Task<Message> {
         if idx < self.attached_files.len() {
             let removed = self.attached_files.remove(idx);
-            let removed_name = removed
-                .0
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| removed.0.display().to_string());
+            let removed_name = removed.0.file_name().map_or_else(
+                || removed.0.display().to_string(),
+                |n| n.to_string_lossy().to_string(),
+            );
             self.status = format!(
                 "Removed attachment: {} ({} left)",
                 removed_name,
@@ -36,6 +35,7 @@ impl App {
         }
         Task::none()
     }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     pub(crate) fn move_mention_selection(&mut self, delta: i32) -> Task<Message> {
         if !self.show_mention || self.mention_candidates.is_empty() {
             return Task::none();
@@ -46,7 +46,7 @@ impl App {
             return Task::none();
         }
         self.mention_selected =
-            (self.mention_selected as i64 + delta as i64).rem_euclid(n as i64) as usize;
+            (self.mention_selected as i64 + i64::from(delta)).rem_euclid(n as i64) as usize;
         Task::none()
     }
     pub(crate) fn load_mention_candidates(

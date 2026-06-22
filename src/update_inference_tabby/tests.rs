@@ -1,4 +1,5 @@
 use super::*;
+use crate::Message;
 
 fn or_opt(id: &str) -> ModelOption {
     ModelOption {

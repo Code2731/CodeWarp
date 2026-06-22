@@ -25,7 +25,7 @@ pub(crate) struct PtySession {
 impl PtySession {
     pub(crate) fn write_line(&self, line: &str) {
         if let Ok(mut w) = self.writer.lock() {
-            let _ = writeln!(w, "{}", line);
+            let _ = writeln!(w, "{line}");
         }
     }
 
@@ -56,11 +56,11 @@ pub(crate) fn spawn_pty(
         })
         .map_err(|e| format!("PTY 열기 실패: {e}"))?;
 
-    let mut cmd = default_shell();
-    cmd.cwd(cwd);
+    let mut shell_cmd = default_shell();
+    shell_cmd.cwd(cwd);
 
     pair.slave
-        .spawn_command(cmd)
+        .spawn_command(shell_cmd)
         .map_err(|e| format!("셸 시작 실패: {e}"))?;
 
     let writer = Arc::new(Mutex::new(
@@ -81,16 +81,13 @@ pub(crate) fn spawn_pty(
     tokio::task::spawn_blocking(move || {
         let buf = BufReader::new(reader);
         for line in buf.lines() {
-            match line {
-                Ok(l) => {
-                    if tx.blocking_send(PtyEvent::Line(l)).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => {
-                    let _ = tx.blocking_send(PtyEvent::Exited);
+            if let Ok(l) = line {
+                if tx.blocking_send(PtyEvent::Line(l)).is_err() {
                     break;
                 }
+            } else {
+                let _ = tx.blocking_send(PtyEvent::Exited);
+                break;
             }
         }
     });

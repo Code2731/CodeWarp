@@ -1,5 +1,8 @@
-use crate::view::ui::*;
-use crate::*;
+use crate::view::ui::{
+    danger_btn, field_input, panel_style, primary_btn, semibold_font, shorten_tail, FS_BODY,
+    FS_LABEL,
+};
+use crate::{App, Message};
 use iced::widget::{button, column, container, row, text, text_input, Space};
 use iced::{Alignment, Element, Length};
 
@@ -17,7 +20,7 @@ impl App {
                 .iter()
                 .filter(|t| t.server_name == s.name)
                 .count();
-            let label = format!("{} — {} (tool {}개)", s.name, s.command, tool_count);
+            let label = format!("{} — {} (tool {tool_count}개)", s.name, s.command);
             server_list = server_list.push(
                 row![
                     text(shorten_tail(&label, 72))

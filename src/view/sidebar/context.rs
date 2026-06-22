@@ -1,10 +1,15 @@
-use super::super::ui::*;
-use crate::*;
+use super::super::ui::{
+    app_vscrollbar, context_item_style, danger_btn, secondary_btn, semibold_font, shorten_tail,
+    CONTEXT_LIST_HEIGHT, FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, PAD_MD, PAD_SM, PAD_XS, PAD_XXS,
+    SPACE_SM, SPACE_XS, SPACE_XXS,
+};
+use crate::{fmt_bytes, App, Message, MAX_ATTACH_BYTES};
 use iced::widget::scrollable::Direction;
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Font, Length};
 
 impl App {
+    #[allow(clippy::too_many_lines)]
     pub(super) fn view_sidebar_context_area(&self) -> Element<'_, Message> {
         let context_total_bytes: u64 = self
             .attached_files
@@ -61,10 +66,10 @@ impl App {
         } else {
             let mut context_list = column![].spacing(SPACE_XS);
             for (i, (path, content)) in self.attached_files.iter().enumerate() {
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| path.display().to_string());
+                let name = path.file_name().map_or_else(
+                    || path.display().to_string(),
+                    |n| n.to_string_lossy().to_string(),
+                );
                 let short_name = shorten_tail(&name, 24);
                 let rel_path = path.strip_prefix(&self.cwd).unwrap_or(path.as_path());
                 let short_path = shorten_tail(&rel_path.display().to_string(), 42);

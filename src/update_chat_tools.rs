@@ -58,12 +58,12 @@ impl App {
         }
         Arc::make_mut(&mut self.conversation).push(assistant_msg);
 
-        let mcp_tool_names: std::collections::HashSet<String> =
-            self.mcp_tools.iter().map(|t| t.name.clone()).collect();
+        let mcp_tool_names: std::collections::HashSet<&str> =
+            self.mcp_tools.iter().map(|t| t.name.as_str()).collect();
 
         let (mcp_calls, local_calls): (Vec<_>, Vec<_>) = calls
             .into_iter()
-            .partition(|tc| mcp_tool_names.contains(&tc.name));
+            .partition(|tc| mcp_tool_names.contains(tc.name.as_str()));
 
         if !mcp_calls.is_empty() {
             let (local_read, local_write): (Vec<_>, Vec<_>) = local_calls
@@ -79,17 +79,16 @@ impl App {
                 self.show_write_confirm = true;
             }
 
-            let servers = self.mcp_servers.clone();
-            let mcp_tools = self.mcp_tools.clone();
-            let mut tasks = Vec::new();
+            let mut tasks = Vec::with_capacity(mcp_calls.len());
             for tc in mcp_calls {
-                let server = mcp_tools
+                let server = self
+                    .mcp_tools
                     .iter()
                     .find(|t| t.name == tc.name)
-                    .and_then(|t| servers.iter().find(|s| s.name == t.server_name))
+                    .and_then(|t| self.mcp_servers.iter().find(|s| s.name == t.server_name))
                     .cloned();
-                let tool_name = tc.name.clone();
-                let call_id = tc.id.clone();
+                let tool_name = tc.name;
+                let call_id = tc.id;
                 let args: serde_json::Value =
                     serde_json::from_str(&tc.arguments).unwrap_or_default();
                 tasks.push(Task::perform(
@@ -112,7 +111,7 @@ impl App {
             .into_iter()
             .partition(|tc| tools::tool_kind(&tc.name) == tools::ToolKind::ReadOnly);
 
-        let mut names: Vec<String> = Vec::new();
+        let mut names: Vec<String> = Vec::with_capacity(read_calls.len());
         for tc in &read_calls {
             names.push(tc.name.clone());
             let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);

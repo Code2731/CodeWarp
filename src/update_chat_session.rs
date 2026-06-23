@@ -81,30 +81,32 @@ impl App {
         }
         let sid = self.streaming_block_id;
         let raw = &self.streaming_raw;
-        let blocks_persisted: Vec<session::PersistedBlock> = self
-            .blocks
-            .iter()
-            .filter_map(|b| {
+        let blocks_persisted: Vec<session::PersistedBlock> = {
+            let mut v = Vec::with_capacity(self.blocks.len());
+            for b in &self.blocks {
                 let content = if sid == Some(b.id) {
                     raw.clone()
                 } else {
                     b.body.to_text()
                 };
                 match &b.body {
-                    BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
-                        id: b.id,
-                        role: if matches!(&b.body, BlockBody::User(_)) {
-                            "user".into()
-                        } else {
-                            "assistant".into()
-                        },
-                        content,
-                        model: b.model.clone().unwrap_or_default(),
-                    }),
-                    BlockBody::ToolResult { .. } => None,
+                    BlockBody::User(_) | BlockBody::Assistant(_) => {
+                        v.push(session::PersistedBlock {
+                            id: b.id,
+                            role: if matches!(&b.body, BlockBody::User(_)) {
+                                "user".into()
+                            } else {
+                                "assistant".into()
+                            },
+                            content,
+                            model: b.model.clone().unwrap_or_default(),
+                        })
+                    }
+                    BlockBody::ToolResult { .. } => {}
                 }
-            })
-            .collect();
+            }
+            v
+        };
         let snap = InactiveSession {
             id: self.current_session_id,
             title: self.current_session_title.clone(),
@@ -122,30 +124,32 @@ impl App {
     pub(crate) fn save_session(&self) {
         let sid = self.streaming_block_id;
         let raw = &self.streaming_raw;
-        let current_blocks_persisted: Vec<session::PersistedBlock> = self
-            .blocks
-            .iter()
-            .filter_map(|b| {
+        let current_blocks_persisted: Vec<session::PersistedBlock> = {
+            let mut v = Vec::with_capacity(self.blocks.len());
+            for b in &self.blocks {
                 let content = if sid == Some(b.id) {
                     raw.clone()
                 } else {
                     b.body.to_text()
                 };
                 match &b.body {
-                    BlockBody::User(_) | BlockBody::Assistant(_) => Some(session::PersistedBlock {
-                        id: b.id,
-                        role: if matches!(&b.body, BlockBody::User(_)) {
-                            "user".into()
-                        } else {
-                            "assistant".into()
-                        },
-                        content,
-                        model: b.model.clone().unwrap_or_default(),
-                    }),
-                    BlockBody::ToolResult { .. } => None,
+                    BlockBody::User(_) | BlockBody::Assistant(_) => {
+                        v.push(session::PersistedBlock {
+                            id: b.id,
+                            role: if matches!(&b.body, BlockBody::User(_)) {
+                                "user".into()
+                            } else {
+                                "assistant".into()
+                            },
+                            content,
+                            model: b.model.clone().unwrap_or_default(),
+                        })
+                    }
+                    BlockBody::ToolResult { .. } => {}
                 }
-            })
-            .collect();
+            }
+            v
+        };
 
         let mut sessions: Vec<session::PersistedSessionData> = self
             .inactive_sessions

@@ -29,7 +29,8 @@ impl App {
                 return Task::none();
             }
         };
-        let model = self.selected_model.clone().unwrap_or_default();
+        let model_opt = self.selected_model.clone();
+        let model = model_opt.clone().unwrap_or_default();
         let messages = self.conversation.clone();
 
         let ai_id = self.next_id();
@@ -38,7 +39,7 @@ impl App {
             body: BlockBody::Assistant(text_editor::Content::new()),
             view_mode: ViewMode::Raw,
             md_items: Vec::new(),
-            model: self.selected_model.clone(),
+            model: model_opt,
             apply_candidates: Vec::new(),
         });
         self.streaming_block_id = Some(ai_id);
@@ -97,7 +98,8 @@ impl App {
                 return Task::none();
             }
         };
-        let Some(model) = self.selected_model.clone() else {
+        let model_opt = self.selected_model.clone();
+        let Some(model) = model_opt.clone() else {
             self.status = "모델을 먼저 선택해주세요.".into();
             return Task::none();
         };
@@ -132,7 +134,7 @@ impl App {
             body: BlockBody::Assistant(text_editor::Content::new()),
             view_mode: ViewMode::Raw,
             md_items: Vec::new(),
-            model: self.selected_model.clone(),
+            model: model_opt,
             apply_candidates: Vec::new(),
         });
         self.streaming_block_id = Some(ai_id);

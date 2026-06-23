@@ -19,7 +19,7 @@ impl App {
             return Task::none();
         }
         let tc = self.pending_write_calls.remove(idx);
-        self.push_tool_result_block(tc.name.clone(), "discarded".into(), false);
+        self.push_tool_result_block(&tc.name, "discarded", false);
         Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(
             &tc.id,
             "[denied] 사용자가 이 도구 호출을 제외했습니다.",
@@ -34,13 +34,13 @@ impl App {
         }
         Task::none()
     }
-    pub(crate) fn push_tool_result_block(&mut self, name: String, summary: String, success: bool) {
+    pub(crate) fn push_tool_result_block(&mut self, name: &str, summary: &str, success: bool) {
         let id = self.next_id();
         self.blocks.push(Block {
             id,
             body: BlockBody::ToolResult {
-                name,
-                summary,
+                name: name.to_owned(),
+                summary: summary.to_owned(),
                 success,
             },
             view_mode: ViewMode::Rendered,
@@ -54,19 +54,19 @@ impl App {
         self.show_write_confirm = false;
 
         if approved {
-            let mut names: Vec<String> = Vec::new();
+            let mut names: Vec<String> = Vec::with_capacity(calls.len());
             for tc in &calls {
                 names.push(tc.name.clone());
                 let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
                 let (summary, success) = summarize_tool_result(&tc.name, &tc.arguments, &result);
-                self.push_tool_result_block(tc.name.clone(), summary, success);
+                self.push_tool_result_block(&tc.name, &summary, success);
                 Arc::make_mut(&mut self.conversation)
                     .push(ChatMessage::tool_result(&tc.id, result));
             }
             self.status = format!("실행 완료: {}", names.join(", "));
         } else {
             for tc in &calls {
-                self.push_tool_result_block(tc.name.clone(), "denied".into(), false);
+                self.push_tool_result_block(&tc.name, "denied", false);
                 Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(
                     &tc.id,
                     "[denied] 사용자가 파일 쓰기를 거부했습니다.",
@@ -112,7 +112,7 @@ impl App {
         } else {
             format!("실패: {path}")
         };
-        self.push_tool_result_block("apply".into(), summary, success);
+        self.push_tool_result_block("apply", &summary, success);
         self.status = if success {
             format!("적용됨: {path}")
         } else {

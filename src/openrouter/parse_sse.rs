@@ -63,7 +63,7 @@ pub(super) fn parse_stream_chunks(payload: &str) -> Vec<StreamChunk> {
     let mut had_error = false;
     for item in serde_json::Deserializer::from_str(trimmed).into_iter::<StreamChunk>() {
         if let Ok(chunk) = item {
-            stream_items.push(chunk)
+            stream_items.push(chunk);
         } else {
             had_error = true;
             break;

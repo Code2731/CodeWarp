@@ -29,20 +29,24 @@ impl App {
             .active_idx
             .min(persisted.sessions.len().saturating_sub(1));
         let active = persisted.sessions[active_idx].clone();
-        let inactive: Vec<InactiveSession> = persisted
+        let mut inactive: Vec<InactiveSession> =
+            Vec::with_capacity(persisted.sessions.len().saturating_sub(1));
+        for s in persisted
             .sessions
             .iter()
             .enumerate()
             .filter(|(i, _)| *i != active_idx)
-            .map(|(_, s)| InactiveSession {
+            .map(|(_, s)| s)
+        {
+            inactive.push(InactiveSession {
                 id: s.id,
                 title: s.title.clone(),
                 conversation: Arc::new(s.conversation.clone()),
                 blocks: s.blocks.clone(),
                 next_block_id: s.next_block_id,
                 scroll_y: s.scroll_y,
-            })
-            .collect();
+            });
+        }
 
         self.current_session_id = active.id;
         self.current_session_title = active.title;

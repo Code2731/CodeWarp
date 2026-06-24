@@ -100,7 +100,7 @@ impl App {
                             },
                             content,
                             model: b.model.clone().unwrap_or_default(),
-                        })
+                        });
                     }
                     BlockBody::ToolResult { .. } => {}
                 }
@@ -143,7 +143,7 @@ impl App {
                             },
                             content,
                             model: b.model.clone().unwrap_or_default(),
-                        })
+                        });
                     }
                     BlockBody::ToolResult { .. } => {}
                 }

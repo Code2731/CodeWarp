@@ -1,55 +1,8 @@
-// model/tabbyapi.rs — TabbyAPI model directory helpers (model child module)
-use super::Exl2Preset;
+// model/tabbyapi/mod.rs — TabbyAPI model helpers (model child module)
+mod dir;
+
+use dir::*;
 use std::path::{Path, PathBuf};
-
-/// 모델 매니저 다운로드 폴더 안의 받은 모델(서브폴더) 리스트.
-/// 빈 폴더는 모델 아님 — skip.
-pub(super) fn has_model_weight_file(dir: &Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return false;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if has_model_weight_file(&path) {
-                return true;
-            }
-            continue;
-        }
-
-        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        let file_name = file_name.to_ascii_lowercase();
-        if file_name.ends_with(".safetensors") || is_model_extension(&file_name) {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn is_model_extension(name: &str) -> bool {
-    std::path::Path::new(name)
-        .extension()
-        .is_some_and(|ext| matches!(ext.to_str(), Some("bin" | "gguf" | "pt" | "pth")))
-}
-
-pub(super) fn is_valid_tabbyapi_model_dir_direct(path: &Path) -> bool {
-    path.is_dir() && path.join("config.json").is_file() && has_model_weight_file(path)
-}
-
-pub(super) fn tabbyapi_direct_model_children(path: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| is_valid_tabbyapi_model_dir_direct(p))
-        .collect()
-}
 
 pub(super) fn extract_bpw_hint(text: &str) -> Option<String> {
     let lower = text.to_ascii_lowercase();
@@ -169,6 +122,45 @@ pub(super) fn exl2_repo_model_stem(repo_id: &str) -> Option<String> {
     name.strip_suffix("-exl2")
         .or_else(|| name.strip_suffix("-EXL2"))
         .map(str::to_string)
+}
+
+pub(crate) fn downloaded_exl2_preset_folder(
+    dir: &str,
+    preset: &super::Exl2Preset,
+) -> Option<String> {
+    use crate::util::resolve_user_path;
+    let root = resolve_user_path(dir);
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return None;
+    };
+    let mut models: Vec<String> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && is_downloaded_exl2_root(p))
+        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
+        .collect();
+    models.sort_unstable();
+    if let Some(exact) = models
+        .iter()
+        .find(|m| m.eq_ignore_ascii_case(preset.folder_name))
+    {
+        return Some(exact.clone());
+    }
+
+    let stem = exl2_repo_model_stem(preset.repo_id)?;
+    let stem_prefix = format!("{}-", stem.to_ascii_lowercase());
+    let mut matches: Vec<String> = models
+        .into_iter()
+        .filter(|m| {
+            let lower = m.to_ascii_lowercase();
+            lower.starts_with(&stem_prefix) && lower.contains("bpw")
+        })
+        .collect();
+    if matches.len() == 1 {
+        matches.pop()
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -373,41 +365,5 @@ mod tests {
     #[test]
     fn exl2_repo_model_stem_empty_after_trim() {
         assert_eq!(exl2_repo_model_stem("author/   "), None);
-    }
-}
-
-pub(crate) fn downloaded_exl2_preset_folder(dir: &str, preset: &Exl2Preset) -> Option<String> {
-    use crate::util::resolve_user_path;
-    let root = resolve_user_path(dir);
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return None;
-    };
-    let mut models: Vec<String> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_dir() && is_downloaded_exl2_root(p))
-        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
-        .collect();
-    models.sort_unstable();
-    if let Some(exact) = models
-        .iter()
-        .find(|m| m.eq_ignore_ascii_case(preset.folder_name))
-    {
-        return Some(exact.clone());
-    }
-
-    let stem = exl2_repo_model_stem(preset.repo_id)?;
-    let stem_prefix = format!("{}-", stem.to_ascii_lowercase());
-    let mut matches: Vec<String> = models
-        .into_iter()
-        .filter(|m| {
-            let lower = m.to_ascii_lowercase();
-            lower.starts_with(&stem_prefix) && lower.contains("bpw")
-        })
-        .collect();
-    if matches.len() == 1 {
-        matches.pop()
-    } else {
-        None
     }
 }

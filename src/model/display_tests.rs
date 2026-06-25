@@ -137,3 +137,146 @@ fn display_openai_compat_free_marker() {
     assert!(s.contains("[xLLM]"));
     assert!(s.contains("free"));
 }
+
+// ── Tests migrated from types.rs inline mod tests ────────────────
+
+fn opt(
+    provider: LlmProvider,
+    label: &str,
+    ko: bool,
+    fav: bool,
+    ctx: Option<u64>,
+    prompt: Option<f64>,
+    comp: Option<f64>,
+) -> ModelOption {
+    ModelOption {
+        id: "test-model".into(),
+        provider,
+        provider_label: label.into(),
+        ko_friendly: ko,
+        favorite: fav,
+        context_length: ctx,
+        prompt_per_million: prompt,
+        completion_per_million: comp,
+    }
+}
+
+#[test]
+fn display_ko_friendly() {
+    let m = opt(LlmProvider::OpenRouter, "", true, false, None, None, None);
+    assert!(m.to_string().contains("[KO]"), "got: {}", m);
+}
+
+#[test]
+fn display_ko_not_friendly() {
+    let m = opt(LlmProvider::OpenRouter, "", false, false, None, None, None);
+    assert!(!m.to_string().contains("[KO]"), "got: {}", m);
+}
+
+#[test]
+fn display_favorite() {
+    let m = opt(LlmProvider::OpenRouter, "", false, true, None, None, None);
+    assert!(m.to_string().contains('\u{2605}'), "got: {}", m);
+}
+
+#[test]
+fn display_not_favorite() {
+    let m = opt(LlmProvider::OpenRouter, "", false, false, None, None, None);
+    assert!(!m.to_string().contains('\u{2605}'), "got: {}", m);
+}
+
+#[test]
+fn display_context_length() {
+    let cases: &[(u64, &str)] = &[(8000, "8k"), (128_000, "128k"), (1_000_000, "1.0M")];
+    for (n, expected) in cases {
+        let m = opt(
+            LlmProvider::OpenRouter,
+            "",
+            false,
+            false,
+            Some(*n),
+            None,
+            None,
+        );
+        assert!(
+            m.to_string().contains(expected),
+            "n={n} expected={expected} got: {}",
+            m
+        );
+    }
+}
+
+#[test]
+fn display_no_context_length() {
+    let m = opt(LlmProvider::OpenRouter, "", false, false, None, None, None);
+    let s = m.to_string();
+    assert!(!s.contains('k') && !s.contains('M'), "got: {s}");
+}
+
+#[test]
+fn display_free_model() {
+    let m = opt(
+        LlmProvider::OpenRouter,
+        "",
+        false,
+        false,
+        None,
+        Some(0.0),
+        Some(0.0),
+    );
+    assert!(m.to_string().contains("free"), "got: {}", m);
+}
+
+#[test]
+fn display_paid_model() {
+    let m = opt(
+        LlmProvider::OpenRouter,
+        "",
+        false,
+        false,
+        None,
+        Some(0.15),
+        Some(0.60),
+    );
+    assert!(m.to_string().contains("$0.15/$0.60"), "got: {}", m);
+}
+
+#[test]
+fn display_paid_rounding() {
+    let m = opt(
+        LlmProvider::OpenRouter,
+        "",
+        false,
+        false,
+        None,
+        Some(1.5),
+        Some(2.0),
+    );
+    assert!(m.to_string().contains("$1.50/$2.00"), "got: {}", m);
+}
+
+#[test]
+fn display_no_pricing() {
+    let m = opt(LlmProvider::OpenRouter, "", false, false, None, None, None);
+    let s = m.to_string();
+    assert!(!s.contains("free") && !s.contains('$'), "got: {s}");
+}
+
+#[test]
+fn display_combined_flags() {
+    let m = ModelOption {
+        id: "gpt-4".into(),
+        provider: LlmProvider::OpenAICompat,
+        provider_label: "xLLM".into(),
+        ko_friendly: true,
+        favorite: true,
+        context_length: Some(128_000),
+        prompt_per_million: Some(10.0),
+        completion_per_million: Some(30.0),
+    };
+    let s = m.to_string();
+    assert!(s.starts_with("[xLLM][KO]\u{2605}"), "got: {s}");
+    assert!(s.contains("gpt-4"), "got: {s}");
+    assert!(s.contains("128k"), "got: {s}");
+    assert!(s.contains("$10.00/$30.00"), "got: {s}");
+}

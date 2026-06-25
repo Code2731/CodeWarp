@@ -50,14 +50,13 @@ pub(super) fn choose_revision_fallback(requested: &str, branches: &[String]) -> 
     }
 
     let requested_norm = normalize_revision_name(requested);
-    if !requested_norm.is_empty() {
-        if let Some(hit) = branches
+    if !requested_norm.is_empty()
+        && let Some(hit) = branches
             .iter()
             .find(|b| normalize_revision_name(b) == requested_norm)
             .cloned()
-        {
-            return Some(hit);
-        }
+    {
+        return Some(hit);
     }
 
     if let Some(target) = extract_bpw_value(requested) {

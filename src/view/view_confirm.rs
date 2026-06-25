@@ -1,10 +1,10 @@
 use super::render_diff;
 use super::ui::{
-    app_vscrollbar, danger_btn, primary_btn, secondary_btn, semibold_font, FS_BODY, FS_LABEL,
+    FS_BODY, FS_LABEL, app_vscrollbar, danger_btn, primary_btn, secondary_btn, semibold_font,
 };
-use crate::{tools, App, Message};
+use crate::{App, Message, tools};
 use iced::widget::scrollable::Direction;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Font, Length, Theme};
 
 impl App {

@@ -1,7 +1,7 @@
 // update_inference_tabby — Model selection & provider resolution (main.rs child module)
 use super::{
-    categorize_model, combo_box, keystore, openrouter, tabby, tools, App, LlmProvider,
-    ModelCategory, ModelOption, SortMode,
+    App, LlmProvider, ModelCategory, ModelOption, SortMode, categorize_model, combo_box, keystore,
+    openrouter, tabby, tools,
 };
 
 mod selection;
@@ -52,14 +52,13 @@ impl App {
             return;
         };
 
-        if let Some(provider) = self.selected_model_provider {
-            if self
+        if let Some(provider) = self.selected_model_provider
+            && self
                 .model_options
                 .iter()
                 .any(|o| o.id == selected_id && o.provider == provider)
-            {
-                return;
-            }
+        {
+            return;
         }
 
         let mut matches = self

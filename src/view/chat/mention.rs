@@ -1,10 +1,10 @@
 // chat_mention.rs — Mention popup + attachment row (view child module)
 use crate::view::ui::{
-    app_vscrollbar, primary_btn, secondary_btn, shorten_tail, FS_BODY, FS_LABEL, FS_MICRO,
+    FS_BODY, FS_LABEL, FS_MICRO, app_vscrollbar, primary_btn, secondary_btn, shorten_tail,
 };
-use crate::{fuzzy_match_paths, hscrollbar, App, Message};
+use crate::{App, Message, fuzzy_match_paths, hscrollbar};
 use iced::widget::scrollable::Direction;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length, Theme};
 
 impl App {

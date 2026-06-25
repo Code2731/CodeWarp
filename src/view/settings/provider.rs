@@ -1,9 +1,9 @@
 use crate::view::ui::{
-    bold_font, danger_btn, field_input, panel_style, primary_btn, secondary_btn, semibold_font,
-    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, SPACE_XS, SPACE_XXS,
+    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, SPACE_XS, SPACE_XXS, bold_font, danger_btn,
+    field_input, panel_style, primary_btn, secondary_btn, semibold_font,
 };
-use crate::{downloaded_exl2_preset_folder, App, Message, EXL2_PRESETS};
-use iced::widget::{button, column, container, row, text, text_input, Space};
+use crate::{App, EXL2_PRESETS, Message, downloaded_exl2_preset_folder};
+use iced::widget::{Space, button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Length};
 
 impl App {
@@ -120,9 +120,11 @@ impl App {
         ]
         .spacing(8);
         let tabby_status_label: Element<Message> = self.endpoint_indicator(FS_LABEL);
-        let mut tabby_presets = column![text("Tabby 추천 프리셋 (클릭 시 즉시 다운로드)")
-            .size(FS_LABEL)
-            .font(semibold_font())]
+        let mut tabby_presets = column![
+            text("Tabby 추천 프리셋 (클릭 시 즉시 다운로드)")
+                .size(FS_LABEL)
+                .font(semibold_font())
+        ]
         .spacing(4);
         for (i, p) in EXL2_PRESETS.iter().take(4).enumerate() {
             let downloaded_folder = downloaded_exl2_preset_folder(&self.model_dir_input, p);

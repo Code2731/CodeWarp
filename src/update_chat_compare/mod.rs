@@ -1,10 +1,10 @@
 // update_chat_compare — Compare mode update methods (main.rs child module)
 use super::{
-    build_file_context, keystore, openrouter, snap_to_end, tabby, App, Block, BlockBody,
-    ChatMessage, LlmProvider, Message, ViewMode,
+    App, Block, BlockBody, ChatMessage, LlmProvider, Message, ViewMode, build_file_context,
+    keystore, openrouter, snap_to_end, tabby,
 };
-use iced::widget::text_editor;
 use iced::Task;
+use iced::widget::text_editor;
 
 mod collect;
 mod routes;

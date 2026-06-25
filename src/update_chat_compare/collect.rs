@@ -1,4 +1,4 @@
-use crate::{openrouter, ChatEvent, ChatMessage};
+use crate::{ChatEvent, ChatMessage, openrouter};
 use futures_util::StreamExt;
 use std::sync::Arc;
 

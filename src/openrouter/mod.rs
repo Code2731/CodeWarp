@@ -23,4 +23,4 @@ pub(crate) use api::{get_account_info, get_generation, list_models};
 pub(crate) use api_types::{AuthKeyData, GenerationData};
 pub(crate) use chat_stream::chat_stream;
 pub(crate) use humanize::humanize_error;
-pub(crate) use types::{ChatEvent, ChatMessage, OpenRouterModel, BASE_URL};
+pub(crate) use types::{BASE_URL, ChatEvent, ChatMessage, OpenRouterModel};

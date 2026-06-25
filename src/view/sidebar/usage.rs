@@ -1,6 +1,6 @@
-use super::super::ui::{semibold_font, shorten_tail, FS_LABEL};
-use crate::{session, App, Message};
-use iced::widget::{column, row, text, Space};
+use super::super::ui::{FS_LABEL, semibold_font, shorten_tail};
+use crate::{App, Message, session};
+use iced::widget::{Space, column, row, text};
 use iced::{Element, Font, Length};
 
 impl App {

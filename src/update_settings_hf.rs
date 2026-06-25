@@ -1,8 +1,8 @@
 // update_settings_hf.rs — HF download management methods (main.rs child module)
 use super::{
-    default_models_dir, default_tabbyapi_runtime_dir, downloaded_model_path,
-    find_tabbyapi_launcher, hf, keystore, resolve_tabbyapi_model_dir_for_folder, resolve_user_path,
-    App, HfDownload, InferenceEngine, Message, TABBY_API_DEFAULT_PORT,
+    App, HfDownload, InferenceEngine, Message, TABBY_API_DEFAULT_PORT, default_models_dir,
+    default_tabbyapi_runtime_dir, downloaded_model_path, find_tabbyapi_launcher, hf, keystore,
+    resolve_tabbyapi_model_dir_for_folder, resolve_user_path,
 };
 use iced::Task;
 

@@ -1,4 +1,4 @@
-use super::{keystore, openrouter, tabby, App, LlmProvider};
+use super::{App, LlmProvider, keystore, openrouter, tabby};
 
 #[derive(Clone)]
 pub(super) struct ChatRoute {
@@ -18,7 +18,7 @@ impl App {
                     .iter()
                     .find(|o| o.provider == LlmProvider::OpenRouter)
             })
-            .ok_or_else(|| "Compare 모드: OpenRouter 모델이 없습니다. OpenRouter 키/모델 목록을 먼저 불러와 주세요.".to_string())?;
+            .ok_or("Compare 모드: OpenRouter 모델이 없습니다. OpenRouter 키/모델 목록을 먼저 불러와 주세요.".to_string())?;
         let tabby_model = selected
             .filter(|o| o.provider == LlmProvider::OpenAICompat)
             .or_else(|| {
@@ -26,7 +26,7 @@ impl App {
                     .iter()
                     .find(|o| o.provider == LlmProvider::OpenAICompat)
             })
-            .ok_or_else(|| "Compare 모드: Tabby 모델이 없습니다. Provider 연결 테스트로 Tabby 모델을 먼저 불러와 주세요.".to_string())?;
+            .ok_or("Compare 모드: Tabby 모델이 없습니다. Provider 연결 테스트로 Tabby 모델을 먼저 불러와 주세요.".to_string())?;
 
         let openrouter_key = keystore::read_api_key()?;
         let tabby_base = if self.tabby_url_input.trim().is_empty() {
@@ -35,7 +35,7 @@ impl App {
             Some(self.tabby_url_input.clone())
         }
         .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| "Compare 모드: Tabby URL 미설정".to_string())?;
+        .ok_or("Compare 모드: Tabby URL 미설정".to_string())?;
         let tabby_token = if self.tabby_token_input.trim().is_empty() {
             keystore::read_tabby_token()
         } else {

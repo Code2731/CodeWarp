@@ -48,10 +48,10 @@ pub(super) fn process_leftover_buffer(
                 continue;
             }
             for parsed in parsed_chunks {
-                if generation_id.is_none() {
-                    if let Some(id) = parsed.id {
-                        *generation_id = Some(id);
-                    }
+                if generation_id.is_none()
+                    && let Some(id) = parsed.id
+                {
+                    *generation_id = Some(id);
                 }
                 for choice in parsed.choices {
                     if let Some(reason) = choice.finish_reason.as_ref() {
@@ -65,29 +65,29 @@ pub(super) fn process_leftover_buffer(
             }
         }
     }
-    if let Some(payload) = flush_pending_sse_data(pending_sse_data) {
-        if payload.trim() != "[DONE]" {
-            let parsed_chunks = parse_stream_chunks(&payload);
-            if parsed_chunks.is_empty() {
-                if let Some(text) = extract_plain_stream_token(&payload) {
+    if let Some(payload) = flush_pending_sse_data(pending_sse_data)
+        && payload.trim() != "[DONE]"
+    {
+        let parsed_chunks = parse_stream_chunks(&payload);
+        if parsed_chunks.is_empty()
+            && let Some(text) = extract_plain_stream_token(&payload)
+        {
+            *emitted_any_token = true;
+            events.push(ChatEvent::Token(text));
+        }
+        for parsed in parsed_chunks {
+            if generation_id.is_none()
+                && let Some(id) = parsed.id
+            {
+                *generation_id = Some(id);
+            }
+            for choice in parsed.choices {
+                if let Some(reason) = choice.finish_reason.as_ref() {
+                    *last_finish_reason = Some(reason.clone());
+                }
+                if let Some(text) = extract_stream_text(&choice) {
                     *emitted_any_token = true;
                     events.push(ChatEvent::Token(text));
-                }
-            }
-            for parsed in parsed_chunks {
-                if generation_id.is_none() {
-                    if let Some(id) = parsed.id {
-                        *generation_id = Some(id);
-                    }
-                }
-                for choice in parsed.choices {
-                    if let Some(reason) = choice.finish_reason.as_ref() {
-                        *last_finish_reason = Some(reason.clone());
-                    }
-                    if let Some(text) = extract_stream_text(&choice) {
-                        *emitted_any_token = true;
-                        events.push(ChatEvent::Token(text));
-                    }
                 }
             }
         }

@@ -1,4 +1,4 @@
-use super::{fmt_bytes, fuzzy_match_paths, App, Message, MAX_ATTACH_BYTES};
+use super::{App, MAX_ATTACH_BYTES, Message, fmt_bytes, fuzzy_match_paths};
 use iced::Task;
 
 impl App {

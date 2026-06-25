@@ -1,6 +1,6 @@
 use super::TabHealth;
 
-use crate::view::ui::{primary_btn, secondary_btn, semibold_font, FS_LABEL, FS_MICRO};
+use crate::view::ui::{FS_LABEL, FS_MICRO, primary_btn, secondary_btn, semibold_font};
 use crate::{App, Message, SettingsTab};
 use iced::widget::{button, column, row, text};
 use iced::{Alignment, Element, Length, Theme};

@@ -1,5 +1,5 @@
 // update_inference_engine.rs — Inference engine capability checks (main.rs child module)
-use super::{list_downloaded_models, App, InferenceEngine};
+use super::{App, InferenceEngine, list_downloaded_models};
 
 impl App {
     pub(crate) fn has_selected_local_model_available(&self) -> bool {

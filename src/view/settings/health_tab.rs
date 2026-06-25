@@ -1,4 +1,4 @@
-use crate::{list_downloaded_models, App};
+use crate::{App, list_downloaded_models};
 
 #[derive(Clone, Copy)]
 pub(crate) enum TabHealth {

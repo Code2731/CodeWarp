@@ -1,5 +1,5 @@
 // update.rs — App update 메서드 (main.rs child module)
-use super::{on_event, session, App, Message};
+use super::{App, Message, on_event, session};
 use iced::{Subscription, Task};
 use std::time::Duration;
 

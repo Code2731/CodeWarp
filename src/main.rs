@@ -50,23 +50,23 @@ mod util;
 mod view;
 
 pub(crate) use block::{
+    Block, BlockBody, MAX_MID_STREAM_RETRIES, MAX_TOOL_ROUNDS, PendingToolCall, ViewMode,
     last_assistant_block_idx, last_user_block_idx, parse_apply_candidates, persisted_to_block,
-    truncate_after_last_user, Block, BlockBody, PendingToolCall, ViewMode, MAX_MID_STREAM_RETRIES,
-    MAX_TOOL_ROUNDS,
+    truncate_after_last_user,
 };
 use bootstrap::{
-    build_window_icon, JETBRAINS_MONO_BOLD, JETBRAINS_MONO_REGULAR, PRETENDARD_BOLD,
-    PRETENDARD_REGULAR, PRETENDARD_SEMIBOLD,
+    JETBRAINS_MONO_BOLD, JETBRAINS_MONO_REGULAR, PRETENDARD_BOLD, PRETENDARD_REGULAR,
+    PRETENDARD_SEMIBOLD, build_window_icon,
 };
 pub(crate) use input::on_event;
 pub(crate) use message::{AgentMode, Message, SettingsTab, SortMode};
 pub(crate) use model::{
-    categorize_model, downloaded_exl2_preset_folder, downloaded_model_path, is_korean_friendly,
-    list_downloaded_models, parse_price_per_million, resolve_tabbyapi_model_dir,
-    resolve_tabbyapi_model_dir_for_folder, InferenceEngine, LlmProvider, ModelCategory,
-    ModelOption, EXL2_PRESETS, MODEL_PRESETS, TABBY_API_DEFAULT_PORT, TABBY_API_REPO_URL,
+    EXL2_PRESETS, InferenceEngine, LlmProvider, MODEL_PRESETS, ModelCategory, ModelOption,
+    TABBY_API_DEFAULT_PORT, TABBY_API_REPO_URL, categorize_model, downloaded_exl2_preset_folder,
+    downloaded_model_path, is_korean_friendly, list_downloaded_models, parse_price_per_million,
+    resolve_tabbyapi_model_dir, resolve_tabbyapi_model_dir_for_folder,
 };
-pub(crate) use palette::{PaletteAction, PaletteCommand, PALETTE_COMMANDS};
+pub(crate) use palette::{PALETTE_COMMANDS, PaletteAction, PaletteCommand};
 pub(crate) use runtime_process::spawn_inference_stream;
 pub(crate) use state::{App, HfDownload, InactiveSession};
 pub(crate) use tabby::tabby_connection_error_looks_unreachable;
@@ -75,20 +75,20 @@ pub(crate) use update_helpers::{
     resolve_binary_from_dir, runtime_command_exists,
 };
 pub(crate) use update_helpers_tabbyapi::{
+    TABBY_CONNECT_RETRIES_AFTER_START, TABBY_CONNECT_RETRY_DELAY_SECS,
     default_tabbyapi_runtime_dir, find_tabbyapi_launcher, install_tabbyapi_runtime,
     is_tabbyapi_launcher_path, validate_tabbyapi_launcher_path, write_tabbyapi_config_for_launcher,
-    TABBY_CONNECT_RETRIES_AFTER_START, TABBY_CONNECT_RETRY_DELAY_SECS,
 };
 pub(crate) use util::{
-    build_file_context, collect_mention_candidates, extract_mention_query, fmt_bytes,
-    fuzzy_match_paths, hscrollbar, kill_pid, resolve_user_path, summarize_tool_result,
-    MAX_ATTACH_BYTES, PTY_MAX_LINES,
+    MAX_ATTACH_BYTES, PTY_MAX_LINES, build_file_context, collect_mention_candidates,
+    extract_mention_query, fmt_bytes, fuzzy_match_paths, hscrollbar, kill_pid, resolve_user_path,
+    summarize_tool_result,
 };
 
 use iced::task;
 use iced::widget::markdown;
 use iced::widget::operation::snap_to_end;
-use iced::widget::{combo_box, Id as ScrollId};
+use iced::widget::{Id as ScrollId, combo_box};
 use iced::{Color, Font, Size, Task, Theme};
 use std::collections::HashSet;
 use std::path::PathBuf;

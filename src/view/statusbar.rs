@@ -1,8 +1,8 @@
 use super::ui::{
-    semibold_font, topbar_style, FS_LABEL, STATUSBAR_PAD_X, STATUSBAR_PAD_Y, STATUSBAR_ROW_SPACING,
+    FS_LABEL, STATUSBAR_PAD_X, STATUSBAR_PAD_Y, STATUSBAR_ROW_SPACING, semibold_font, topbar_style,
 };
 use crate::{App, Message};
-use iced::widget::{container, row, text, Space};
+use iced::widget::{Space, container, row, text};
 use iced::{Alignment, Element, Font, Length, Theme};
 
 impl App {

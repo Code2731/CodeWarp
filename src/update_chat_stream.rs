@@ -1,5 +1,5 @@
 // update_chat_stream.rs — Chat stream event dispatcher (main.rs child module)
-use super::{snap_to_end, App, ChatEvent, Message, PendingToolCall};
+use super::{App, ChatEvent, Message, PendingToolCall, snap_to_end};
 use iced::Task;
 
 impl App {

@@ -1,11 +1,11 @@
 use super::ui::{
-    app_vscrollbar, danger_btn, panel_style, primary_btn, secondary_btn, semibold_font,
-    shorten_tail, FS_BODY, FS_LABEL, FS_SUBTITLE, PAD_LG, PAD_MD, PAD_XS, SCROLL_GUTTER_PAD_X,
-    SPACE_SM, SPACE_XS,
+    FS_BODY, FS_LABEL, FS_SUBTITLE, PAD_LG, PAD_MD, PAD_XS, SCROLL_GUTTER_PAD_X, SPACE_SM,
+    SPACE_XS, app_vscrollbar, danger_btn, panel_style, primary_btn, secondary_btn, semibold_font,
+    shorten_tail,
 };
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length, Theme};
 
 mod context;
@@ -22,33 +22,35 @@ impl App {
         } else {
             self.current_session_title.clone()
         };
-        let mut sessions_col = column![container(
-            text(format!("📌 {active_label}"))
-                .size(FS_BODY)
-                .font(semibold_font())
-        )
-        .padding([6, 8])
-        .width(Length::Fill)
-        .style(|theme: &Theme| {
-            let p = theme.extended_palette();
-            container::Style {
-                background: Some(
-                    iced::Color::from_rgba(
-                        p.primary.base.color.r,
-                        p.primary.base.color.g,
-                        p.primary.base.color.b,
-                        0.16,
-                    )
-                    .into(),
-                ),
-                border: iced::Border {
-                    color: p.primary.base.color,
-                    width: 1.0,
-                    radius: 10.0.into(),
-                },
-                ..Default::default()
-            }
-        }),]
+        let mut sessions_col = column![
+            container(
+                text(format!("📌 {active_label}"))
+                    .size(FS_BODY)
+                    .font(semibold_font())
+            )
+            .padding([6, 8])
+            .width(Length::Fill)
+            .style(|theme: &Theme| {
+                let p = theme.extended_palette();
+                container::Style {
+                    background: Some(
+                        iced::Color::from_rgba(
+                            p.primary.base.color.r,
+                            p.primary.base.color.g,
+                            p.primary.base.color.b,
+                            0.16,
+                        )
+                        .into(),
+                    ),
+                    border: iced::Border {
+                        color: p.primary.base.color,
+                        width: 1.0,
+                        radius: 10.0.into(),
+                    },
+                    ..Default::default()
+                }
+            }),
+        ]
         .spacing(2);
         for s in &self.inactive_sessions {
             let title = if s.title.trim().is_empty() {

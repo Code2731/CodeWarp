@@ -1,10 +1,10 @@
 use super::ui::{
-    app_vscrollbar, panel_style, semibold_font, FS_BODY, FS_LABEL, PAD_LG, PANEL_SECTION_GAP_LG,
-    RIGHT_PANEL_WIDTH, SCROLL_GUTTER_PAD_X, SPACE_SM,
+    FS_BODY, FS_LABEL, PAD_LG, PANEL_SECTION_GAP_LG, RIGHT_PANEL_WIDTH, SCROLL_GUTTER_PAD_X,
+    SPACE_SM, app_vscrollbar, panel_style, semibold_font,
 };
-use crate::{App, BlockBody, Message, MAX_TOOL_ROUNDS};
+use crate::{App, BlockBody, MAX_TOOL_ROUNDS, Message};
 use iced::widget::scrollable::Direction;
-use iced::widget::{column, container, scrollable, text, Space};
+use iced::widget::{Space, column, container, scrollable, text};
 use iced::{Element, Font, Length, Theme};
 
 impl App {

@@ -23,12 +23,11 @@ pub(crate) fn tool_kind(name: &str) -> ToolKind {
 
 pub(crate) fn tool_definitions(allow_mutating: bool) -> serde_json::Value {
     let mut tools = read_only_tools();
-    if allow_mutating {
-        if let serde_json::Value::Array(arr) = &mut tools {
-            if let serde_json::Value::Array(muts) = mutating_tools() {
-                arr.extend(muts);
-            }
-        }
+    if allow_mutating
+        && let serde_json::Value::Array(arr) = &mut tools
+        && let serde_json::Value::Array(muts) = mutating_tools()
+    {
+        arr.extend(muts);
     }
     tools
 }

@@ -1,7 +1,7 @@
 [package]
 name = "codewarp"
 version = "0.2.0"
-edition = "2021"
+edition = "2024"
 description = "CodeWarp — Warp 스타일 AI 코딩 데스크톱 (Iced 기반)"
 authors = ["CodeWarp"]
 license = "MIT OR Apache-2.0"

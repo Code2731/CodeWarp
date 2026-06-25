@@ -99,12 +99,11 @@ pub(crate) fn download_repo(
             };
 
             let target_file = target_root.join(filename);
-            if let Some(parent) = target_file.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
+            if let Some(parent) = target_file.parent()
+                && let Err(e) = std::fs::create_dir_all(parent) {
                     yield DownloadEvent::Error(format!("디렉토리 생성 실패: {e}"));
                     return;
                 }
-            }
 
             let mut file = match std::fs::File::create(&target_file) {
                 Ok(f) => f,

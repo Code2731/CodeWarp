@@ -1,9 +1,9 @@
 // update_inference_config.rs — Inference configuration update methods (main.rs child module)
 use super::{
+    App, InferenceEngine, Message, SettingsTab, TABBY_API_DEFAULT_PORT,
     default_tabbyapi_runtime_dir, downloaded_model_path, extract_loopback_port,
     find_tabbyapi_launcher, install_tabbyapi_runtime, is_loopback_url, keystore,
-    resolve_tabbyapi_model_dir_for_folder, validate_tabbyapi_launcher_path, App, InferenceEngine,
-    Message, SettingsTab, TABBY_API_DEFAULT_PORT,
+    resolve_tabbyapi_model_dir_for_folder, validate_tabbyapi_launcher_path,
 };
 use iced::Task;
 
@@ -82,24 +82,24 @@ impl App {
     pub(crate) fn set_inference_port(&mut self, value: &str) -> Task<Message> {
         let prev_port = self.inference_port_input.trim().parse::<u16>().ok();
         self.inference_port_input = value.to_string();
-        if let Ok(new_port) = value.trim().parse::<u16>() {
-            if matches!(
+        if let Ok(new_port) = value.trim().parse::<u16>()
+            && matches!(
                 self.inference_engine,
                 InferenceEngine::XLlm
                     | InferenceEngine::VLlm
                     | InferenceEngine::LlamaServer
                     | InferenceEngine::TabbyMl
                     | InferenceEngine::TabbyApi
-            ) {
-                let current_url = self.tabby_url_input.trim();
-                let current_url_port = extract_loopback_port(current_url);
-                let should_sync = current_url.is_empty()
-                    || (is_loopback_url(current_url)
-                        && (current_url_port == prev_port || current_url_port.is_none()));
-                if should_sync {
-                    self.tabby_url_input = format!("http://localhost:{new_port}");
-                    let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
-                }
+            )
+        {
+            let current_url = self.tabby_url_input.trim();
+            let current_url_port = extract_loopback_port(current_url);
+            let should_sync = current_url.is_empty()
+                || (is_loopback_url(current_url)
+                    && (current_url_port == prev_port || current_url_port.is_none()));
+            if should_sync {
+                self.tabby_url_input = format!("http://localhost:{new_port}");
+                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
             }
         }
         Task::none()
@@ -110,12 +110,12 @@ impl App {
     ) -> Task<Message> {
         if let Some(path) = maybe_path {
             let s = path.display().to_string();
-            if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
-                if let Err(msg) = validate_tabbyapi_launcher_path(&s) {
-                    self.status.clone_from(&msg);
-                    self.tabby_status = Some(Err(msg));
-                    return Task::none();
-                }
+            if matches!(self.inference_engine, InferenceEngine::TabbyApi)
+                && let Err(msg) = validate_tabbyapi_launcher_path(&s)
+            {
+                self.status.clone_from(&msg);
+                self.tabby_status = Some(Err(msg));
+                return Task::none();
             }
             let _ = keystore::write_inference_binary(&s);
             self.inference_binary_path = s;

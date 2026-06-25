@@ -1,16 +1,15 @@
-use super::{keystore, openrouter, tabby, tools, App, LlmProvider, ModelOption};
+use super::{App, LlmProvider, ModelOption, keystore, openrouter, tabby, tools};
 
 impl App {
     pub(crate) fn selected_option(&self) -> Option<&ModelOption> {
         let id = self.selected_model.as_deref()?;
-        if let Some(provider) = self.selected_model_provider {
-            if let Some(opt) = self
+        if let Some(provider) = self.selected_model_provider
+            && let Some(opt) = self
                 .model_options
                 .iter()
                 .find(|o| o.id == id && o.provider == provider)
-            {
-                return Some(opt);
-            }
+        {
+            return Some(opt);
         }
         self.model_options.iter().find(|o| o.id == id)
     }
@@ -36,7 +35,7 @@ impl App {
         let id = self
             .selected_model
             .as_deref()
-            .ok_or_else(|| "모델 미선택".to_string())?;
+            .ok_or("모델 미선택".to_string())?;
         let provider = self
             .selected_option()
             .map(|o| o.provider)
@@ -53,7 +52,7 @@ impl App {
                     Some(self.tabby_url_input.clone())
                 }
                 .filter(|s| !s.trim().is_empty())
-                .ok_or_else(|| "Tabby URL 미설정".to_string())?;
+                .ok_or("Tabby URL 미설정".to_string())?;
                 let token = if self.tabby_token_input.trim().is_empty() {
                     keystore::read_tabby_token()
                 } else {

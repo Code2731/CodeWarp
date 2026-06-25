@@ -1,5 +1,5 @@
 // update_chat_session.rs — Session management update methods (main.rs child module)
-use super::{persisted_to_block, session, App, Arc, BlockBody, InactiveSession, Message};
+use super::{App, Arc, BlockBody, InactiveSession, Message, persisted_to_block, session};
 use iced::Task;
 
 impl App {
@@ -184,18 +184,16 @@ impl App {
         let _ = session::save_all(&p);
     }
     pub(crate) fn maybe_update_title(&mut self) {
-        if self.current_session_title.is_empty()
-            || self.current_session_title.starts_with("새 채팅")
-        {
-            if let Some(first_user) = self
+        if (self.current_session_title.is_empty()
+            || self.current_session_title.starts_with("새 채팅"))
+            && let Some(first_user) = self
                 .conversation
                 .iter()
                 .find(|m| m.role == "user")
                 .and_then(|m| m.content.as_ref())
-            {
-                let snippet: String = first_user.chars().take(30).collect();
-                self.current_session_title = snippet;
-            }
+        {
+            let snippet: String = first_user.chars().take(30).collect();
+            self.current_session_title = snippet;
         }
     }
     pub(crate) fn allocate_session_id(&mut self) -> u64 {

@@ -1,9 +1,9 @@
 use super::ui::{
-    panel_style, secondary_btn, topbar_style, CONTROL_PAD_X, CONTROL_PAD_Y, FS_BODY, TOPBAR_PAD_X,
-    TOPBAR_PAD_Y, TOPBAR_ROW_SPACING,
+    CONTROL_PAD_X, CONTROL_PAD_Y, FS_BODY, TOPBAR_PAD_X, TOPBAR_PAD_Y, TOPBAR_ROW_SPACING,
+    panel_style, secondary_btn, topbar_style,
 };
 use crate::{App, Message};
-use iced::widget::{button, checkbox, combo_box, container, row, text, Space};
+use iced::widget::{Space, button, checkbox, combo_box, container, row, text};
 use iced::{Alignment, Element, Length};
 
 impl App {

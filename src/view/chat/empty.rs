@@ -1,9 +1,9 @@
 use crate::view::ui::{
-    bold_font, context_item_style, panel_style, secondary_btn, semibold_font, FS_BODY, FS_LABEL,
-    FS_SUBTITLE, FS_TITLE, PAD_MD, PAD_XS, PANEL_SECTION_GAP_LG, SPACE_SM, SPACE_XS, SPACE_XXS,
+    FS_BODY, FS_LABEL, FS_SUBTITLE, FS_TITLE, PAD_MD, PAD_XS, PANEL_SECTION_GAP_LG, SPACE_SM,
+    SPACE_XS, SPACE_XXS, bold_font, context_item_style, panel_style, secondary_btn, semibold_font,
 };
 use crate::{App, Message};
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{Space, button, column, container, row, text};
 use iced::{Alignment, Element, Font, Length};
 
 impl App {
@@ -24,9 +24,11 @@ impl App {
         ]
         .spacing(SPACE_XXS);
 
-        let mut examples_col = column![text("다음을 시도해보세요")
-            .size(FS_LABEL)
-            .font(semibold_font())]
+        let mut examples_col = column![
+            text("다음을 시도해보세요")
+                .size(FS_LABEL)
+                .font(semibold_font())
+        ]
         .spacing(SPACE_SM);
         for ex in EXAMPLES {
             examples_col = examples_col.push(

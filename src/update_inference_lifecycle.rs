@@ -1,9 +1,9 @@
 // update_inference_lifecycle.rs — Inference lifecycle management (main.rs child module)
 use super::{
+    App, InferenceEngine, Message, TABBY_API_DEFAULT_PORT, TABBY_CONNECT_RETRIES_AFTER_START,
     expected_binary_name, keystore, mcp, resolve_tabbyapi_model_dir, resolve_user_path,
     runtime_command_exists, spawn_inference_stream, validate_tabbyapi_launcher_path,
-    write_tabbyapi_config_for_launcher, App, InferenceEngine, Message, TABBY_API_DEFAULT_PORT,
-    TABBY_CONNECT_RETRIES_AFTER_START,
+    write_tabbyapi_config_for_launcher,
 };
 use iced::Task;
 

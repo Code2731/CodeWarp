@@ -1,9 +1,9 @@
 use super::{
-    build_file_context, last_user_block_idx, openrouter, snap_to_end, truncate_after_last_user,
-    AgentMode, App, Block, BlockBody, ChatMessage, Message, ViewMode,
+    AgentMode, App, Block, BlockBody, ChatMessage, Message, ViewMode, build_file_context,
+    last_user_block_idx, openrouter, snap_to_end, truncate_after_last_user,
 };
-use iced::widget::text_editor;
 use iced::Task;
+use iced::widget::text_editor;
 
 impl App {
     pub(crate) fn regenerate_last(&mut self) -> Task<Message> {

@@ -1,6 +1,6 @@
-use crate::view::ui::{field_input, panel_style, semibold_font, FS_BODY, FS_LABEL, FS_SUBTITLE};
+use crate::view::ui::{FS_BODY, FS_LABEL, FS_SUBTITLE, field_input, panel_style, semibold_font};
 use crate::{App, InferenceEngine, Message};
-use iced::widget::{column, container, pick_list, row, text, text_input, Space};
+use iced::widget::{Space, column, container, pick_list, row, text, text_input};
 use iced::{Alignment, Element, Length};
 
 impl App {

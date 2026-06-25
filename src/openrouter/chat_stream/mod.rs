@@ -101,14 +101,12 @@ pub(crate) fn chat_stream(
 
                 let Some(payload) = consume_sse_line(&line, &mut pending_sse_data) else { continue };
                 if payload.trim() == "[DONE]" {
-                    if !emitted_any_token {
-                        if let Some(content) = extract_non_stream_content(raw_capture.trim()) {
-                            if !content.is_empty() {
+                    if !emitted_any_token
+                        && let Some(content) = extract_non_stream_content(raw_capture.trim())
+                            && !content.is_empty() {
                                 emitted_any_token = true;
                                 yield ChatEvent::Token(content);
                             }
-                        }
-                    }
                     if !emitted_any_token {
                         match helpers::fallback_to_non_stream(
                             &client, &endpoint, &base_url, api_key.as_deref(),
@@ -137,11 +135,10 @@ pub(crate) fn chat_stream(
                     continue;
                 }
                 for parsed in parsed_chunks {
-                    if generation_id.is_none() {
-                        if let Some(id) = parsed.id {
+                    if generation_id.is_none()
+                        && let Some(id) = parsed.id {
                             generation_id = Some(id);
                         }
-                    }
                     for choice in parsed.choices {
                         if let Some(reason) = choice.finish_reason.as_ref() {
                             last_finish_reason = Some(reason.clone());
@@ -150,8 +147,8 @@ pub(crate) fn chat_stream(
                             emitted_any_token = true;
                             yield ChatEvent::Token(text);
                         }
-                        if let Some(delta) = choice.delta {
-                            if let Some(calls) = delta.tool_calls {
+                        if let Some(delta) = choice.delta
+                            && let Some(calls) = delta.tool_calls {
                                 for call in calls {
                                     let (name, arguments) = match call.function {
                                         Some(f) => (f.name, f.arguments),
@@ -165,7 +162,6 @@ pub(crate) fn chat_stream(
                                     };
                                 }
                             }
-                        }
                     }
                 }
             }
@@ -178,14 +174,12 @@ pub(crate) fn chat_stream(
             yield event;
         }
 
-        if !emitted_any_token {
-            if let Some(content) = extract_non_stream_content(raw_capture.trim()) {
-                if !content.is_empty() {
+        if !emitted_any_token
+            && let Some(content) = extract_non_stream_content(raw_capture.trim())
+                && !content.is_empty() {
                     emitted_any_token = true;
                     yield ChatEvent::Token(content);
                 }
-            }
-        }
 
         if !emitted_any_token {
             match helpers::fallback_to_non_stream(

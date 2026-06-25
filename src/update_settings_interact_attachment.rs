@@ -1,5 +1,5 @@
 // update_settings_interact_attachment.rs — attachment/mention methods (main.rs child module)
-use super::{fmt_bytes, fuzzy_match_paths, App, Message};
+use super::{App, Message, fmt_bytes, fuzzy_match_paths};
 use iced::Task;
 
 impl App {

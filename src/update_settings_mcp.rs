@@ -1,5 +1,5 @@
 // update_settings_mcp.rs — MCP server management methods (main.rs child module)
-use super::{mcp, App, Message};
+use super::{App, Message, mcp};
 use iced::Task;
 
 impl App {

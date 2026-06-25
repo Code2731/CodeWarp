@@ -1,6 +1,6 @@
-use super::{hscrollbar, Color, Message};
+use super::{Color, Message, hscrollbar};
 use iced::widget::scrollable::Direction;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Element, Font, Length, Theme};
 
 /// `markdown::view_with`용 커스텀 `Viewer`.
@@ -36,12 +36,12 @@ impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer {
                 .iter()
                 .map(|s| {
                     let mut s = s.clone();
-                    if let Some(font) = s.font.as_mut() {
-                        if !matches!(font.style, iced::font::Style::Normal) {
-                            font.style = iced::font::Style::Normal;
-                            if matches!(font.weight, iced::font::Weight::Normal) {
-                                font.weight = iced::font::Weight::Semibold;
-                            }
+                    if let Some(font) = s.font.as_mut()
+                        && !matches!(font.style, iced::font::Style::Normal)
+                    {
+                        font.style = iced::font::Style::Normal;
+                        if matches!(font.weight, iced::font::Weight::Normal) {
+                            font.weight = iced::font::Weight::Semibold;
                         }
                     }
                     s

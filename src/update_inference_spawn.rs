@@ -1,7 +1,8 @@
 // update_inference_spawn.rs — Runtime spawn resolution (main.rs child module)
 use super::{
-    is_loopback_url, is_tabbyapi_launcher_path, list_downloaded_models, resolve_binary_from_dir,
-    tabby, tabby_connection_error_looks_unreachable, App, InferenceEngine, PathBuf,
+    App, InferenceEngine, PathBuf, is_loopback_url, is_tabbyapi_launcher_path,
+    list_downloaded_models, resolve_binary_from_dir, tabby,
+    tabby_connection_error_looks_unreachable,
 };
 
 impl App {

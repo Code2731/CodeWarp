@@ -1,5 +1,5 @@
 use super::types::{
-    normalize_non_empty_text, value_to_text, ChunkChoice, FlexibleContent, NonStreamChatResponse,
+    ChunkChoice, FlexibleContent, NonStreamChatResponse, normalize_non_empty_text, value_to_text,
 };
 
 use super::parse_values::extract_non_stream_content_from_value;

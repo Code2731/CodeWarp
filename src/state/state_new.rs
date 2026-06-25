@@ -1,6 +1,6 @@
 use super::{
-    combo_box, keystore, mcp, session, AgentMode, App, Arc, Color, InferenceEngine, McpInputState,
-    Message, ModelFilterState, PathBuf, ScrollId, Task, Theme, UiState, SIDEBAR_WIDTH,
+    AgentMode, App, Arc, Color, InferenceEngine, McpInputState, Message, ModelFilterState, PathBuf,
+    SIDEBAR_WIDTH, ScrollId, Task, Theme, UiState, combo_box, keystore, mcp, session,
 };
 
 impl App {

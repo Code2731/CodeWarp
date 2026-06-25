@@ -1,5 +1,5 @@
 // update_settings_io.rs — Authentication/credentials input and save/clear methods
-use super::{keystore, App, LlmProvider, Message};
+use super::{App, LlmProvider, Message, keystore};
 use iced::Task;
 
 impl App {
@@ -161,18 +161,18 @@ impl App {
         self.model_options
             .retain(|o| o.provider != LlmProvider::OpenAICompat);
         self.refresh_model_combo();
-        if let Some(sel) = self.selected_model.clone() {
-            if !self.model_options.iter().any(|o| o.id == sel) {
-                if let Some(first) = self.model_options.first() {
-                    self.selected_model = Some(first.id.clone());
-                    self.selected_model_provider = Some(first.provider);
-                } else {
-                    self.selected_model = None;
-                    self.selected_model_provider = None;
-                }
-                if let Some(id) = &self.selected_model {
-                    let _ = keystore::write_selected_model(id);
-                }
+        if let Some(sel) = self.selected_model.clone()
+            && !self.model_options.iter().any(|o| o.id == sel)
+        {
+            if let Some(first) = self.model_options.first() {
+                self.selected_model = Some(first.id.clone());
+                self.selected_model_provider = Some(first.provider);
+            } else {
+                self.selected_model = None;
+                self.selected_model_provider = None;
+            }
+            if let Some(id) = &self.selected_model {
+                let _ = keystore::write_selected_model(id);
             }
         }
         Task::none()

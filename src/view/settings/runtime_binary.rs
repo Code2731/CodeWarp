@@ -1,6 +1,6 @@
-use crate::view::ui::{field_input, panel_style, secondary_btn, semibold_font, FS_BODY, FS_LABEL};
+use crate::view::ui::{FS_BODY, FS_LABEL, field_input, panel_style, secondary_btn, semibold_font};
 use crate::{App, InferenceEngine, Message};
-use iced::widget::{button, container, row, text, text_input, Space};
+use iced::widget::{Space, button, container, row, text, text_input};
 use iced::{Alignment, Element, Length};
 
 impl App {

@@ -86,9 +86,9 @@ fn with_alpha_handles_alpha_bounds() {
     assert_eq!(opaque.b, base.b);
 }
 
-use super::{bold_font, semibold_font, UI_FONT_FAMILY};
-use iced::font::Weight;
+use super::{UI_FONT_FAMILY, bold_font, semibold_font};
 use iced::Font;
+use iced::font::Weight;
 
 #[test]
 fn semibold_font_uses_semibold_weight() {

@@ -1,5 +1,5 @@
 // update_settings_interact_pty.rs — PTY interaction methods
-use super::{pty, App, Message, PTY_MAX_LINES};
+use super::{App, Message, PTY_MAX_LINES, pty};
 use iced::Task;
 
 impl App {

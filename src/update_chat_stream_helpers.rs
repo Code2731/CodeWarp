@@ -1,5 +1,5 @@
 // update_chat_stream_helpers.rs — Chat stream helper utilities (main.rs child module)
-use super::{markdown, openrouter, App, Arc, BlockBody, ChatMessage, Message};
+use super::{App, Arc, BlockBody, ChatMessage, Message, markdown, openrouter};
 use iced::Task;
 
 impl App {
@@ -16,22 +16,20 @@ impl App {
             h.abort();
         }
         self.compare_pending = false;
-        if keep_partial_assistant {
-            if let Some(ai_id) = self.streaming_block_id {
-                let txt = if !self.streaming_raw.is_empty() {
-                    std::mem::take(&mut self.streaming_raw)
-                } else if let Some(idx) = self.streaming_block_idx {
-                    if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
-                        self.blocks[idx].body.to_text()
-                    } else {
-                        String::new()
-                    }
+        if keep_partial_assistant && let Some(ai_id) = self.streaming_block_id {
+            let txt = if !self.streaming_raw.is_empty() {
+                std::mem::take(&mut self.streaming_raw)
+            } else if let Some(idx) = self.streaming_block_idx {
+                if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
+                    self.blocks[idx].body.to_text()
                 } else {
                     String::new()
-                };
-                if !txt.is_empty() {
-                    Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(txt));
                 }
+            } else {
+                String::new()
+            };
+            if !txt.is_empty() {
+                Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(txt));
             }
         }
         self.streaming_block_id = None;
@@ -42,13 +40,13 @@ impl App {
         self.mid_stream_retries = 0;
     }
     pub(crate) fn fill_assistant_block(&mut self, block_id: u64, text: &str) {
-        if let Some(idx) = self.streaming_block_idx {
-            if idx < self.blocks.len() && self.blocks[idx].id == block_id {
-                if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
-                    *content = iced::widget::text_editor::Content::with_text(text);
-                    self.blocks[idx].md_items = markdown::parse(text).collect();
-                }
-            }
+        if let Some(idx) = self.streaming_block_idx
+            && idx < self.blocks.len()
+            && self.blocks[idx].id == block_id
+            && let BlockBody::Assistant(content) = &mut self.blocks[idx].body
+        {
+            *content = iced::widget::text_editor::Content::with_text(text);
+            self.blocks[idx].md_items = markdown::parse(text).collect();
         }
         if self.streaming_block_id == Some(block_id) {
             self.streaming_raw.clear();
@@ -58,12 +56,12 @@ impl App {
         if text.is_empty() {
             return;
         }
-        if let Some(idx) = self.streaming_block_idx {
-            if idx < self.blocks.len() && self.blocks[idx].id == block_id {
-                if let BlockBody::Assistant(_) = &self.blocks[idx].body {
-                    self.streaming_raw.push_str(text);
-                }
-            }
+        if let Some(idx) = self.streaming_block_idx
+            && idx < self.blocks.len()
+            && self.blocks[idx].id == block_id
+            && let BlockBody::Assistant(_) = &self.blocks[idx].body
+        {
+            self.streaming_raw.push_str(text);
         }
     }
     pub(crate) fn kick_chat_stream(&mut self) -> Task<Message> {
@@ -81,11 +79,11 @@ impl App {
         let messages = self.conversation.clone();
         // 기본 tool + MCP tool 합산
         let mut tool_defs = self.tool_definitions_for_selected_model();
-        if !self.mcp_tools.is_empty() {
-            if let Some(arr) = tool_defs.as_mut().and_then(|v| v.as_array_mut()) {
-                for t in &self.mcp_tools {
-                    arr.push(t.to_openai_tool());
-                }
+        if !self.mcp_tools.is_empty()
+            && let Some(arr) = tool_defs.as_mut().and_then(|v| v.as_array_mut())
+        {
+            for t in &self.mcp_tools {
+                arr.push(t.to_openai_tool());
             }
         }
         let (task, handle) = Task::run(

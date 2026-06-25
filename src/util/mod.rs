@@ -46,18 +46,17 @@ pub(crate) fn fmt_context_length(n: u64) -> String {
 /// 그 외 입력은 그대로 반환.
 pub(crate) fn resolve_user_path(path: &str) -> PathBuf {
     let trimmed = path.trim();
-    if trimmed == "~" {
-        if let Some(home) = dirs::home_dir() {
-            return home;
-        }
+    if trimmed == "~"
+        && let Some(home) = dirs::home_dir()
+    {
+        return home;
     }
     if let Some(rest) = trimmed
         .strip_prefix("~/")
         .or_else(|| trimmed.strip_prefix("~\\"))
+        && let Some(home) = dirs::home_dir()
     {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
+        return home.join(rest);
     }
     PathBuf::from(trimmed)
 }

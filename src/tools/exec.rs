@@ -134,9 +134,7 @@ pub(super) fn write_file(cwd: &Path, rel_path: &str, content: &str) -> Result<()
         return Err("절대 경로는 허용되지 않습니다".into());
     }
     let joined = cwd.join(&candidate);
-    let parent = joined
-        .parent()
-        .ok_or_else(|| "부모 경로 없음".to_string())?;
+    let parent = joined.parent().ok_or("부모 경로 없음".to_string())?;
     fs::create_dir_all(parent).map_err(|e| format!("부모 디렉토리 생성 실패: {e}"))?;
     let parent_canonical = parent
         .canonicalize()

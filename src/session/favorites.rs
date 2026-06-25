@@ -15,7 +15,7 @@ pub(crate) fn read_favorites() -> Vec<String> {
 }
 
 pub(crate) fn write_favorites(favs: &[String]) -> Result<(), String> {
-    let path = favorites_path().ok_or_else(|| "data_local_dir 없음".to_string())?;
+    let path = favorites_path().ok_or("data_local_dir 없음".to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

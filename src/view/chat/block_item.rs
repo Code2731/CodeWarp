@@ -1,11 +1,11 @@
 use super::block_style::block_container_style;
-use crate::view::ui::{
-    primary_btn, secondary_btn, semibold_font, FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE,
-};
 use crate::view::CodewarpViewer;
+use crate::view::ui::{
+    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, primary_btn, secondary_btn, semibold_font,
+};
 use crate::{App, Block, BlockBody, Message, ViewMode};
 use iced::widget::markdown;
-use iced::widget::{button, column, container, row, text, text_editor, Space};
+use iced::widget::{Space, button, column, container, row, text, text_editor};
 use iced::{Alignment, Element, Font, Length, Theme};
 
 impl App {
@@ -168,9 +168,11 @@ impl App {
         if b.apply_candidates.is_empty() {
             return Space::new().height(Length::Shrink).into();
         }
-        let mut col = column![text("적용 가능한 변경사항")
-            .size(FS_LABEL)
-            .font(semibold_font())]
+        let mut col = column![
+            text("적용 가능한 변경사항")
+                .size(FS_LABEL)
+                .font(semibold_font())
+        ]
         .spacing(4);
         for (ci, (cand, applied)) in b.apply_candidates.iter().enumerate() {
             let label = if *applied {

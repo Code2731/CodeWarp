@@ -1,5 +1,5 @@
-use crate::view::ui::{secondary_btn, semibold_font, FS_MICRO, FS_SUBTITLE};
-use crate::{App, Message, MODEL_PRESETS};
+use crate::view::ui::{FS_MICRO, FS_SUBTITLE, secondary_btn, semibold_font};
+use crate::{App, MODEL_PRESETS, Message};
 use iced::widget::{button, column, text};
 use iced::{Element, Font, Length};
 

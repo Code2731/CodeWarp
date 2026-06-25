@@ -1,7 +1,7 @@
 // update_inference_tabby_fetch.rs — Tabby model fetch/retry methods (main.rs child module)
 use super::{
-    is_korean_friendly, keystore, tabby, tabby_connection_error_looks_unreachable, App,
-    LlmProvider, Message, ModelOption, TABBY_CONNECT_RETRY_DELAY_SECS,
+    App, LlmProvider, Message, ModelOption, TABBY_CONNECT_RETRY_DELAY_SECS, is_korean_friendly,
+    keystore, tabby, tabby_connection_error_looks_unreachable,
 };
 use iced::Task;
 

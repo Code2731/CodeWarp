@@ -1,5 +1,5 @@
 // update_inference_lifecycle_control.rs — Inference lifecycle control (main.rs child module)
-use super::{keystore, kill_pid, App, LlmProvider, Message};
+use super::{App, LlmProvider, Message, keystore, kill_pid};
 use iced::Task;
 
 impl App {
@@ -25,14 +25,13 @@ impl App {
         Task::none()
     }
     pub(crate) fn on_inference_log_line(&mut self, line: String) -> Task<Message> {
-        if line.starts_with("[pid:") {
-            if let Some(pid) = line
+        if line.starts_with("[pid:")
+            && let Some(pid) = line
                 .strip_prefix("[pid:")
                 .and_then(|r| r.split(']').next())
                 .and_then(|s| s.trim().parse::<u32>().ok())
-            {
-                self.inference_pid = Some(pid);
-            }
+        {
+            self.inference_pid = Some(pid);
         }
         if let Some(detail) = line.strip_prefix("[spawn 실패] ") {
             self.status = detail.to_string();

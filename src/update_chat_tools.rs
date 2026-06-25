@@ -1,5 +1,5 @@
 // update_chat_tools.rs — Tool execution update methods (main.rs child module)
-use super::{mcp, openrouter, session, tools, App, Arc, ChatMessage, Message, MAX_TOOL_ROUNDS};
+use super::{App, Arc, ChatMessage, MAX_TOOL_ROUNDS, Message, mcp, openrouter, session, tools};
 use iced::Task;
 
 impl App {

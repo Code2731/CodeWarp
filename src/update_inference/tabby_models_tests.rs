@@ -121,10 +121,11 @@ fn tabby_models_loaded_selects_first_local_model() {
     ])));
 
     assert_eq!(app.selected_model.as_deref(), Some("tabby-a"));
-    assert!(app
-        .model_options
-        .iter()
-        .any(|o| { o.id == "tabby-a" && o.provider == LlmProvider::OpenAICompat }));
+    assert!(
+        app.model_options
+            .iter()
+            .any(|o| { o.id == "tabby-a" && o.provider == LlmProvider::OpenAICompat })
+    );
 }
 
 #[test]
@@ -151,10 +152,11 @@ fn openrouter_models_loaded_preserves_existing_tabby_selection() {
     }])));
 
     assert_eq!(app.selected_model.as_deref(), Some("tabby-a"));
-    assert!(app
-        .model_options
-        .iter()
-        .any(|o| { o.id == "tabby-a" && o.provider == LlmProvider::OpenAICompat }));
+    assert!(
+        app.model_options
+            .iter()
+            .any(|o| { o.id == "tabby-a" && o.provider == LlmProvider::OpenAICompat })
+    );
 }
 
 #[test]

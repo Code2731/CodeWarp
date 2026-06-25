@@ -1,7 +1,7 @@
 use super::TabHealth;
-use crate::view::ui::{primary_btn, semibold_font, FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE};
+use crate::view::ui::{FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, primary_btn, semibold_font};
 use crate::{App, Message, SettingsTab};
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{Space, button, column, container, row, text};
 use iced::{Alignment, Element, Length, Theme};
 
 impl App {

@@ -1,6 +1,6 @@
-use crate::view::ui::{danger_btn, panel_style, primary_btn, semibold_font, FS_LABEL, FS_MICRO};
+use crate::view::ui::{FS_LABEL, FS_MICRO, danger_btn, panel_style, primary_btn, semibold_font};
 use crate::{App, InferenceEngine, Message};
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{Space, button, column, container, row, text};
 use iced::{Alignment, Element, Font, Length, Theme};
 
 impl App {

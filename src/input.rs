@@ -85,16 +85,20 @@ mod tests {
 
     #[test]
     fn input_arrow_keys_are_not_handle_key() {
-        assert!(handle_key(
-            &Key::Named(iced::keyboard::key::Named::ArrowUp),
-            Modifiers::default()
-        )
-        .is_none());
-        assert!(handle_key(
-            &Key::Named(iced::keyboard::key::Named::ArrowDown),
-            Modifiers::default()
-        )
-        .is_none());
+        assert!(
+            handle_key(
+                &Key::Named(iced::keyboard::key::Named::ArrowUp),
+                Modifiers::default()
+            )
+            .is_none()
+        );
+        assert!(
+            handle_key(
+                &Key::Named(iced::keyboard::key::Named::ArrowDown),
+                Modifiers::default()
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -130,10 +134,12 @@ mod tests {
     #[test]
     fn input_non_shortcut_returns_none() {
         assert!(handle_key(&Key::Character("z".into()), Modifiers::default()).is_none());
-        assert!(handle_key(
-            &Key::Named(iced::keyboard::key::Named::Enter),
-            Modifiers::default()
-        )
-        .is_none());
+        assert!(
+            handle_key(
+                &Key::Named(iced::keyboard::key::Named::Enter),
+                Modifiers::default()
+            )
+            .is_none()
+        );
     }
 }

@@ -1,7 +1,7 @@
 // update_chat_tools_writes.rs — Tool write-approval methods (main.rs child module)
 use super::{
-    summarize_tool_result, tools, App, Arc, Block, BlockBody, ChatMessage, Message, ViewMode,
-    MAX_TOOL_ROUNDS,
+    App, Arc, Block, BlockBody, ChatMessage, MAX_TOOL_ROUNDS, Message, ViewMode,
+    summarize_tool_result, tools,
 };
 use iced::Task;
 
@@ -100,12 +100,11 @@ impl App {
         .to_string();
         let result = tools::dispatch("write_file", &args_json, &self.cwd);
         let success = !result.contains("[error]");
-        if success {
-            if let Some(b) = self.blocks.iter_mut().find(|b| b.id == block_id) {
-                if let Some((_, applied)) = b.apply_candidates.get_mut(idx) {
-                    *applied = true;
-                }
-            }
+        if success
+            && let Some(b) = self.blocks.iter_mut().find(|b| b.id == block_id)
+            && let Some((_, applied)) = b.apply_candidates.get_mut(idx)
+        {
+            *applied = true;
         }
         let summary = if success {
             format!("{path} ({} bytes)", content.len())

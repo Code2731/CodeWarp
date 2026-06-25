@@ -1,8 +1,8 @@
 // update_chat_send — Send/input update methods (main.rs child module)
 use super::{
+    AgentMode, App, Block, BlockBody, ChatMessage, MAX_ATTACH_BYTES, Message, ViewMode,
     build_file_context, collect_mention_candidates, extract_mention_query, fmt_bytes,
-    last_user_block_idx, openrouter, snap_to_end, truncate_after_last_user, AgentMode, App, Block,
-    BlockBody, ChatMessage, Message, ViewMode, MAX_ATTACH_BYTES,
+    last_user_block_idx, openrouter, snap_to_end, truncate_after_last_user,
 };
 use iced::Task;
 

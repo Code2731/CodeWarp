@@ -1,5 +1,5 @@
 use iced::widget::{button, container, text_input};
-use iced::{font, Border, Color, Font, Theme};
+use iced::{Border, Color, Font, Theme, font};
 
 const BORDER_WIDTH: f32 = 1.0;
 const PANEL_RADIUS: f32 = 12.0;

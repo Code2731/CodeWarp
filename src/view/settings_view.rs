@@ -1,8 +1,8 @@
 use super::settings::TabHealth;
-use super::ui::{app_vscrollbar, bold_font, secondary_btn, FS_BODY};
-use crate::{list_downloaded_models, App, Message, SettingsTab};
+use super::ui::{FS_BODY, app_vscrollbar, bold_font, secondary_btn};
+use crate::{App, Message, SettingsTab, list_downloaded_models};
 use iced::widget::scrollable::Direction;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length, Theme};
 
 impl App {

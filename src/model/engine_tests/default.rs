@@ -81,14 +81,18 @@ fn engine_compose_tabbyapi_uses_platform_launcher() {
 
 #[test]
 fn engine_ollama_no_spawn() {
-    assert!(InferenceEngine::Ollama
-        .compose_command("any", 11434)
-        .is_none());
+    assert!(
+        InferenceEngine::Ollama
+            .compose_command("any", 11434)
+            .is_none()
+    );
 }
 
 #[test]
 fn engine_custom_no_compose() {
-    assert!(InferenceEngine::Custom
-        .compose_command("any", 9000)
-        .is_none());
+    assert!(
+        InferenceEngine::Custom
+            .compose_command("any", 9000)
+            .is_none()
+    );
 }

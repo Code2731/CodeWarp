@@ -1,5 +1,5 @@
-use iced::widget::container;
 use iced::Theme;
+use iced::widget::container;
 
 pub(super) fn block_container_style(
     is_user: bool,

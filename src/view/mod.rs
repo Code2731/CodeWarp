@@ -1,5 +1,5 @@
 // view.rs — App 뷰 메서드 (main.rs child module)
-use super::{hscrollbar, App, Color, Message};
+use super::{App, Color, Message, hscrollbar};
 mod chat;
 mod pty;
 mod rightpanel;

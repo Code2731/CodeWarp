@@ -1,6 +1,6 @@
 // update_settings_ui.rs — Settings UI toggle/input/palette methods (main.rs child module)
 use super::{
-    keystore, session, AgentMode, App, Message, PaletteAction, SettingsTab, SIDEBAR_WIDTH,
+    AgentMode, App, Message, PaletteAction, SIDEBAR_WIDTH, SettingsTab, keystore, session,
 };
 use crate::view::{SIDEBAR_WIDTH_COMPACT, SIDEBAR_WIDTH_WIDE};
 use iced::Task;

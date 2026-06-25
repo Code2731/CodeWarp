@@ -1,5 +1,5 @@
 use super::{
-    hf, mcp, AuthKeyData, ChatEvent, GenerationData, InferenceEngine, ModelOption, OpenRouterModel,
+    AuthKeyData, ChatEvent, GenerationData, InferenceEngine, ModelOption, OpenRouterModel, hf, mcp,
 };
 use iced::widget::markdown;
 use iced::widget::scrollable::Viewport;

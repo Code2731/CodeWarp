@@ -1,7 +1,7 @@
 // update_settings.rs — Settings/UI App update methods (main.rs child module)
 use super::{
-    is_korean_friendly, keystore, openrouter, parse_price_per_million, App, LlmProvider, Message,
-    ModelOption, PaletteCommand, EXL2_PRESETS, MODEL_PRESETS, PALETTE_COMMANDS,
+    App, EXL2_PRESETS, LlmProvider, MODEL_PRESETS, Message, ModelOption, PALETTE_COMMANDS,
+    PaletteCommand, is_korean_friendly, keystore, openrouter, parse_price_per_million,
 };
 
 use iced::Task;

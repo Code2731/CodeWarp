@@ -1,11 +1,11 @@
 use super::super::ui::{
-    app_vscrollbar, context_item_style, danger_btn, secondary_btn, semibold_font, shorten_tail,
     CONTEXT_LIST_HEIGHT, FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, PAD_MD, PAD_SM, PAD_XS, PAD_XXS,
-    SPACE_SM, SPACE_XS, SPACE_XXS,
+    SPACE_SM, SPACE_XS, SPACE_XXS, app_vscrollbar, context_item_style, danger_btn, secondary_btn,
+    semibold_font, shorten_tail,
 };
-use crate::{fmt_bytes, App, Message, MAX_ATTACH_BYTES};
+use crate::{App, MAX_ATTACH_BYTES, Message, fmt_bytes};
 use iced::widget::scrollable::Direction;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Font, Length};
 
 impl App {

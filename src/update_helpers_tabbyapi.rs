@@ -1,5 +1,5 @@
 // update_helpers_tabbyapi.rs — TabbyAPI helper functions (main.rs child module)
-use super::{resolve_user_path, PathBuf, TABBY_API_REPO_URL};
+use super::{PathBuf, TABBY_API_REPO_URL, resolve_user_path};
 
 pub(crate) const TABBY_CONNECT_RETRIES_AFTER_START: u8 = 3;
 pub(crate) const TABBY_CONNECT_RETRY_DELAY_SECS: u64 = 4;
@@ -128,7 +128,7 @@ pub(crate) fn write_tabbyapi_config_for_launcher(
     let launcher_path = std::path::Path::new(launcher);
     let runtime_dir = launcher_path
         .parent()
-        .ok_or_else(|| "TabbyAPI script 상위 폴더를 확인할 수 없습니다.".to_string())?;
+        .ok_or("TabbyAPI script 상위 폴더를 확인할 수 없습니다.".to_string())?;
     let model_path = resolve_user_path(model_path);
     if !model_path.exists() {
         return Err(format!(
@@ -138,11 +138,11 @@ pub(crate) fn write_tabbyapi_config_for_launcher(
     }
     let model_dir = model_path
         .parent()
-        .ok_or_else(|| "TabbyAPI 모델 폴더의 상위 경로를 확인할 수 없습니다.".to_string())?;
+        .ok_or("TabbyAPI 모델 폴더의 상위 경로를 확인할 수 없습니다.".to_string())?;
     let model_name = model_path
         .file_name()
         .and_then(|n| n.to_str())
-        .ok_or_else(|| "TabbyAPI 모델 폴더 이름을 확인할 수 없습니다.".to_string())?;
+        .ok_or("TabbyAPI 모델 폴더 이름을 확인할 수 없습니다.".to_string())?;
     let config_path = runtime_dir.join("config.yml");
     let content = format!(
         "network:\n  host: 127.0.0.1\n  port: {}\n  disable_auth: true\nmodel:\n  model_dir: {}\n  model_name: {}\nsampling:\n  override_preset: safe_defaults\n",
@@ -167,7 +167,7 @@ pub(crate) async fn install_tabbyapi_runtime(runtime_dir: PathBuf) -> Result<Pat
     }
     let parent = runtime_dir
         .parent()
-        .ok_or_else(|| "TabbyAPI 설치 상위 폴더를 확인할 수 없습니다.".to_string())?;
+        .ok_or("TabbyAPI 설치 상위 폴더를 확인할 수 없습니다.".to_string())?;
     tokio::fs::create_dir_all(parent)
         .await
         .map_err(|e| format!("TabbyAPI 설치 폴더 생성 실패: {e}"))?;

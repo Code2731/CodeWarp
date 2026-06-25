@@ -1,9 +1,9 @@
 use crate::view::ui::{
-    danger_btn, field_input, panel_style, primary_btn, secondary_btn, semibold_font, FS_BODY,
-    FS_LABEL,
+    FS_BODY, FS_LABEL, danger_btn, field_input, panel_style, primary_btn, secondary_btn,
+    semibold_font,
 };
-use crate::{fmt_bytes, list_downloaded_models, App, Message};
-use iced::widget::{button, column, container, row, text, text_input, Space};
+use crate::{App, Message, fmt_bytes, list_downloaded_models};
+use iced::widget::{Space, button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Font, Length};
 
 impl App {

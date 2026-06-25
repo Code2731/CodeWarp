@@ -1,5 +1,5 @@
-use crate::view::ui::{app_vscrollbar, SCROLL_GUTTER_PAD_X};
-use crate::{last_assistant_block_idx, last_user_block_idx, App, Message};
+use crate::view::ui::{SCROLL_GUTTER_PAD_X, app_vscrollbar};
+use crate::{App, Message, last_assistant_block_idx, last_user_block_idx};
 use iced::widget::scrollable::Direction;
 use iced::widget::{column, container, scrollable};
 use iced::{Element, Length};

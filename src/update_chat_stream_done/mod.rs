@@ -1,10 +1,10 @@
 // update_chat_stream_done.rs — Chat stream Done/Error handlers (main.rs child module)
 use super::{
-    keystore, markdown, openrouter, parse_apply_candidates, App, Arc, BlockBody, ChatMessage,
-    Message, MAX_MID_STREAM_RETRIES, MAX_TOOL_ROUNDS,
+    App, Arc, BlockBody, ChatMessage, MAX_MID_STREAM_RETRIES, MAX_TOOL_ROUNDS, Message, keystore,
+    markdown, openrouter, parse_apply_candidates,
 };
-use iced::widget::text_editor;
 use iced::Task;
+use iced::widget::text_editor;
 
 impl App {
     pub(crate) fn handle_chat_done(
@@ -29,14 +29,14 @@ impl App {
         }
 
         let final_text = std::mem::take(&mut self.streaming_raw);
-        if let Some(idx) = self.streaming_block_idx {
-            if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
-                if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
-                    *content = text_editor::Content::with_text(&final_text);
-                    if !final_text.is_empty() {
-                        self.blocks[idx].md_items = markdown::parse(&final_text).collect();
-                    }
-                }
+        if let Some(idx) = self.streaming_block_idx
+            && idx < self.blocks.len()
+            && self.blocks[idx].id == ai_id
+            && let BlockBody::Assistant(content) = &mut self.blocks[idx].body
+        {
+            *content = text_editor::Content::with_text(&final_text);
+            if !final_text.is_empty() {
+                self.blocks[idx].md_items = markdown::parse(&final_text).collect();
             }
         }
 
@@ -44,27 +44,26 @@ impl App {
             self.status =
                 "[WARN] 모델이 빈 응답을 반환했습니다. Provider/Runtime 로그를 확인해 주세요."
                     .into();
-            if let Some(idx) = self.streaming_block_idx {
-                if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
-                    if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
-                        if content.text().trim().is_empty() {
-                            *content = text_editor::Content::with_text("[WARN] empty response");
-                        }
-                    }
-                }
+            if let Some(idx) = self.streaming_block_idx
+                && idx < self.blocks.len()
+                && self.blocks[idx].id == ai_id
+                && let BlockBody::Assistant(content) = &mut self.blocks[idx].body
+                && content.text().trim().is_empty()
+            {
+                *content = text_editor::Content::with_text("[WARN] empty response");
             }
         } else {
             Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(final_text.clone()));
         }
 
         let candidates = parse_apply_candidates(&final_text);
-        if !candidates.is_empty() {
-            if let Some(idx) = self.streaming_block_idx {
-                if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
-                    self.blocks[idx].apply_candidates =
-                        candidates.into_iter().map(|c| (c, false)).collect();
-                }
-            }
+        if !candidates.is_empty()
+            && let Some(idx) = self.streaming_block_idx
+            && idx < self.blocks.len()
+            && self.blocks[idx].id == ai_id
+        {
+            self.blocks[idx].apply_candidates =
+                candidates.into_iter().map(|c| (c, false)).collect();
         }
         self.streaming_block_id = None;
         self.streaming_block_idx = None;
@@ -73,13 +72,13 @@ impl App {
         self.pending_tool_calls.clear();
         self.maybe_update_title();
         self.save_session();
-        if let Some(id) = generation_id {
-            if let Ok(api_key) = keystore::read_api_key() {
-                return Task::perform(
-                    openrouter::get_generation(api_key, id),
-                    Message::GenerationLoaded,
-                );
-            }
+        if let Some(id) = generation_id
+            && let Ok(api_key) = keystore::read_api_key()
+        {
+            return Task::perform(
+                openrouter::get_generation(api_key, id),
+                Message::GenerationLoaded,
+            );
         }
         Task::none()
     }
@@ -92,13 +91,14 @@ impl App {
         {
             self.mid_stream_retries += 1;
             self.streaming_raw.clear();
-            if let Some(idx) = self.streaming_block_idx {
-                if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
-                    if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
-                        *content = text_editor::Content::new();
-                    }
-                    self.blocks[idx].md_items.clear();
+            if let Some(idx) = self.streaming_block_idx
+                && idx < self.blocks.len()
+                && self.blocks[idx].id == ai_id
+            {
+                if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
+                    *content = text_editor::Content::new();
                 }
+                self.blocks[idx].md_items.clear();
             }
             self.pending_tool_calls.clear();
             self.status = format!(
@@ -108,20 +108,20 @@ impl App {
             return self.kick_chat_stream();
         }
 
-        if let Some(idx) = self.streaming_block_idx {
-            if idx < self.blocks.len() && self.blocks[idx].id == ai_id {
-                if let BlockBody::Assistant(content) = &mut self.blocks[idx].body {
-                    let prefix = if self.streaming_raw.is_empty() {
-                        ""
-                    } else {
-                        "\n\n"
-                    };
-                    let final_text = std::mem::take(&mut self.streaming_raw);
-                    let full = format!("{final_text}{prefix}[ERROR] {error}");
-                    *content = text_editor::Content::with_text(&full);
-                    self.blocks[idx].md_items = markdown::parse(&full).collect();
-                }
-            }
+        if let Some(idx) = self.streaming_block_idx
+            && idx < self.blocks.len()
+            && self.blocks[idx].id == ai_id
+            && let BlockBody::Assistant(content) = &mut self.blocks[idx].body
+        {
+            let prefix = if self.streaming_raw.is_empty() {
+                ""
+            } else {
+                "\n\n"
+            };
+            let final_text = std::mem::take(&mut self.streaming_raw);
+            let full = format!("{final_text}{prefix}[ERROR] {error}");
+            *content = text_editor::Content::with_text(&full);
+            self.blocks[idx].md_items = markdown::parse(&full).collect();
         }
         self.streaming_block_id = None;
         self.streaming_block_idx = None;

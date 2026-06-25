@@ -1,6 +1,6 @@
 // openrouter/api.rs — REST API functions (openrouter child module)
 use super::api_types::{
-    http_client, AuthKeyData, AuthKeyResponse, GenerationData, GenerationResponse,
+    AuthKeyData, AuthKeyResponse, GenerationData, GenerationResponse, http_client,
 };
 use super::types::{ModelsResponse, OpenRouterModel};
 

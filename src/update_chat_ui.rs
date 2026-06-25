@@ -1,6 +1,6 @@
 // update_chat_ui.rs — Chat UI interaction update methods (main.rs child module)
 use super::{App, BlockBody, Message, ViewMode};
-use iced::{widget::markdown, Task};
+use iced::{Task, widget::markdown};
 
 impl App {
     pub(crate) fn on_stream_scrolled(
@@ -20,10 +20,10 @@ impl App {
         if action.is_edit() {
             return Task::none();
         }
-        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == id) {
-            if let BlockBody::Assistant(content) = &mut b.body {
-                content.perform(action);
-            }
+        if let Some(b) = self.blocks.iter_mut().find(|b| b.id == id)
+            && let BlockBody::Assistant(content) = &mut b.body
+        {
+            content.perform(action);
         }
         Task::none()
     }

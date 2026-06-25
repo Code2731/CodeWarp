@@ -1,4 +1,4 @@
-use super::{session, HashSet, SettingsTab, SortMode};
+use super::{HashSet, SettingsTab, SortMode, session};
 
 #[derive(Debug)]
 pub(crate) struct HfDownload {

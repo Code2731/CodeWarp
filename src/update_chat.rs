@@ -44,11 +44,11 @@ impl App {
             self.cwd.display(),
             mode_block,
         );
-        if let Some(first) = Arc::make_mut(&mut self.conversation).first_mut() {
-            if first.role == "system" {
-                first.content = Some(prompt);
-                return;
-            }
+        if let Some(first) = Arc::make_mut(&mut self.conversation).first_mut()
+            && first.role == "system"
+        {
+            first.content = Some(prompt);
+            return;
         }
         Arc::make_mut(&mut self.conversation).insert(
             0,

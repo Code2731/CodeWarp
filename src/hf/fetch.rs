@@ -2,7 +2,7 @@
 use crate::hf::helpers::{
     annotate_revision_not_found_error, choose_revision_fallback, model_info_url, model_tree_url,
 };
-use crate::hf::types::{ModelInfo, RepoRefs, Sibling, TreeEntry, HF_BASE};
+use crate::hf::types::{HF_BASE, ModelInfo, RepoRefs, Sibling, TreeEntry};
 
 pub(super) async fn fetch_repo_branches(
     client: &reqwest::Client,
@@ -25,11 +25,7 @@ pub(super) async fn fetch_repo_branches(
         .map(|b| b.name)
         .filter(|name| !name.trim().is_empty())
         .collect();
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    if out.is_empty() { None } else { Some(out) }
 }
 
 pub(super) async fn fetch_model_tree(

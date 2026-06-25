@@ -78,11 +78,11 @@ async fn rpc_call(
     let mut stdin = child
         .stdin
         .take()
-        .ok_or_else(|| "MCP stdin pipe 열기 실패".to_string())?;
+        .ok_or("MCP stdin pipe 열기 실패".to_string())?;
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| "MCP stdout pipe 열기 실패".to_string())?;
+        .ok_or("MCP stdout pipe 열기 실패".to_string())?;
     let mut lines = BufReader::new(stdout).lines();
 
     // initialize
@@ -166,7 +166,7 @@ async fn read_response(
         return val
             .get("result")
             .cloned()
-            .ok_or_else(|| "result 필드 없음".to_string());
+            .ok_or("result 필드 없음".to_string());
     }
     Err("MCP 응답 타임아웃 (50줄 초과)".into())
 }

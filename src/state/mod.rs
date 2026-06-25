@@ -1,10 +1,10 @@
 // state.rs — Core application state types (child module of main)
 use super::{
-    combo_box, default_tabbyapi_runtime_dir, find_tabbyapi_launcher, keystore, kill_pid, mcp,
-    persisted_to_block, pty, session, task, AgentMode, Arc, AuthKeyData, Block, ChatMessage, Color,
-    HashSet, InferenceEngine, LlmProvider, Message, ModelOption, OpenRouterModel, PathBuf,
-    PendingToolCall, ScrollId, SettingsTab, SortMode, Task, Theme, SIDEBAR_WIDTH,
-    TABBY_API_DEFAULT_PORT,
+    AgentMode, Arc, AuthKeyData, Block, ChatMessage, Color, HashSet, InferenceEngine, LlmProvider,
+    Message, ModelOption, OpenRouterModel, PathBuf, PendingToolCall, SIDEBAR_WIDTH, ScrollId,
+    SettingsTab, SortMode, TABBY_API_DEFAULT_PORT, Task, Theme, combo_box,
+    default_tabbyapi_runtime_dir, find_tabbyapi_launcher, keystore, kill_pid, mcp,
+    persisted_to_block, pty, session, task,
 };
 
 mod state_new;

@@ -1,5 +1,5 @@
-use crate::view::ui::{field_input, panel_style, FS_BODY, FS_LABEL};
-use crate::{list_downloaded_models, App, InferenceEngine, Message};
+use crate::view::ui::{FS_BODY, FS_LABEL, field_input, panel_style};
+use crate::{App, InferenceEngine, Message, list_downloaded_models};
 use iced::widget::{container, pick_list, text, text_input};
 use iced::{Element, Length};
 

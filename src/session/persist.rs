@@ -49,32 +49,31 @@ pub(crate) fn load_all() -> PersistedAllSessions {
 pub(crate) fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions {
     if let Some(d) = dir {
         let path = d.join("sessions.json");
-        if let Ok(json) = std::fs::read_to_string(&path) {
-            if let Ok(p) = serde_json::from_str::<PersistedAllSessions>(&json) {
-                if !p.sessions.is_empty() {
-                    let mut p = p;
-                    if p.active_idx >= p.sessions.len() {
-                        p.active_idx = 0;
-                    }
-                    return p;
-                }
+        if let Ok(json) = std::fs::read_to_string(&path)
+            && let Ok(p) = serde_json::from_str::<PersistedAllSessions>(&json)
+            && !p.sessions.is_empty()
+        {
+            let mut p = p;
+            if p.active_idx >= p.sessions.len() {
+                p.active_idx = 0;
             }
+            return p;
         }
         let old_path = d.join("session.json");
-        if let Ok(json) = std::fs::read_to_string(&old_path) {
-            if let Ok(old) = serde_json::from_str::<OldPersistedSession>(&json) {
-                return PersistedAllSessions {
-                    sessions: vec![PersistedSessionData {
-                        id: 1,
-                        title: "이전 채팅".into(),
-                        conversation: old.conversation,
-                        blocks: old.blocks,
-                        next_block_id: old.next_block_id,
-                        scroll_y: 0.0,
-                    }],
-                    active_idx: 0,
-                };
-            }
+        if let Ok(json) = std::fs::read_to_string(&old_path)
+            && let Ok(old) = serde_json::from_str::<OldPersistedSession>(&json)
+        {
+            return PersistedAllSessions {
+                sessions: vec![PersistedSessionData {
+                    id: 1,
+                    title: "이전 채팅".into(),
+                    conversation: old.conversation,
+                    blocks: old.blocks,
+                    next_block_id: old.next_block_id,
+                    scroll_y: 0.0,
+                }],
+                active_idx: 0,
+            };
         }
     }
     PersistedAllSessions {
@@ -91,7 +90,7 @@ pub(crate) fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions
 }
 
 pub(crate) fn save_all(p: &PersistedAllSessions) -> Result<(), String> {
-    let path = sessions_path().ok_or_else(|| "data_local_dir 없음".to_string())?;
+    let path = sessions_path().ok_or("data_local_dir 없음".to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

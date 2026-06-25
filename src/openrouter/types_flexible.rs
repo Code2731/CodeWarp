@@ -25,11 +25,7 @@ impl FlexibleContent {
         match self {
             FlexibleContent::Text(s) => {
                 let trimmed = s.trim();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
+                if trimmed.is_empty() { None } else { Some(s) }
             }
             FlexibleContent::Part(part) => part.into_text(),
             FlexibleContent::Parts(parts) => {

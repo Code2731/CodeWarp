@@ -1,7 +1,7 @@
 use crate::view::ui::{
-    primary_btn, secondary_btn, semibold_font, FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE,
+    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, primary_btn, secondary_btn, semibold_font,
 };
-use crate::{downloaded_exl2_preset_folder, App, Message, EXL2_PRESETS};
+use crate::{App, EXL2_PRESETS, Message, downloaded_exl2_preset_folder};
 use iced::widget::{button, column, row, text};
 use iced::{Alignment, Element, Font, Length};
 

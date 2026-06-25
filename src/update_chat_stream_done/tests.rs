@@ -78,10 +78,12 @@ fn chat_chunk_error_appends_to_streaming_raw() {
     let _ = app.update(Message::ChatChunk(ChatEvent::Error("server error".into())));
 
     assert!(app.blocks[0].body.to_text().contains("partial text"));
-    assert!(app.blocks[0]
-        .body
-        .to_text()
-        .contains("[ERROR] server error"));
+    assert!(
+        app.blocks[0]
+            .body
+            .to_text()
+            .contains("[ERROR] server error")
+    );
     assert!(app.streaming_block_id.is_none());
 }
 
@@ -103,10 +105,12 @@ fn chat_chunk_error_empty_streaming_raw() {
 
     let _ = app.update(Message::ChatChunk(ChatEvent::Error("server error".into())));
 
-    assert!(app.blocks[0]
-        .body
-        .to_text()
-        .contains("[ERROR] server error"));
+    assert!(
+        app.blocks[0]
+            .body
+            .to_text()
+            .contains("[ERROR] server error")
+    );
     assert!(app.streaming_block_id.is_none());
 }
 
@@ -159,10 +163,12 @@ fn mid_stream_error_retries_exhausted() {
         "connection dropped".into(),
     )));
 
-    assert!(app.blocks[0]
-        .body
-        .to_text()
-        .contains("[ERROR] connection dropped"));
+    assert!(
+        app.blocks[0]
+            .body
+            .to_text()
+            .contains("[ERROR] connection dropped")
+    );
     assert_eq!(app.mid_stream_retries, MAX_MID_STREAM_RETRIES);
     assert!(app.streaming_block_id.is_none());
 }

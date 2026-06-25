@@ -7,9 +7,10 @@ mod types;
 pub(crate) use error::*;
 pub(crate) use types::*;
 
-mod helpers;
+mod encoding;
 #[allow(clippy::wildcard_imports)]
-use helpers::*;
+use encoding::*;
+mod revision;
 
 mod fetch;
 #[allow(clippy::wildcard_imports)]

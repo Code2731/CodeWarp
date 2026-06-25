@@ -1,7 +1,6 @@
 // hf/fetch.rs — HTTP fetch functions (hf child module)
-use crate::hf::helpers::{
-    annotate_revision_not_found_error, choose_revision_fallback, model_info_url, model_tree_url,
-};
+use crate::hf::encoding::{model_info_url, model_tree_url};
+use crate::hf::revision::{annotate_revision_not_found_error, choose_revision_fallback};
 use crate::hf::types::{HF_BASE, ModelInfo, RepoRefs, Sibling, TreeEntry};
 
 pub(super) async fn fetch_repo_branches(

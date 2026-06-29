@@ -1,9 +1,12 @@
 use crate::view::ui::{
-    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, danger_btn, field_input, panel_style, primary_btn,
-    secondary_btn, semibold_font,
+    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, danger_btn, panel_style, primary_btn, secondary_btn,
+    semibold_font,
 };
 use crate::{AgentMode, App, Message};
-use iced::widget::{Space, button, column, container, row, text, text_input};
+use iced::keyboard::Key;
+use iced::keyboard::key::Named;
+use iced::widget::text_editor::{Binding, KeyPress};
+use iced::widget::{Space, button, column, container, row, text, text_editor};
 use iced::{Alignment, Element, Length, Theme};
 
 impl App {
@@ -87,27 +90,37 @@ impl App {
             Message::Send
         };
 
-        let input_row = row![
-            mode_label,
-            text_input(
-                "질문을 입력하세요…  (@파일 첨부, /plan, /build)",
-                &self.input
-            )
-            .on_input(Message::InputChanged)
-            .on_submit(submit_msg)
-            .padding(10)
+        let editor = text_editor(&self.editor_content)
+            .placeholder("질문을 입력하세요…  (@파일 첨부, /plan, /build)")
             .size(FS_BODY)
-            .style(field_input),
-            action_btn,
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
+            .line_height(1.55)
+            .padding(10)
+            .key_binding(move |press| {
+                let KeyPress {
+                    ref key, modifiers, ..
+                } = press;
+                let is_enter = matches!(key.as_ref(), Key::Named(Named::Enter));
+                let is_shift = modifiers.shift();
+                if is_enter && !is_shift {
+                    return Some(Binding::Custom(submit_msg.clone()));
+                }
+                if is_enter && is_shift {
+                    return Some(Binding::Enter);
+                }
+                Binding::from_key_press(press)
+            })
+            .on_action(Message::InputAction);
 
-        let input_hint = text("Enter: send | Ctrl+K: commands | Ctrl+N: new chat")
-            .size(FS_MICRO)
-            .style(|theme: &Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().background.strong.color),
-            });
+        let input_row = row![mode_label, editor, action_btn,]
+            .spacing(8)
+            .align_y(Alignment::Center);
+
+        let input_hint =
+            text("Enter: send | Shift+Enter: newline | Ctrl+K: commands | Ctrl+N: new chat")
+                .size(FS_MICRO)
+                .style(|theme: &Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().background.strong.color),
+                });
 
         let confirm_panel: Element<Message> = if self.show_write_confirm {
             self.view_inline_confirm()

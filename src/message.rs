@@ -3,7 +3,7 @@ use super::{
 };
 use iced::widget::markdown;
 use iced::widget::scrollable::Viewport;
-use iced::widget::text_editor::Action;
+use iced::widget::text_editor::{self, Action};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +73,7 @@ pub(crate) enum Message {
     AccountLoaded(Result<AuthKeyData, String>),
     FetchAccount,
     InputChanged(String),
+    InputAction(text_editor::Action),
     Send,
     StopStream,
     ChatChunk(ChatEvent),
@@ -87,6 +88,7 @@ pub(crate) enum Message {
     StreamScrolled(Viewport),
     EditorAction(u64, Action),
     ToggleBlockView(u64),
+    ToggleBlockCollapse(u64),
     LinkClicked(markdown::Uri),
     PickCwd,
     CwdPicked(Option<PathBuf>),

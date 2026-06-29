@@ -1,6 +1,6 @@
 use super::{
     AgentMode, App, Arc, Color, InferenceEngine, McpInputState, Message, ModelFilterState, PathBuf,
-    SIDEBAR_WIDTH, ScrollId, Task, Theme, UiState, combo_box, keystore, mcp, session,
+    SIDEBAR_WIDTH, ScrollId, Task, Theme, UiState, combo_box, keystore, mcp, session, text_editor,
 };
 
 impl App {
@@ -64,6 +64,7 @@ impl App {
             blocks: Vec::new(),
             next_block_id: 0,
             input: String::new(),
+            editor_content: text_editor::Content::new(),
             streaming_block_id: None,
             streaming_block_idx: None,
             streaming_raw: String::new(),

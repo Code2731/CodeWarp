@@ -105,6 +105,7 @@ impl App {
         });
 
         self.input.clear();
+        self.editor_content = text_editor::Content::new();
         self.compare_pending = true;
         self.status = "Compare 응답 생성 중…".into();
         self.follow_bottom = true;

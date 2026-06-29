@@ -5,6 +5,7 @@ use super::{
     last_user_block_idx, openrouter, snap_to_end, truncate_after_last_user,
 };
 use iced::Task;
+use iced::widget::text_editor;
 
 mod send;
 #[cfg(test)]
@@ -31,7 +32,8 @@ impl App {
         Task::none()
     }
     pub(crate) fn on_input_changed(&mut self, value: String) -> Task<Message> {
-        self.input = value;
+        self.input.clone_from(&value);
+        self.editor_content = text_editor::Content::with_text(&value);
         match extract_mention_query(&self.input) {
             Some(q) => {
                 self.mention_query = q.to_string();
@@ -69,7 +71,8 @@ impl App {
         std::sync::Arc::make_mut(&mut self.conversation).pop();
         self.tool_round = 0;
         self.pending_tool_calls.clear();
-        self.input = user_text;
+        self.input.clone_from(&user_text);
+        self.editor_content = text_editor::Content::with_text(&user_text);
         self.status = "편집 모드 — 수정 후 Enter".into();
         Task::none()
     }

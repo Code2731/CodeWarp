@@ -18,6 +18,7 @@ pub(crate) struct UiState {
     pub(crate) command_palette_input: String,
     pub(crate) pending_delete_session: Option<u64>,
     pub(crate) expanded_confirm_idx: Option<usize>,
+    pub(crate) collapsed_blocks: std::collections::HashSet<u64>,
 }
 
 impl UiState {
@@ -29,6 +30,7 @@ impl UiState {
             command_palette_input: String::new(),
             pending_delete_session: None,
             expanded_confirm_idx: None,
+            collapsed_blocks: std::collections::HashSet::new(),
         }
     }
 }

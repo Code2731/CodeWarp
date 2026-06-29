@@ -56,7 +56,22 @@ impl App {
         }
         let role_label = b.body.role_label();
         let has_content = !b.body.is_empty_for_history();
-        let copy_btn: Element<Message> = if has_content {
+        let is_collapsed = self.ui.collapsed_blocks.contains(&b.id);
+        let is_assistant = matches!(&b.body, BlockBody::Assistant(_));
+        let collapse_btn: Element<Message> = if is_assistant && has_content && !streaming {
+            let label = if is_collapsed { "▸" } else { "▾" };
+            button(text(label).size(FS_MICRO))
+                .on_press(Message::ToggleBlockCollapse(b.id))
+                .padding([2, 6])
+                .style(secondary_btn)
+                .into()
+        } else {
+            Space::new()
+                .width(Length::Shrink)
+                .height(Length::Shrink)
+                .into()
+        };
+        let copy_btn: Element<Message> = if has_content && !is_collapsed {
             button(text("복사").size(FS_MICRO))
                 .on_press(Message::CopyBlock(b.id))
                 .padding([2, 8])
@@ -68,23 +83,22 @@ impl App {
                 .height(Length::Shrink)
                 .into()
         };
-        let toggle_btn: Element<Message> =
-            if has_content && matches!(&b.body, BlockBody::Assistant(_)) {
-                let label = match b.view_mode {
-                    ViewMode::Rendered => "원문",
-                    ViewMode::Raw => "예쁘게",
-                };
-                button(text(label).size(FS_MICRO))
-                    .on_press(Message::ToggleBlockView(b.id))
-                    .padding([2, 8])
-                    .style(secondary_btn)
-                    .into()
-            } else {
-                Space::new()
-                    .width(Length::Shrink)
-                    .height(Length::Shrink)
-                    .into()
+        let toggle_btn: Element<Message> = if has_content && is_assistant && !is_collapsed {
+            let label = match b.view_mode {
+                ViewMode::Rendered => "원문",
+                ViewMode::Raw => "예쁘게",
             };
+            button(text(label).size(FS_MICRO))
+                .on_press(Message::ToggleBlockView(b.id))
+                .padding([2, 8])
+                .style(secondary_btn)
+                .into()
+        } else {
+            Space::new()
+                .width(Length::Shrink)
+                .height(Length::Shrink)
+                .into()
+        };
         let action_btn: Element<Message> = if streaming {
             Space::new()
                 .width(Length::Shrink)
@@ -96,10 +110,7 @@ impl App {
                 .padding([2, 8])
                 .style(secondary_btn)
                 .into()
-        } else if Some(i) == last_asst_idx
-            && matches!(&b.body, BlockBody::Assistant(_))
-            && has_content
-        {
+        } else if Some(i) == last_asst_idx && is_assistant && has_content && !is_collapsed {
             button(text("↻").size(FS_MICRO))
                 .on_press(Message::RegenerateLast)
                 .padding([2, 8])
@@ -119,6 +130,7 @@ impl App {
                 .into(),
         };
         let header = row![
+            collapse_btn,
             text(role_label).size(FS_LABEL).font(semibold_font()),
             model_label,
             Space::new().width(Length::Fill),
@@ -129,29 +141,33 @@ impl App {
         .spacing(6)
         .align_y(Alignment::Center);
 
-        let body_view: Element<Message> = match (&b.body, b.view_mode) {
-            (BlockBody::User(s), _) => text(s).size(FS_SUBTITLE).into(),
-            (BlockBody::Assistant(content), ViewMode::Raw) => {
-                if self.streaming_block_id == Some(b.id) && !self.streaming_raw.is_empty() {
-                    text(&self.streaming_raw).size(FS_SUBTITLE).into()
-                } else {
-                    let id = b.id;
-                    text_editor(content)
-                        .on_action(move |action| Message::EditorAction(id, action))
-                        .height(Length::Shrink)
-                        .padding(0)
-                        .size(FS_SUBTITLE)
-                        .into()
+        let body_view: Element<Message> = if is_collapsed {
+            Self::view_collapsed_preview(b)
+        } else {
+            match (&b.body, b.view_mode) {
+                (BlockBody::User(s), _) => text(s).size(FS_SUBTITLE).into(),
+                (BlockBody::Assistant(content), ViewMode::Raw) => {
+                    if self.streaming_block_id == Some(b.id) && !self.streaming_raw.is_empty() {
+                        text(&self.streaming_raw).size(FS_SUBTITLE).into()
+                    } else {
+                        let id = b.id;
+                        text_editor(content)
+                            .on_action(move |action| Message::EditorAction(id, action))
+                            .height(Length::Shrink)
+                            .padding(0)
+                            .size(FS_SUBTITLE)
+                            .into()
+                    }
                 }
-            }
-            (BlockBody::Assistant(_), ViewMode::Rendered) => {
-                let mut settings: markdown::Settings = (&self.theme()).into();
-                settings.style.inline_code_font = Font::with_name("JetBrains Mono");
-                settings.style.code_block_font = Font::with_name("JetBrains Mono");
-                markdown::view_with(b.md_items.iter(), settings, &CodewarpViewer)
-            }
-            (BlockBody::ToolResult { .. }, _) => {
-                text("도구 결과 렌더링 경로 오류").size(FS_SUBTITLE).into()
+                (BlockBody::Assistant(_), ViewMode::Rendered) => {
+                    let mut settings: markdown::Settings = (&self.theme()).into();
+                    settings.style.inline_code_font = Font::with_name("JetBrains Mono");
+                    settings.style.code_block_font = Font::with_name("JetBrains Mono");
+                    markdown::view_with(b.md_items.iter(), settings, &CodewarpViewer)
+                }
+                (BlockBody::ToolResult { .. }, _) => {
+                    text("도구 결과 렌더링 경로 오류").size(FS_SUBTITLE).into()
+                }
             }
         };
 
@@ -183,6 +199,30 @@ impl App {
                 .style(block_container_style(is_user, is_error_assistant));
         let block_view = row![accent_bar, inner].spacing(8).align_y(Alignment::Start);
         block_view.into()
+    }
+
+    fn view_collapsed_preview(b: &Block) -> Element<'_, Message> {
+        let preview = match &b.body {
+            BlockBody::Assistant(content) => {
+                let text = content.text();
+                let lines: Vec<&str> = text.lines().take(3).collect();
+                lines.join("\n")
+            }
+            BlockBody::User(s) => {
+                if s.len() > 120 {
+                    format!("{}…", &s[..120])
+                } else {
+                    s.clone()
+                }
+            }
+            _ => String::new(),
+        };
+        text(preview)
+            .size(FS_SUBTITLE)
+            .style(|_: &Theme| iced::widget::text::Style {
+                color: Some(Color::from_rgba(0.67, 0.67, 0.67, 0.7)),
+            })
+            .into()
     }
 
     fn view_block_apply_section(b: &Block) -> Element<'_, Message> {

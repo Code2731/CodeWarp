@@ -70,12 +70,14 @@ impl App {
             "/plan" => {
                 self.agent_mode = AgentMode::Plan;
                 self.input.clear();
+                self.editor_content = text_editor::Content::new();
                 self.status = format!("{} 모드", AgentMode::Plan.label());
                 return Task::none();
             }
             "/build" => {
                 self.agent_mode = AgentMode::Build;
                 self.input.clear();
+                self.editor_content = text_editor::Content::new();
                 self.status = format!("{} 모드", AgentMode::Build.label());
                 return Task::none();
             }
@@ -140,6 +142,7 @@ impl App {
         self.streaming_block_id = Some(ai_id);
         self.streaming_block_idx = Some(self.blocks.len() - 1);
         self.input.clear();
+        self.editor_content = text_editor::Content::new();
         self.status = "응답 생성 중…".into();
         self.follow_bottom = true;
 

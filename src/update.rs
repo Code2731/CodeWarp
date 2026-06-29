@@ -129,6 +129,15 @@ impl App {
             Message::FetchAccount => App::fetch_account_cmd(),
             Message::AccountLoaded(r) => self.on_account_loaded(r),
             Message::InputChanged(v) => self.on_input_changed(v),
+            Message::InputAction(action) => {
+                self.editor_content.perform(action);
+                let new_text = self.editor_content.text();
+                if new_text != self.input {
+                    self.input = new_text;
+                    return self.on_input_changed(self.input.clone());
+                }
+                Task::none()
+            }
             Message::Send => self.send_message(),
             Message::StopStream => self.stop_stream(),
             Message::CopyBlock(id) => self.copy_block(id),
@@ -148,6 +157,12 @@ impl App {
             Message::StreamScrolled(viewport) => self.on_stream_scrolled(&viewport),
             Message::EditorAction(id, action) => self.on_editor_action(id, action),
             Message::ToggleBlockView(id) => self.toggle_block_view(id),
+            Message::ToggleBlockCollapse(id) => {
+                if !self.ui.collapsed_blocks.remove(&id) {
+                    self.ui.collapsed_blocks.insert(id);
+                }
+                Task::none()
+            }
             Message::LinkClicked(uri) => self.on_link_clicked(&uri),
             Message::PickCwd => App::pick_cwd(),
             Message::PickAttachment => self.pick_attachment(),

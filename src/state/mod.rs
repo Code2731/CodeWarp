@@ -6,6 +6,7 @@ use super::{
     default_tabbyapi_runtime_dir, find_tabbyapi_launcher, keystore, kill_pid, mcp,
     persisted_to_block, pty, session, task,
 };
+use iced::widget::text_editor;
 
 mod state_new;
 mod state_restore;
@@ -53,6 +54,7 @@ pub(crate) struct App {
     pub(crate) blocks: Vec<Block>,
     pub(crate) next_block_id: u64,
     pub(crate) input: String,
+    pub(crate) editor_content: text_editor::Content,
     pub(crate) streaming_block_id: Option<u64>,
     pub(crate) streaming_block_idx: Option<usize>,
     pub(crate) streaming_raw: String,

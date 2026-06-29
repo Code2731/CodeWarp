@@ -3,11 +3,17 @@ use iced::widget::scrollable::Scrollbar;
 pub(crate) mod styles;
 pub(crate) use styles::*;
 
-pub(crate) const FS_TITLE: f32 = 30.0;
-pub(crate) const FS_SUBTITLE: f32 = 13.0;
-pub(crate) const FS_BODY: f32 = 12.0;
+// Font sizes — hierarchical scale (large → small)
+pub(crate) const FS_TITLE: f32 = 26.0;
+pub(crate) const FS_HEADING: f32 = 16.0;
+pub(crate) const FS_SUBTITLE: f32 = 14.0;
+pub(crate) const FS_BODY: f32 = 13.0;
 pub(crate) const FS_LABEL: f32 = 11.0;
 pub(crate) const FS_MICRO: f32 = 10.0;
+pub(crate) const FS_CAPTION: f32 = 9.0;
+
+// Line heights (ratio to font size)
+pub(crate) const LINE_HEIGHT_BODY: f32 = 1.55;
 pub(crate) const SPACE_XXS: f32 = 2.0;
 pub(crate) const SPACE_XS: f32 = 4.0;
 pub(crate) const SPACE_SM: f32 = 6.0;

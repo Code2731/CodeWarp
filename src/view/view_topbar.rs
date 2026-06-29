@@ -1,6 +1,6 @@
 use super::ui::{
-    CONTROL_PAD_X, CONTROL_PAD_Y, FS_BODY, TOPBAR_PAD_X, TOPBAR_PAD_Y, TOPBAR_ROW_SPACING,
-    panel_style, secondary_btn, topbar_style,
+    CONTROL_PAD_X, CONTROL_PAD_Y, FS_BODY, FS_HEADING, TOPBAR_PAD_X, TOPBAR_PAD_Y,
+    TOPBAR_ROW_SPACING, panel_style, secondary_btn, topbar_style,
 };
 use crate::{App, Message};
 use iced::widget::{Space, button, checkbox, combo_box, container, row, text};
@@ -38,7 +38,7 @@ impl App {
             .selected_model
             .as_ref()
             .is_some_and(|id| self.model_filter.favorites.contains(id));
-        let fav_btn = button(text(if is_fav { "★" } else { "☆" }).size(16))
+        let fav_btn = button(text(if is_fav { "★" } else { "☆" }).size(FS_HEADING))
             .on_press(Message::ToggleFavorite)
             .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
             .style(secondary_btn);
@@ -84,7 +84,7 @@ impl App {
             sort_btn,
             model_picker,
             fav_btn,
-            button(text("⚙").size(16).align_y(Alignment::Center))
+            button(text("⚙").size(FS_HEADING).align_y(Alignment::Center))
                 .on_press(Message::OpenSettings)
                 .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
                 .style(secondary_btn),

@@ -43,6 +43,7 @@ pub(crate) struct App {
     pub(crate) status: String,
     pub(crate) busy: bool,
     pub(crate) sidebar_width: f32,
+    pub(crate) window_width: f32,
     pub(crate) models: Vec<OpenRouterModel>,
     pub(crate) model_ids: Vec<String>,
     pub(crate) selected_model: Option<String>,

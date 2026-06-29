@@ -1,11 +1,11 @@
 use super::ui::{
     FS_BODY, FS_LABEL, PAD_LG, PANEL_SECTION_GAP_LG, RIGHT_PANEL_WIDTH, SCROLL_GUTTER_PAD_X,
-    SPACE_SM, app_vscrollbar, panel_style, semibold_font,
+    SPACE_SM, app_vscrollbar, dark_scrollable, panel_style, semibold_font,
 };
 use crate::{App, BlockBody, MAX_TOOL_ROUNDS, Message};
 use iced::widget::scrollable::Direction;
 use iced::widget::{Space, column, container, scrollable, text};
-use iced::{Element, Font, Length, Theme};
+use iced::{Color, Element, Font, Length, Theme};
 
 impl App {
     pub(super) fn view_rightpanel(&self) -> Element<'_, Message> {
@@ -60,14 +60,42 @@ impl App {
         // 도구 라운드 진행 표시 (streaming 중일 때만)
         let round_indicator: Element<Message> =
             if self.streaming_block_id.is_some() && self.tool_round > 0 {
-                text(format!(
-                    "▶ 도구 라운드 {}/{}",
-                    self.tool_round, MAX_TOOL_ROUNDS
-                ))
-                .size(FS_LABEL)
-                .font(semibold_font())
-                .style(|theme: &Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().primary.base.color),
+                container(
+                    text(format!(
+                        "▶ 도구 라운드 {}/{}",
+                        self.tool_round, MAX_TOOL_ROUNDS
+                    ))
+                    .size(FS_LABEL)
+                    .font(semibold_font())
+                    .style(|theme: &Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().primary.base.text),
+                    }),
+                )
+                .padding([2, 8])
+                .style(|theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(
+                            Color::from_rgba(
+                                p.primary.base.color.r,
+                                p.primary.base.color.g,
+                                p.primary.base.color.b,
+                                0.15,
+                            )
+                            .into(),
+                        ),
+                        border: iced::Border {
+                            color: Color::from_rgba(
+                                p.primary.base.color.r,
+                                p.primary.base.color.g,
+                                p.primary.base.color.b,
+                                0.30,
+                            ),
+                            width: 1.0,
+                            radius: 8.0.into(),
+                        },
+                        ..Default::default()
+                    }
                 })
                 .into()
             } else {
@@ -89,6 +117,7 @@ impl App {
         container(
             scrollable(container(body).padding([0, SCROLL_GUTTER_PAD_X]))
                 .direction(Direction::Vertical(app_vscrollbar()))
+                .style(dark_scrollable)
                 .height(Length::Fill),
         )
         .width(Length::Fixed(RIGHT_PANEL_WIDTH))

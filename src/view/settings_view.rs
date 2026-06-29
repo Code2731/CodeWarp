@@ -1,5 +1,5 @@
 use super::settings::TabHealth;
-use super::ui::{FS_BODY, app_vscrollbar, bold_font, secondary_btn};
+use super::ui::{FS_BODY, app_vscrollbar, bold_font, dark_scrollable, secondary_btn};
 use crate::{App, Message, SettingsTab, list_downloaded_models};
 use iced::widget::scrollable::Direction;
 use iced::widget::{Space, button, column, container, row, scrollable, text};
@@ -155,11 +155,13 @@ impl App {
             header,
             scrollable(scroll_body)
                 .direction(Direction::Vertical(app_vscrollbar()))
+                .style(dark_scrollable)
                 .height(Length::Fill)
                 .width(Length::Fill),
         ]
         .height(Length::Fill)
-        .width(Length::Fixed(620.0))
+        .width(Length::FillPortion(3))
+        .max_width(660.0)
         .spacing(8);
 
         container(body)

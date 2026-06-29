@@ -1,4 +1,4 @@
-use super::block_style::block_container_style;
+use super::block_style::{assistant_accent, block_container_style, error_accent, user_accent};
 use crate::view::CodewarpViewer;
 use crate::view::ui::{
     FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, primary_btn, secondary_btn, semibold_font,
@@ -6,7 +6,7 @@ use crate::view::ui::{
 use crate::{App, Block, BlockBody, Message, ViewMode};
 use iced::widget::markdown;
 use iced::widget::{Space, button, column, container, row, text, text_editor};
-use iced::{Alignment, Element, Font, Length, Theme};
+use iced::{Alignment, Color, Element, Font, Length, Shadow, Theme, Vector};
 
 impl App {
     #[allow(clippy::too_many_lines)]
@@ -33,21 +33,23 @@ impl App {
             .padding([4, 10])
             .style({
                 let success = *success;
-                move |theme: &Theme| {
-                    let p = theme.extended_palette();
-                    container::Style {
-                        background: Some(p.background.strong.color.into()),
-                        border: iced::Border {
-                            color: if success {
-                                p.success.weak.color
-                            } else {
-                                p.danger.weak.color
-                            },
-                            width: 1.0,
-                            radius: 10.0.into(),
+                move |_theme: &Theme| container::Style {
+                    background: Some(Color::from_rgba8(0x0f, 0x16, 0x26, 0.88).into()),
+                    border: iced::Border {
+                        color: if success {
+                            Color::from_rgba8(0x4a, 0xd0, 0x7c, 0.50)
+                        } else {
+                            Color::from_rgba8(0xf0, 0x5b, 0x6f, 0.50)
                         },
-                        ..Default::default()
-                    }
+                        width: 1.0,
+                        radius: 10.0.into(),
+                    },
+                    shadow: Shadow {
+                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.18),
+                        offset: Vector { x: 0.0, y: 2.0 },
+                        blur_radius: 6.0,
+                    },
+                    ..Default::default()
                 }
             });
             return chip.into();
@@ -156,11 +158,30 @@ impl App {
         let is_user = matches!(&b.body, BlockBody::User(_));
         let is_error_assistant =
             matches!(&b.body, BlockBody::Assistant(_)) && b.body.to_text().contains("[ERROR]");
-        let block_view =
+        let accent_color = if is_user {
+            user_accent()
+        } else if is_error_assistant {
+            error_accent()
+        } else {
+            assistant_accent()
+        };
+        let accent_bar = container(text(""))
+            .width(Length::Fixed(3.0))
+            .height(Length::Fill)
+            .style(move |_: &Theme| container::Style {
+                background: Some(accent_color.into()),
+                border: iced::Border {
+                    radius: 2.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+        let inner =
             container(column![header, body_view, Self::view_block_apply_section(b),].spacing(6))
                 .padding(12)
                 .width(Length::Fill)
                 .style(block_container_style(is_user, is_error_assistant));
+        let block_view = row![accent_bar, inner].spacing(8).align_y(Alignment::Start);
         block_view.into()
     }
 

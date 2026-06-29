@@ -1,11 +1,9 @@
+use super::encoding::{model_info_url, model_tree_url};
 use super::revision::{
     annotate_revision_not_found_error, choose_revision_fallback, extract_bpw_value,
     format_branch_suggestions, normalize_revision_name,
 };
-use super::{
-    contains_status, encode_path_segment, encode_repo_file_path, humanize_error, model_info_url,
-    model_tree_url,
-};
+use super::{contains_status, encode_path_segment, encode_repo_file_path, humanize_error};
 
 #[test]
 fn humanize_auth() {

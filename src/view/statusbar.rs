@@ -3,7 +3,7 @@ use super::ui::{
 };
 use crate::{App, Message};
 use iced::widget::{Space, container, row, text};
-use iced::{Alignment, Element, Font, Length, Theme};
+use iced::{Alignment, Color, Element, Font, Length, Theme};
 
 impl App {
     pub(super) fn view_statusbar(&self) -> Element<'_, Message> {
@@ -24,13 +24,41 @@ impl App {
             _ => String::new(),
         };
         let streaming_indicator: Element<Message> = if self.streaming_block_id.is_some() {
-            text("▶ 응답 생성 중...")
-                .size(FS_LABEL)
-                .font(semibold_font())
-                .style(|theme: &Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().primary.base.color),
-                })
-                .into()
+            container(
+                text("▶ 응답 생성 중...")
+                    .size(FS_LABEL)
+                    .font(semibold_font())
+                    .style(|theme: &Theme| iced::widget::text::Style {
+                        color: Some(theme.extended_palette().primary.base.text),
+                    }),
+            )
+            .padding([2, 8])
+            .style(|theme: &Theme| {
+                let p = theme.extended_palette();
+                container::Style {
+                    background: Some(
+                        Color::from_rgba(
+                            p.primary.base.color.r,
+                            p.primary.base.color.g,
+                            p.primary.base.color.b,
+                            0.15,
+                        )
+                        .into(),
+                    ),
+                    border: iced::Border {
+                        color: Color::from_rgba(
+                            p.primary.base.color.r,
+                            p.primary.base.color.g,
+                            p.primary.base.color.b,
+                            0.30,
+                        ),
+                        width: 1.0,
+                        radius: 8.0.into(),
+                    },
+                    ..Default::default()
+                }
+            })
+            .into()
         } else {
             Space::new()
                 .width(Length::Shrink)

@@ -1,4 +1,4 @@
-use super::{Color, Message, hscrollbar};
+use super::{Color, FS_LABEL, Message, hscrollbar};
 use iced::widget::scrollable::Direction;
 use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Element, Font, Length, Theme};
@@ -64,7 +64,7 @@ impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer {
         let header = row![
             container(
                 text(language_label)
-                    .size(11)
+                    .size(FS_LABEL)
                     .font(Font::with_name("JetBrains Mono"))
             )
             .padding([2, 8])
@@ -80,7 +80,7 @@ impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer {
             Space::new().width(Length::Fill),
             button(
                 text("Copy")
-                    .size(11)
+                    .size(FS_LABEL)
                     .font(Font::with_name("JetBrains Mono"))
             )
             .on_press(Message::CopyText(code.to_string()))

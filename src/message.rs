@@ -164,6 +164,7 @@ pub(crate) enum Message {
     ClearAttachments,
     AutoSave,
     WindowCloseRequested,
+    WindowResized(f32, f32),
     MentionMove(i32),
     MentionConfirm,
     MentionCandidatesLoaded(Vec<PathBuf>),

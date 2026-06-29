@@ -1,7 +1,7 @@
 use super::ui::{
-    FS_BODY, FS_LABEL, FS_SUBTITLE, PAD_LG, PAD_MD, PAD_XS, SCROLL_GUTTER_PAD_X, SPACE_SM,
-    SPACE_XS, app_vscrollbar, danger_btn, panel_style, primary_btn, secondary_btn, semibold_font,
-    shorten_tail,
+    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, PAD_LG, PAD_MD, PAD_XS, SCROLL_GUTTER_PAD_X,
+    SPACE_SM, SPACE_XS, app_vscrollbar, danger_btn, dark_scrollable, panel_style, primary_btn,
+    secondary_btn, semibold_font, shorten_tail,
 };
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
@@ -61,11 +61,11 @@ impl App {
             let is_pending = self.ui.pending_delete_session == Some(s.id);
             let trailing: Element<Message> = if is_pending {
                 row![
-                    button(text("✓").size(11))
+                    button(text("✓").size(FS_MICRO))
                         .on_press(Message::DeleteSession(s.id))
                         .padding([2, 6])
                         .style(primary_btn),
-                    button(text("✗").size(11))
+                    button(text("✗").size(FS_MICRO))
                         .on_press(Message::CancelDeleteSession)
                         .padding([2, 6])
                         .style(secondary_btn),
@@ -73,7 +73,7 @@ impl App {
                 .spacing(2)
                 .into()
             } else {
-                button(text("✕").size(11))
+                button(text("✕").size(FS_MICRO))
                     .on_press(Message::AskDeleteSession(s.id))
                     .padding([2, 6])
                     .style(danger_btn)
@@ -101,6 +101,7 @@ impl App {
             text("채팅").size(FS_LABEL).font(semibold_font()),
             scrollable(sessions_col)
                 .direction(Direction::Vertical(app_vscrollbar(),))
+                .style(dark_scrollable)
                 .height(Length::Fixed(220.0)),
             Space::new().height(Length::Fixed(14.0)),
             text("모델 사용량 (누적)")
@@ -137,6 +138,7 @@ impl App {
             column![
                 scrollable(container(body).padding([0, SCROLL_GUTTER_PAD_X]))
                     .direction(Direction::Vertical(app_vscrollbar()))
+                    .style(dark_scrollable)
                     .height(Length::Fill),
                 resize_row,
             ]

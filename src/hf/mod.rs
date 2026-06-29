@@ -8,13 +8,11 @@ pub(crate) use error::*;
 pub(crate) use types::*;
 
 mod encoding;
-#[allow(clippy::wildcard_imports)]
-use encoding::*;
+use encoding::{encode_path_segment, encode_repo_file_path};
 mod revision;
 
 mod fetch;
-#[allow(clippy::wildcard_imports)]
-use fetch::*;
+use fetch::{fetch_model_info_with_fallback, fetch_model_tree, http_client};
 
 #[cfg(test)]
 mod tests;

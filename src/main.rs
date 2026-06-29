@@ -30,6 +30,8 @@ mod update_chat_tools_writes;
 mod update_chat_ui;
 mod update_helpers;
 mod update_helpers_tabbyapi;
+#[cfg(test)]
+mod update_helpers_tabbyapi_tests;
 mod update_inference;
 mod update_inference_config;
 mod update_inference_engine;

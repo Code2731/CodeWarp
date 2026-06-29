@@ -1,10 +1,10 @@
 use crate::view::ui::{
-    FS_BODY, FS_LABEL, FS_SUBTITLE, FS_TITLE, PAD_MD, PAD_XS, PANEL_SECTION_GAP_LG, SPACE_SM,
-    SPACE_XS, SPACE_XXS, bold_font, context_item_style, panel_style, secondary_btn, semibold_font,
+    FS_BODY, FS_LABEL, FS_SUBTITLE, FS_TITLE, LINE_HEIGHT_BODY, PAD_MD, PAD_XS, SPACE_SM, SPACE_XS,
+    SPACE_XXS, bold_font, context_item_style, panel_style, secondary_btn, semibold_font,
 };
 use crate::{App, Message};
 use iced::widget::{Space, button, column, container, row, text};
-use iced::{Alignment, Element, Font, Length};
+use iced::{Alignment, Color, Element, Font, Length, Theme};
 
 impl App {
     pub(crate) fn view_empty_chat() -> Element<'static, Message> {
@@ -17,10 +17,15 @@ impl App {
         let subtitle =
             text("AI 코딩 데스크톱 — Plan으로 안전하게 둘러보고, Build로 변경 적용").size(FS_BODY);
         let about = column![
-            text("CodeWarp란?").size(FS_LABEL).font(semibold_font()),
+            text("CodeWarp란?")
+                .size(FS_LABEL)
+                .font(semibold_font())
+                .style(|theme: &Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().primary.base.color),
+                }),
             text("Rust 네이티브 Iced 기반의 AI 코딩 데스크톱입니다. 프로젝트 컨텍스트, 도구 실행, 클라우드와 로컬 provider를 한 화면에서 다룹니다.")
                 .size(FS_BODY)
-                .line_height(1.35),
+                .line_height(LINE_HEIGHT_BODY),
         ]
         .spacing(SPACE_XXS);
 
@@ -28,11 +33,14 @@ impl App {
             text("다음을 시도해보세요")
                 .size(FS_LABEL)
                 .font(semibold_font())
+                .style(|theme: &Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().primary.base.color),
+                }),
         ]
         .spacing(SPACE_SM);
         for ex in EXAMPLES {
             examples_col = examples_col.push(
-                button(text(format!("▸ {ex}")).size(FS_SUBTITLE))
+                button(text(ex.to_string()).size(FS_SUBTITLE))
                     .on_press(Message::InputChanged((*ex).to_string()))
                     .padding([7, 12])
                     .width(Length::Fill)
@@ -73,14 +81,24 @@ impl App {
         ]
         .spacing(SPACE_XS);
 
+        let divider = || {
+            container(text(""))
+                .width(Length::Fill)
+                .height(Length::Fixed(1.0))
+                .style(|_: &Theme| container::Style {
+                    background: Some(Color::from_rgba8(0x1e, 0x29, 0x3b, 0.60).into()),
+                    ..Default::default()
+                })
+        };
+
         container(
             column![
                 title,
                 subtitle,
                 about,
-                Space::new().height(Length::Fixed(PANEL_SECTION_GAP_LG)),
+                divider(),
                 examples_col,
-                Space::new().height(Length::Fixed(PANEL_SECTION_GAP_LG)),
+                divider(),
                 modes,
                 Space::new().height(Length::Fixed(SPACE_SM)),
                 shortcuts,
@@ -90,7 +108,7 @@ impl App {
         )
         .center_x(Length::Fill)
         .center_y(Length::Fill)
-        .padding(20)
+        .padding(28)
         .style(panel_style)
         .into()
     }

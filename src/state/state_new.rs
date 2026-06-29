@@ -54,6 +54,7 @@ impl App {
             status,
             busy: false,
             sidebar_width: SIDEBAR_WIDTH,
+            window_width: 1280.0,
             models: Vec::new(),
             model_ids: Vec::new(),
             selected_model: saved_model,

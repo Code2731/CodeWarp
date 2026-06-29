@@ -1,7 +1,7 @@
 use super::super::ui::{
     CONTEXT_LIST_HEIGHT, FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, PAD_MD, PAD_SM, PAD_XS, PAD_XXS,
-    SPACE_SM, SPACE_XS, SPACE_XXS, app_vscrollbar, context_item_style, danger_btn, secondary_btn,
-    semibold_font, shorten_tail,
+    SPACE_SM, SPACE_XS, SPACE_XXS, app_vscrollbar, context_item_style, danger_btn, dark_scrollable,
+    secondary_btn, semibold_font, shorten_tail,
 };
 use crate::{App, MAX_ATTACH_BYTES, Message, fmt_bytes};
 use iced::widget::scrollable::Direction;
@@ -114,6 +114,7 @@ impl App {
                 context_actions(self.attached_files.len()),
                 scrollable(context_list)
                     .direction(Direction::Vertical(app_vscrollbar()))
+                    .style(dark_scrollable)
                     .height(Length::Fixed(CONTEXT_LIST_HEIGHT)),
             ]
             .spacing(SPACE_SM)

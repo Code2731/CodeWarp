@@ -39,6 +39,9 @@ pub(crate) fn on_event(
                 _ => handle_key(&key, modifiers),
             }
         }
+        iced::Event::Window(iced::window::Event::Resized(size)) => {
+            Some(Message::WindowResized(size.width, size.height))
+        }
         iced::Event::Window(iced::window::Event::CloseRequested) => {
             Some(Message::WindowCloseRequested)
         }

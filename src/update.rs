@@ -101,6 +101,17 @@ impl App {
                 self.save_session();
                 Task::none()
             }
+            Message::WindowResized(width, _height) => {
+                self.window_width = width;
+                self.sidebar_width = if width < 900.0 {
+                    crate::view::SIDEBAR_WIDTH_COMPACT
+                } else if width > 1400.0 {
+                    crate::view::SIDEBAR_WIDTH_WIDE
+                } else {
+                    crate::view::SIDEBAR_WIDTH
+                };
+                Task::none()
+            }
             Message::WindowCloseRequested => {
                 self.save_session();
                 session::mark_clean_shutdown();

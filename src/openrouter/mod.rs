@@ -12,12 +12,16 @@ mod parse;
 mod parse_sse;
 mod parse_values;
 #[cfg(test)]
+mod parse_values_tests;
+#[cfg(test)]
 mod sse_tests;
 #[cfg(test)]
 mod tests;
 mod types;
 mod types_chunk;
 mod types_flexible;
+#[cfg(test)]
+mod types_flexible_tests;
 
 pub(crate) use api::{get_account_info, get_generation, list_models};
 pub(crate) use api_types::{AuthKeyData, GenerationData};

@@ -1,7 +1,7 @@
 // view_palette.rs — Command palette view (view child module)
 use super::ui::{
-    FS_BODY, FS_LABEL, FS_SUBTITLE, app_vscrollbar, bold_font, field_input, panel_style,
-    secondary_btn, semibold_font,
+    FS_BODY, FS_LABEL, FS_SUBTITLE, app_vscrollbar, bold_font, dark_scrollable, field_input,
+    panel_style, secondary_btn, semibold_font,
 };
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
@@ -54,6 +54,7 @@ impl App {
             Space::new().height(Length::Fixed(8.0)),
             scrollable(list)
                 .direction(Direction::Vertical(app_vscrollbar(),))
+                .style(dark_scrollable)
                 .height(Length::Fixed(320.0)),
             Space::new().height(Length::Fixed(8.0)),
             row![
@@ -68,7 +69,8 @@ impl App {
 
         container(body)
             .padding(20)
-            .width(Length::Fixed(560.0))
+            .width(Length::FillPortion(3))
+            .max_width(560.0)
             .style(panel_style)
             .into()
     }

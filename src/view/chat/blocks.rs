@@ -1,4 +1,4 @@
-use crate::view::ui::{SCROLL_GUTTER_PAD_X, app_vscrollbar};
+use crate::view::ui::{SCROLL_GUTTER_PAD_X, app_vscrollbar, dark_scrollable};
 use crate::{App, Message, last_assistant_block_idx, last_user_block_idx};
 use iced::widget::scrollable::Direction;
 use iced::widget::{column, container, scrollable};
@@ -20,6 +20,7 @@ impl App {
                 .id(self.stream_id.clone())
                 .on_scroll(Message::StreamScrolled)
                 .direction(Direction::Vertical(app_vscrollbar()))
+                .style(dark_scrollable)
                 .height(Length::Fill)
                 .into()
         }

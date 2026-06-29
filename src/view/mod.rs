@@ -14,7 +14,7 @@ mod view_topbar;
 mod view_viewer;
 
 use iced::widget::{column, container, row, stack, text};
-use iced::{Element, Font, Length, Theme};
+use iced::{Element, Font, Length, Shadow, Theme, Vector};
 pub(crate) use ui::*;
 use view_viewer::CodewarpViewer;
 
@@ -34,7 +34,7 @@ fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
         if count >= MAX_LINES {
             col = col.push(
                 text(format!("…(diff 라인 {MAX_LINES}+ 생략)"))
-                    .size(11)
+                    .size(FS_LABEL)
                     .color(equal),
             );
             break;
@@ -52,7 +52,7 @@ fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
         };
         col = col.push(
             text(line_text)
-                .size(11)
+                .size(FS_LABEL)
                 .font(Font::with_name("JetBrains Mono"))
                 .color(color),
         );
@@ -77,6 +77,11 @@ fn modal_overlay(content: Element<'_, Message>) -> Element<'_, Message> {
                     width: 1.0,
                     radius: 12.0.into(),
                 },
+                shadow: Shadow {
+                    color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.35),
+                    offset: Vector { x: 0.0, y: 12.0 },
+                    blur_radius: 32.0,
+                },
                 ..Default::default()
             }
         });
@@ -95,21 +100,31 @@ fn modal_overlay(content: Element<'_, Message>) -> Element<'_, Message> {
 }
 
 impl App {
+    fn right_panel_visible(&self) -> bool {
+        self.window_width >= 1100.0
+    }
+
     pub(crate) fn view(&self) -> Element<'_, Message> {
         let topbar = self.view_topbar();
 
-        let main_view: Element<Message> = row![
+        let mut main_row = row![
             self.view_sidebar(),
             container(self.view_stream())
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(panel_style),
-            self.view_rightpanel(),
         ]
         .spacing(MAIN_ROW_SPACING)
-        .padding([MAIN_PAD_Y, MAIN_PAD_X])
-        .height(Length::Fill)
-        .into();
+        .height(Length::Fill);
+
+        if self.right_panel_visible() {
+            main_row = main_row.push(self.view_rightpanel());
+        }
+
+        let main_view: Element<Message> = container(main_row)
+            .padding([MAIN_PAD_Y, MAIN_PAD_X])
+            .height(Length::Fill)
+            .into();
 
         // overlay가 필요하면 stack으로 메인 위에 띄움 (backdrop + 가운데 모달 박스)
         let middle: Element<Message> = if self.ui.show_command_palette {

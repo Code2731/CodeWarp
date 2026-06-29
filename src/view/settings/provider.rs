@@ -1,6 +1,6 @@
 use crate::view::ui::{
-    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, SPACE_XS, SPACE_XXS, bold_font, danger_btn,
-    field_input, panel_style, primary_btn, secondary_btn, semibold_font,
+    FS_BODY, FS_CAPTION, FS_LABEL, FS_SUBTITLE, SPACE_XS, SPACE_XXS, bold_font, danger_btn,
+    field_input, panel_style, primary_btn, secondary_btn, semibold_font, sub_panel_style,
 };
 use crate::{App, EXL2_PRESETS, Message, downloaded_exl2_preset_folder};
 use iced::widget::{Space, button, column, container, row, text, text_input};
@@ -151,7 +151,7 @@ impl App {
             );
         }
         tabby_presets = tabby_presets
-            .push(text("저장 위치는 Models 탭의 다운로드 경로를 사용합니다.").size(FS_MICRO));
+            .push(text("저장 위치는 Models 탭의 다운로드 경로를 사용합니다.").size(FS_CAPTION));
 
         let provider_intro = column![
             text("AI Provider").size(FS_SUBTITLE).font(bold_font()),
@@ -180,7 +180,7 @@ impl App {
                 .spacing(8),
             )
             .padding([12, 14])
-            .style(panel_style),
+            .style(sub_panel_style),
             container(
                 column![
                     tabby_header,
@@ -196,7 +196,7 @@ impl App {
                 .spacing(8),
             )
             .padding([12, 14])
-            .style(panel_style),
+            .style(sub_panel_style),
         ]
         .spacing(10);
 

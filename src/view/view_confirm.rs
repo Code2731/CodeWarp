@@ -1,11 +1,12 @@
 use super::render_diff;
 use super::ui::{
-    FS_BODY, FS_LABEL, app_vscrollbar, danger_btn, primary_btn, secondary_btn, semibold_font,
+    FS_BODY, FS_LABEL, app_vscrollbar, danger_btn, dark_scrollable, primary_btn, secondary_btn,
+    semibold_font,
 };
 use crate::{App, Message, tools};
 use iced::widget::scrollable::Direction;
 use iced::widget::{Space, button, column, container, row, scrollable, text};
-use iced::{Alignment, Element, Font, Length, Theme};
+use iced::{Alignment, Color, Element, Font, Length, Shadow, Theme, Vector};
 
 impl App {
     #[allow(clippy::too_many_lines)]
@@ -101,8 +102,12 @@ impl App {
             column![
                 header,
                 Space::new().height(Length::Fixed(4.0)),
-                container(scrollable(cards).direction(Direction::Vertical(app_vscrollbar(),)))
-                    .max_height(140.0),
+                container(
+                    scrollable(cards)
+                        .direction(Direction::Vertical(app_vscrollbar(),))
+                        .style(dark_scrollable),
+                )
+                .max_height(140.0),
                 Space::new().height(Length::Fixed(6.0)),
                 actions,
             ]
@@ -113,11 +118,24 @@ impl App {
         .style(|theme: &Theme| {
             let p = theme.extended_palette();
             container::Style {
-                background: Some(p.background.weak.color.into()),
+                background: Some(
+                    Color::from_rgba(
+                        p.danger.weak.color.r,
+                        p.danger.weak.color.g,
+                        p.danger.weak.color.b,
+                        0.10,
+                    )
+                    .into(),
+                ),
                 border: iced::Border {
                     color: p.danger.weak.color,
                     width: 1.0,
                     radius: 10.0.into(),
+                },
+                shadow: Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.15),
+                    offset: Vector { x: 0.0, y: 2.0 },
+                    blur_radius: 8.0,
                 },
                 ..Default::default()
             }

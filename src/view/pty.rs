@@ -1,6 +1,6 @@
 use super::ui::{
-    FS_BODY, FS_LABEL, FS_SUBTITLE, SCROLL_GUTTER_PAD_X, app_vscrollbar, danger_btn, field_input,
-    panel_style, primary_btn, secondary_btn, semibold_font,
+    FS_BODY, FS_LABEL, FS_SUBTITLE, SCROLL_GUTTER_PAD_X, app_vscrollbar, danger_btn,
+    dark_scrollable, field_input, panel_style, primary_btn, secondary_btn, semibold_font,
 };
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
@@ -37,6 +37,7 @@ impl App {
         }
         let output_area = scrollable(container(out_col).padding([0, SCROLL_GUTTER_PAD_X]))
             .direction(Direction::Vertical(app_vscrollbar()))
+            .style(dark_scrollable)
             .height(Length::Fixed(200.0))
             .width(Length::Fill);
 

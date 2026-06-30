@@ -28,6 +28,7 @@ mod update_chat_stream_helpers;
 mod update_chat_tools;
 mod update_chat_tools_writes;
 mod update_chat_ui;
+mod update_file_tree;
 mod update_helpers;
 mod update_helpers_tabbyapi;
 #[cfg(test)]

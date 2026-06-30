@@ -4,6 +4,8 @@
 // extract_mention_query, fuzzy_match_paths, build_file_context,
 // collect_mention_candidates, kill_pid, hscrollbar, summarize_tool_result.
 
+pub(crate) mod file_tree;
+
 use std::path::PathBuf;
 
 use iced::widget::scrollable::Scrollbar;

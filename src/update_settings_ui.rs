@@ -165,6 +165,7 @@ impl App {
             let _ = keystore::write_cwd(&path.display().to_string());
             self.status = format!("작업 폴더: {}", path.display());
             self.ensure_system_message();
+            return Task::done(Message::RefreshFileTree);
         }
         Task::none()
     }

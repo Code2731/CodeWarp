@@ -6,6 +6,7 @@ use super::{
     default_tabbyapi_runtime_dir, find_tabbyapi_launcher, keystore, kill_pid, mcp,
     persisted_to_block, pty, session, task,
 };
+use crate::util::file_tree;
 use iced::widget::text_editor;
 
 mod state_new;
@@ -103,6 +104,9 @@ pub(crate) struct App {
     pub(crate) mcp_input: McpInputState,
     pub(crate) theme_config: session::ThemeConfig,
     pub(crate) theme_apply_msg: String,
+    pub(crate) file_tree_items: Vec<crate::util::file_tree::FileTreeItem>,
+    pub(crate) file_tree_expanded: std::collections::HashSet<std::path::PathBuf>,
+    pub(crate) skeleton_phase: u8,
 }
 
 impl Drop for App {

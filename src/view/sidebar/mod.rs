@@ -9,6 +9,7 @@ use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length, Theme};
 
 mod context;
+mod file_tree;
 mod usage;
 
 impl App {
@@ -117,7 +118,7 @@ impl App {
                 .style(secondary_btn),
             Space::new().height(Length::Fixed(14.0)),
             text("프로젝트").size(FS_LABEL).font(semibold_font()),
-            text("CodeWarp").size(FS_SUBTITLE).font(semibold_font()),
+            self.view_file_tree(),
             Space::new().height(Length::Fixed(14.0)),
             self.view_sidebar_context_area(),
         ]

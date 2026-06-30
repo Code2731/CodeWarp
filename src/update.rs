@@ -200,6 +200,12 @@ impl App {
             Message::ApplyTheme => self.apply_theme(),
             Message::ResetTheme => self.reset_theme(),
             Message::ThemeSaved(r) => self.on_theme_saved(r),
+            Message::FileTreeToggle(p) => self.toggle_file_tree_dir(p),
+            Message::RefreshFileTree => self.refresh_file_tree(),
+            Message::SkeletonTick => {
+                self.skeleton_phase = (self.skeleton_phase + 1) % 4;
+                Task::none()
+            }
         }
     }
 
@@ -211,6 +217,11 @@ impl App {
             Duration::from_secs(60)
         };
         let timer_sub = iced::time::every(interval).map(|_| Message::AutoSave);
-        Subscription::batch(vec![event_sub, timer_sub])
+        let skeleton_sub = if self.streaming_block_id.is_some() && self.streaming_raw.is_empty() {
+            iced::time::every(Duration::from_millis(600)).map(|_| Message::SkeletonTick)
+        } else {
+            Subscription::none()
+        };
+        Subscription::batch(vec![event_sub, timer_sub, skeleton_sub])
     }
 }

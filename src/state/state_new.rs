@@ -104,6 +104,13 @@ impl App {
             pty_session: None,
             theme_config: session::read_theme(),
             theme_apply_msg: String::new(),
+            file_tree_items: super::file_tree::scan_file_tree(
+                &keystore::read_cwd()
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+            ),
+            file_tree_expanded: std::collections::HashSet::new(),
+            skeleton_phase: 0,
             mcp_servers: mcp::load_servers(),
             mcp_tools: Vec::new(),
             mcp_input: McpInputState::default(),

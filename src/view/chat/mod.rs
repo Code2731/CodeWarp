@@ -4,4 +4,5 @@ mod block_style;
 mod blocks;
 mod empty;
 mod mention;
+pub(crate) mod skeleton;
 mod stream;

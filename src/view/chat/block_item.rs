@@ -143,6 +143,8 @@ impl App {
 
         let body_view: Element<Message> = if is_collapsed {
             Self::view_collapsed_preview(b)
+        } else if self.streaming_block_id == Some(b.id) && self.streaming_raw.is_empty() {
+            super::skeleton::view_skeleton_block(self.skeleton_phase)
         } else {
             match (&b.body, b.view_mode) {
                 (BlockBody::User(s), _) => text(s).size(FS_SUBTITLE).into(),

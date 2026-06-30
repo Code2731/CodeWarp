@@ -1,21 +1,12 @@
 use iced::widget::container;
 use iced::{Color, Shadow, Theme, Vector};
 
-pub(super) fn user_accent() -> Color {
-    Color::from_rgb8(0x0e, 0xa5, 0xe9)
-}
-
-pub(super) fn assistant_accent() -> Color {
-    Color::from_rgb8(0xa7, 0x8b, 0xfa)
-}
-
-pub(super) fn error_accent() -> Color {
-    Color::from_rgb8(0xf0, 0x5b, 0x6f)
-}
-
 pub(super) fn block_container_style(
     is_user: bool,
     is_error_assistant: bool,
+    accent_user: Color,
+    accent_assistant: Color,
+    accent_error: Color,
 ) -> impl Fn(&Theme) -> container::Style {
     move |theme: &Theme| {
         let p = theme.extended_palette();
@@ -28,7 +19,7 @@ pub(super) fn block_container_style(
                     0.30,
                 ),
                 p.background.base.text,
-                user_accent(),
+                accent_user,
             )
         } else if is_error_assistant {
             (
@@ -39,7 +30,7 @@ pub(super) fn block_container_style(
                     0.25,
                 ),
                 p.background.base.text,
-                error_accent(),
+                accent_error,
             )
         } else {
             (
@@ -50,7 +41,7 @@ pub(super) fn block_container_style(
                     0.65,
                 ),
                 p.background.base.text,
-                assistant_accent(),
+                accent_assistant,
             )
         };
         container::Style {

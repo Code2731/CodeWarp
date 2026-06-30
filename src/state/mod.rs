@@ -1,6 +1,6 @@
 // state.rs — Core application state types (child module of main)
 use super::{
-    AgentMode, Arc, AuthKeyData, Block, ChatMessage, Color, HashSet, InferenceEngine, LlmProvider,
+    AgentMode, Arc, AuthKeyData, Block, ChatMessage, HashSet, InferenceEngine, LlmProvider,
     Message, ModelOption, OpenRouterModel, PathBuf, PendingToolCall, SIDEBAR_WIDTH, ScrollId,
     SettingsTab, SortMode, TABBY_API_DEFAULT_PORT, Task, Theme, combo_box,
     default_tabbyapi_runtime_dir, find_tabbyapi_launcher, keystore, kill_pid, mcp,
@@ -101,6 +101,8 @@ pub(crate) struct App {
     pub(crate) mcp_servers: Vec<mcp::McpServer>,
     pub(crate) mcp_tools: Vec<mcp::McpTool>,
     pub(crate) mcp_input: McpInputState,
+    pub(crate) theme_config: session::ThemeConfig,
+    pub(crate) theme_apply_msg: String,
 }
 
 impl Drop for App {

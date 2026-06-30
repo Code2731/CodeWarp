@@ -48,6 +48,7 @@ mod update_settings_interact_pty;
 mod update_settings_io;
 mod update_settings_mcp;
 mod update_settings_ui;
+mod update_theme;
 mod util;
 mod view;
 

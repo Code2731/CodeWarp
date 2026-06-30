@@ -1,5 +1,5 @@
 use super::{
-    AgentMode, App, Arc, Color, InferenceEngine, McpInputState, Message, ModelFilterState, PathBuf,
+    AgentMode, App, Arc, InferenceEngine, McpInputState, Message, ModelFilterState, PathBuf,
     SIDEBAR_WIDTH, ScrollId, Task, Theme, UiState, combo_box, keystore, mcp, session, text_editor,
 };
 
@@ -9,19 +9,8 @@ impl App {
         "CodeWarp".to_string()
     }
 
-    #[allow(clippy::unused_self)]
     pub(crate) fn theme(&self) -> Theme {
-        Theme::custom(
-            "CodeWarp Dark".to_string(),
-            iced::theme::Palette {
-                background: Color::from_rgb8(0x03, 0x07, 0x12),
-                text: Color::from_rgb8(0xe6, 0xec, 0xf8),
-                primary: Color::from_rgb8(0x0e, 0xa5, 0xe9),
-                success: Color::from_rgb8(0x10, 0xb9, 0x81),
-                warning: Color::from_rgb8(0xf5, 0x9e, 0x0b),
-                danger: Color::from_rgb8(0xf4, 0x71, 0x74),
-            },
-        )
+        Theme::custom("CodeWarp", self.theme_config.to_palette())
     }
 
     pub(crate) fn new() -> (Self, Task<Message>) {
@@ -113,6 +102,8 @@ impl App {
             pty_output: std::collections::VecDeque::new(),
             pty_input: String::new(),
             pty_session: None,
+            theme_config: session::read_theme(),
+            theme_apply_msg: String::new(),
             mcp_servers: mcp::load_servers(),
             mcp_tools: Vec::new(),
             mcp_input: McpInputState::default(),

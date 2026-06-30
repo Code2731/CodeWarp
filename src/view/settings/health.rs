@@ -92,6 +92,13 @@ impl App {
                 mcp_health,
                 SettingsTab::Mcp
             ),
+            tab_btn(
+                "🎨",
+                "Theme",
+                "custom".to_string(),
+                TabHealth::Good,
+                SettingsTab::Theme
+            ),
         ]
         .spacing(6)
         .align_y(Alignment::Center)

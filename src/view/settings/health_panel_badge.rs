@@ -81,6 +81,16 @@ impl App {
                 };
                 ("MCP", action, label.to_string(), msg)
             }
+            SettingsTab::Theme => {
+                let action = "권장 액션: 원하는 색상을 HEX 값으로 입력하고 적용 버튼을 눌러주세요."
+                    .to_string();
+                (
+                    "Theme",
+                    action,
+                    "기본값 리셋".to_string(),
+                    Some(Message::ResetTheme),
+                )
+            }
         }
     }
 

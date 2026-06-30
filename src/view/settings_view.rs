@@ -19,6 +19,7 @@ impl App {
             SettingsTab::Runtime => runtime_health,
             SettingsTab::Models => model_health,
             SettingsTab::Mcp => mcp_health,
+            SettingsTab::Theme => TabHealth::Good,
         };
 
         let header = row![
@@ -123,6 +124,10 @@ impl App {
                         ..Default::default()
                     }
                 })
+                .into(),
+            SettingsTab::Theme => container(self.view_theme_tab())
+                .padding([4, 4])
+                .width(Length::Fill)
                 .into(),
         };
 

@@ -19,10 +19,12 @@ pub(crate) struct UiState {
     pub(crate) pending_delete_session: Option<u64>,
     pub(crate) expanded_confirm_idx: Option<usize>,
     pub(crate) collapsed_blocks: std::collections::HashSet<u64>,
+    pub(crate) theme_hex_inputs: Vec<String>,
 }
 
 impl UiState {
     pub(crate) fn new(show_settings: bool) -> Self {
+        let default_theme = session::ThemeConfig::default_dark();
         Self {
             show_settings,
             settings_tab: SettingsTab::Provider,
@@ -31,7 +33,26 @@ impl UiState {
             pending_delete_session: None,
             expanded_confirm_idx: None,
             collapsed_blocks: std::collections::HashSet::new(),
+            theme_hex_inputs: Self::theme_hex_vec(&default_theme),
         }
+    }
+
+    fn theme_hex_vec(cfg: &session::ThemeConfig) -> Vec<String> {
+        vec![
+            cfg.hex("background"),
+            cfg.hex("text"),
+            cfg.hex("primary"),
+            cfg.hex("success"),
+            cfg.hex("warning"),
+            cfg.hex("danger"),
+            cfg.hex("accent_user"),
+            cfg.hex("accent_assistant"),
+            cfg.hex("accent_error"),
+        ]
+    }
+
+    pub(crate) fn sync_theme_inputs(&mut self, cfg: &session::ThemeConfig) {
+        self.theme_hex_inputs = Self::theme_hex_vec(cfg);
     }
 }
 

@@ -13,5 +13,6 @@ mod runtime;
 mod runtime_actions;
 mod runtime_binary;
 mod runtime_model;
+mod theme;
 
 pub(super) use health_tab::TabHealth;

@@ -193,6 +193,13 @@ impl App {
             Message::DeleteSession(target_id) => self.delete_session(target_id),
             Message::ToggleFavorite => self.toggle_favorite(),
             Message::CwdPicked(maybe_path) => self.apply_picked_cwd(maybe_path),
+            Message::ThemeHexChanged(field, value) => {
+                self.on_theme_hex_changed(field, value);
+                Task::none()
+            }
+            Message::ApplyTheme => self.apply_theme(),
+            Message::ResetTheme => self.reset_theme(),
+            Message::ThemeSaved(r) => self.on_theme_saved(r),
         }
     }
 

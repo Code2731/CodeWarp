@@ -55,6 +55,7 @@ pub(crate) enum SettingsTab {
     Runtime,
     Models,
     Mcp,
+    Theme,
 }
 
 #[derive(Debug, Clone)]
@@ -186,4 +187,8 @@ pub(crate) enum Message {
     PtySend,
     PtyCtrlC,
     PtyClear,
+    ThemeHexChanged(String, String),
+    ApplyTheme,
+    ResetTheme,
+    ThemeSaved(Result<(), String>),
 }

@@ -1,4 +1,4 @@
-use super::block_style::{assistant_accent, block_container_style, error_accent, user_accent};
+use super::block_style::block_container_style;
 use crate::view::CodewarpViewer;
 use crate::view::ui::{
     FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, primary_btn, secondary_btn, semibold_font,
@@ -174,12 +174,15 @@ impl App {
         let is_user = matches!(&b.body, BlockBody::User(_));
         let is_error_assistant =
             matches!(&b.body, BlockBody::Assistant(_)) && b.body.to_text().contains("[ERROR]");
+        let a_user = self.theme_config.accent_user();
+        let a_asst = self.theme_config.accent_assistant();
+        let a_err = self.theme_config.accent_error();
         let accent_color = if is_user {
-            user_accent()
+            a_user
         } else if is_error_assistant {
-            error_accent()
+            a_err
         } else {
-            assistant_accent()
+            a_asst
         };
         let accent_bar = container(text(""))
             .width(Length::Fixed(3.0))
@@ -196,7 +199,13 @@ impl App {
             container(column![header, body_view, Self::view_block_apply_section(b),].spacing(6))
                 .padding(12)
                 .width(Length::Fill)
-                .style(block_container_style(is_user, is_error_assistant));
+                .style(block_container_style(
+                    is_user,
+                    is_error_assistant,
+                    a_user,
+                    a_asst,
+                    a_err,
+                ));
         let block_view = row![accent_bar, inner].spacing(8).align_y(Alignment::Start);
         block_view.into()
     }

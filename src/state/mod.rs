@@ -107,6 +107,8 @@ pub(crate) struct App {
     pub(crate) file_tree_items: Vec<crate::util::file_tree::FileTreeItem>,
     pub(crate) file_tree_expanded: std::collections::HashSet<std::path::PathBuf>,
     pub(crate) skeleton_phase: u8,
+    pub(crate) tldr_expanded: std::collections::HashSet<u64>,
+    pub(crate) tldr_data: std::collections::HashMap<u64, Vec<crate::update_tldr::TldrFileEntry>>,
 }
 
 impl Drop for App {

@@ -50,6 +50,7 @@ mod update_settings_io;
 mod update_settings_mcp;
 mod update_settings_ui;
 mod update_theme;
+mod update_tldr;
 mod util;
 mod view;
 

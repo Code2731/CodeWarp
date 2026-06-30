@@ -194,4 +194,5 @@ pub(crate) enum Message {
     FileTreeToggle(std::path::PathBuf),
     RefreshFileTree,
     SkeletonTick,
+    ToggleTldrView(u64),
 }

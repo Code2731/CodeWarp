@@ -198,7 +198,7 @@ impl App {
                 ..Default::default()
             });
         let inner =
-            container(column![header, body_view, Self::view_block_apply_section(b),].spacing(6))
+            container(column![header, body_view, self.view_block_apply_section(b),].spacing(6))
                 .padding(12)
                 .width(Length::Fill)
                 .style(block_container_style(
@@ -236,16 +236,29 @@ impl App {
             .into()
     }
 
-    fn view_block_apply_section(b: &Block) -> Element<'_, Message> {
+    fn view_block_apply_section(&self, b: &Block) -> Element<'_, Message> {
         if b.apply_candidates.is_empty() {
             return Space::new().height(Length::Shrink).into();
         }
+        let tldr_open = self.tldr_expanded.contains(&b.id);
         let mut col = column![
-            text("적용 가능한 변경사항")
-                .size(FS_LABEL)
-                .font(semibold_font())
+            row![
+                text("적용 가능한 변경사항")
+                    .size(FS_LABEL)
+                    .font(semibold_font()),
+                Space::new().width(Length::Fill),
+                button(text("TL;DR").size(FS_MICRO))
+                    .on_press(Message::ToggleTldrView(b.id))
+                    .padding([2, 8])
+                    .style(secondary_btn),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
         ]
         .spacing(4);
+        if tldr_open && let Some(entries) = self.tldr_data.get(&b.id) {
+            col = col.push(super::tldr::view_tldr_summary(b.id, entries));
+        }
         for (ci, (cand, applied)) in b.apply_candidates.iter().enumerate() {
             let label = if *applied {
                 format!("✓ {} ({} bytes)", cand.path, cand.content.len())

@@ -111,6 +111,8 @@ impl App {
             ),
             file_tree_expanded: std::collections::HashSet::new(),
             skeleton_phase: 0,
+            tldr_expanded: std::collections::HashSet::new(),
+            tldr_data: std::collections::HashMap::new(),
             mcp_servers: mcp::load_servers(),
             mcp_tools: Vec::new(),
             mcp_input: McpInputState::default(),

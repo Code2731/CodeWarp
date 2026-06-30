@@ -206,6 +206,10 @@ impl App {
                 self.skeleton_phase = (self.skeleton_phase + 1) % 4;
                 Task::none()
             }
+            Message::ToggleTldrView(id) => {
+                self.toggle_tldr_view(id);
+                Task::none()
+            }
         }
     }
 

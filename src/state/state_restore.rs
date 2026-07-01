@@ -43,7 +43,7 @@ impl App {
             inactive.push(InactiveSession {
                 id: s.id,
                 title: s.title.clone(),
-                conversation: Arc::new(s.conversation.clone()),
+                conversation: Arc::clone(&s.conversation),
                 blocks: s.blocks.clone(),
                 next_block_id: s.next_block_id,
                 scroll_y: s.scroll_y,
@@ -52,7 +52,7 @@ impl App {
 
         self.current_session_id = active.id;
         self.current_session_title = active.title;
-        self.conversation = Arc::new(active.conversation);
+        self.conversation = Arc::clone(&active.conversation);
         self.next_block_id = active.next_block_id;
         self.blocks = active.blocks.into_iter().map(persisted_to_block).collect();
         self.current_scroll_y = active.scroll_y;

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +18,7 @@ pub(crate) struct PersistedBlock {
 pub(crate) struct PersistedSessionData {
     pub id: u64,
     pub title: String,
-    pub conversation: Vec<ChatMessage>,
+    pub conversation: Arc<Vec<ChatMessage>>,
     pub blocks: Vec<PersistedBlock>,
     pub next_block_id: u64,
     #[serde(default)]
@@ -67,7 +68,7 @@ pub(crate) fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions
                 sessions: vec![PersistedSessionData {
                     id: 1,
                     title: "이전 채팅".into(),
-                    conversation: old.conversation,
+                    conversation: Arc::new(old.conversation),
                     blocks: old.blocks,
                     next_block_id: old.next_block_id,
                     scroll_y: 0.0,
@@ -80,7 +81,7 @@ pub(crate) fn load_all_at(dir: Option<&std::path::Path>) -> PersistedAllSessions
         sessions: vec![PersistedSessionData {
             id: 1,
             title: "새 채팅".into(),
-            conversation: Vec::new(),
+            conversation: Arc::new(Vec::new()),
             blocks: Vec::new(),
             next_block_id: 0,
             scroll_y: 0.0,

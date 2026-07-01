@@ -13,14 +13,15 @@ mod view_palette;
 mod view_topbar;
 mod view_viewer;
 
-use iced::widget::{column, container, row, stack, text};
-use iced::{Element, Font, Length, Shadow, Theme, Vector};
+use iced::widget::{button, column, container, row, stack, text};
+use iced::{Alignment, Element, Font, Length, Padding, Shadow, Theme, Vector};
 pub(crate) use ui::*;
+use ui::{secondary_btn, toast_style};
 use view_viewer::CodewarpViewer;
 
 /// 두 텍스트의 line-by-line diff를 색상 표시된 Element로 변환.
 /// 추가 라인은 녹색, 삭제 라인은 빨강, 동일 라인은 흐리게.
-fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
+pub(crate) fn render_diff<'a>(old: &str, new: &str) -> Element<'a, Message> {
     use similar::{ChangeTag, TextDiff};
 
     const MAX_LINES: usize = 400;
@@ -142,9 +143,31 @@ impl App {
         if self.pty_visible {
             col = col.push(self.view_pty_panel());
         }
-        col.push(statusbar)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        let base = col.push(statusbar).width(Length::Fill).height(Length::Fill);
+
+        if let Some(toast_text) = &self.toast {
+            let toast = container(
+                row![
+                    text(toast_text).size(FS_LABEL),
+                    button(text("✕").size(FS_MICRO))
+                        .on_press(Message::DismissToast)
+                        .padding([2, 6])
+                        .style(secondary_btn),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            )
+            .padding([8, 14])
+            .style(toast_style);
+            let toast_layer = container(toast)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_bottom(Length::Fill)
+                .center_x(Length::Fill)
+                .padding(Padding::new(0.0).bottom(48.0));
+            stack![base, toast_layer].into()
+        } else {
+            base.into()
+        }
     }
 }

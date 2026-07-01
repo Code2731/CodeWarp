@@ -53,12 +53,27 @@ impl App {
             }),
         ]
         .spacing(2);
+        if self.inactive_sessions.is_empty() {
+            let empty: Element<Message> = text("저장된 세션이 없습니다")
+                .size(FS_MICRO)
+                .style(|theme: &Theme| iced::widget::text::Style {
+                    color: Some(iced::Color::from_rgba(
+                        theme.extended_palette().background.strong.text.r,
+                        theme.extended_palette().background.strong.text.g,
+                        theme.extended_palette().background.strong.text.b,
+                        0.5,
+                    )),
+                })
+                .into();
+            sessions_col = sessions_col.push(empty);
+        }
         for s in &self.inactive_sessions {
             let title = if s.title.trim().is_empty() {
                 "(빈 세션)".to_string()
             } else {
                 s.title.clone()
             };
+            let msg_count = s.conversation.len();
             let is_pending = self.ui.pending_delete_session == Some(s.id);
             let trailing: Element<Message> = if is_pending {
                 row![
@@ -81,11 +96,21 @@ impl App {
                     .into()
             };
             let row_widget = row![
-                button(text(format!("📂 {title}")).size(FS_BODY))
-                    .on_press(Message::SwitchSession(s.id))
-                    .padding([4, 8])
-                    .width(Length::Fill)
-                    .style(secondary_btn),
+                button(
+                    row![
+                        text(format!("📂 {title}")).size(FS_BODY),
+                        text(format!(" {msg_count}"))
+                            .size(FS_MICRO)
+                            .style(|theme: &Theme| iced::widget::text::Style {
+                                color: Some(theme.extended_palette().background.strong.text),
+                            }),
+                    ]
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Message::SwitchSession(s.id))
+                .padding([4, 8])
+                .width(Length::Fill)
+                .style(secondary_btn),
                 trailing,
             ]
             .spacing(2);

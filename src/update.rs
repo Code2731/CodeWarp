@@ -138,7 +138,10 @@ impl App {
                 }
                 Task::none()
             }
-            Message::Send => self.send_message(),
+            Message::Send => {
+                self.toast = None;
+                self.send_message()
+            }
             Message::StopStream => self.stop_stream(),
             Message::CopyBlock(id) => self.copy_block(id),
             Message::CopyText(text) => iced::clipboard::write(text),
@@ -180,7 +183,10 @@ impl App {
             Message::CycleSidebarWidth => self.cycle_sidebar_width(),
             Message::SetAgentMode(mode) => self.set_agent_mode(mode),
             Message::ToggleAgentMode => self.toggle_agent_mode(),
-            Message::NewChat => self.new_chat(),
+            Message::NewChat => {
+                self.toast = None;
+                self.new_chat()
+            }
             Message::SwitchSession(target_id) => self.switch_session(target_id),
             Message::OpenCommandPalette => self.open_command_palette(),
             Message::CloseCommandPalette => self.close_command_palette(),
@@ -208,6 +214,18 @@ impl App {
             }
             Message::ToggleTldrView(id) => {
                 self.toggle_tldr_view(id);
+                Task::none()
+            }
+            Message::CodeBlockHovered(id, hovered) => {
+                if hovered {
+                    self.hovered_code_blocks.insert(id);
+                } else {
+                    self.hovered_code_blocks.remove(&id);
+                }
+                Task::none()
+            }
+            Message::DismissToast => {
+                self.toast = None;
                 Task::none()
             }
         }

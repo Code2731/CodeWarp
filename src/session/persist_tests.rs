@@ -1,5 +1,6 @@
 use super::persist::*;
 use crate::openrouter::ChatMessage;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 #[test]
@@ -26,7 +27,7 @@ fn loads_new_format() {
             PersistedSessionData {
                 id: 7,
                 title: "기존 세션".into(),
-                conversation: Vec::new(),
+                conversation: Arc::new(Vec::new()),
                 blocks: Vec::new(),
                 next_block_id: 0,
                 scroll_y: 100.0,
@@ -34,7 +35,7 @@ fn loads_new_format() {
             PersistedSessionData {
                 id: 8,
                 title: "두 번째".into(),
-                conversation: Vec::new(),
+                conversation: Arc::new(Vec::new()),
                 blocks: Vec::new(),
                 next_block_id: 0,
                 scroll_y: 0.0,
@@ -60,7 +61,7 @@ fn active_idx_out_of_bounds_clamped() {
         sessions: vec![PersistedSessionData {
             id: 1,
             title: "only".into(),
-            conversation: Vec::new(),
+            conversation: Arc::new(Vec::new()),
             blocks: Vec::new(),
             next_block_id: 0,
             scroll_y: 0.0,
@@ -145,7 +146,7 @@ fn new_format_takes_precedence_over_old() {
         sessions: vec![PersistedSessionData {
             id: 42,
             title: "new format".into(),
-            conversation: Vec::new(),
+            conversation: Arc::new(Vec::new()),
             blocks: Vec::new(),
             next_block_id: 0,
             scroll_y: 0.0,
@@ -168,10 +169,10 @@ fn json_roundtrip_preserves_full_state() {
             PersistedSessionData {
                 id: 1,
                 title: "chat one".into(),
-                conversation: vec![
+                conversation: Arc::new(vec![
                     ChatMessage::user("hello"),
                     ChatMessage::assistant("hi there"),
-                ],
+                ]),
                 blocks: vec![
                     PersistedBlock {
                         id: 10,
@@ -192,7 +193,7 @@ fn json_roundtrip_preserves_full_state() {
             PersistedSessionData {
                 id: 2,
                 title: "chat two".into(),
-                conversation: Vec::new(),
+                conversation: Arc::new(Vec::new()),
                 blocks: Vec::new(),
                 next_block_id: 0,
                 scroll_y: 0.0,

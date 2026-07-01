@@ -39,6 +39,8 @@ impl App {
         std::sync::Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(format!(
             "[OpenRouter]\n{openrouter_text}\n\n[Tabby]\n{tabby_text}"
         )));
+        self.compare_old_text = Some(openrouter_text);
+        self.compare_new_text = Some(tabby_text);
         self.compare_pending = false;
         self.status = "Compare 응답 완료".into();
         self.maybe_update_title();

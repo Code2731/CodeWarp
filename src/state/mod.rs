@@ -109,6 +109,10 @@ pub(crate) struct App {
     pub(crate) skeleton_phase: u8,
     pub(crate) tldr_expanded: std::collections::HashSet<u64>,
     pub(crate) tldr_data: std::collections::HashMap<u64, Vec<crate::update_tldr::TldrFileEntry>>,
+    pub(crate) hovered_code_blocks: std::collections::HashSet<u64>,
+    pub(crate) compare_old_text: Option<String>,
+    pub(crate) compare_new_text: Option<String>,
+    pub(crate) toast: Option<String>,
 }
 
 impl Drop for App {

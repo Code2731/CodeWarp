@@ -1,6 +1,6 @@
 use super::FS_BODY;
-use iced::widget::{button, container, scrollable, text_input};
-use iced::{Border, Color, Font, Length, Shadow, Theme, Vector, font};
+use iced::widget::{button, container, scrollable, text_editor, text_input};
+use iced::{Background, Border, Color, Font, Length, Shadow, Theme, Vector, font};
 
 const BORDER_WIDTH: f32 = 1.0;
 const PANEL_RADIUS: f32 = 12.0;
@@ -273,6 +273,28 @@ pub(crate) fn field_input(theme: &Theme, status: text_input::Status) -> text_inp
     }
 }
 
+pub(crate) fn editor_input(theme: &Theme, status: text_editor::Status) -> text_editor::Style {
+    let p = theme.extended_palette();
+    let mut style = text_editor::default(theme, status);
+    style.background = Background::Color(with_alpha(p.background.base.color, INPUT_BG_ALPHA));
+    style.border = Border {
+        color: p.background.strong.color,
+        width: BORDER_WIDTH,
+        radius: CONTROL_RADIUS.into(),
+    };
+    match status {
+        text_editor::Status::Focused { .. } => {
+            style.border.color = p.primary.base.color;
+            style
+        }
+        text_editor::Status::Hovered => {
+            style.border.color = with_alpha(p.primary.strong.color, 0.65);
+            style
+        }
+        _ => style,
+    }
+}
+
 const SCROLL_BG_ALPHA: f32 = 0.06;
 const SCROLL_RADIUS: f32 = 999.0;
 
@@ -361,6 +383,32 @@ pub(crate) fn font_with_weight(weight: font::Weight) -> Font {
     let mut f = Font::with_name(UI_FONT_FAMILY);
     f.weight = weight;
     f
+}
+
+pub(crate) fn toast_style(theme: &Theme) -> container::Style {
+    let p = theme.extended_palette();
+    container::Style {
+        background: Some(
+            Color::from_rgba(
+                p.background.base.color.r,
+                p.background.base.color.g,
+                p.background.base.color.b,
+                0.96,
+            )
+            .into(),
+        ),
+        border: Border {
+            color: p.primary.base.color,
+            width: 1.0,
+            radius: 10.0.into(),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+            offset: Vector { x: 0.0, y: 6.0 },
+            blur_radius: 16.0,
+        },
+        ..Default::default()
+    }
 }
 
 pub(crate) fn semibold_font() -> Font {

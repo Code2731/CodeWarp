@@ -157,7 +157,7 @@ pub(crate) const PTY_MAX_LINES: usize = 500;
 // ── Scrollbar ───────────────────────────────────────────────────────
 
 pub(crate) fn hscrollbar() -> Scrollbar {
-    Scrollbar::new().width(8).scroller_width(8).margin(2)
+    Scrollbar::new().width(10).scroller_width(10).margin(2)
 }
 
 // ── Tool result summarizer ──────────────────────────────────────────

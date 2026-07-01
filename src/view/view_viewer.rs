@@ -1,13 +1,19 @@
 use super::{Color, FS_LABEL, Message, hscrollbar};
+use crate::view::ui::{dark_scrollable, secondary_btn};
 use iced::widget::scrollable::Direction;
-use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
 use iced::{Element, Font, Length, Theme};
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-/// `markdown::view_with`용 커스텀 `Viewer`.
-#[derive(Debug)]
-pub(super) struct CodewarpViewer;
+pub(super) struct CodewarpViewer<'a> {
+    pub(super) hovered_set: &'a HashSet<u64>,
+    pub(super) on_hover: fn(u64, bool) -> Message,
+}
 
-impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer {
+static NEXT_CODE_BLOCK_ID: AtomicU64 = AtomicU64::new(0);
+
+impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer<'a> {
     fn on_link_click(url: iced::widget::markdown::Uri) -> Message {
         Message::LinkClicked(url)
     }
@@ -59,7 +65,26 @@ impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer {
         code: &'a str,
         _lines: &'a [iced::widget::markdown::Text],
     ) -> Element<'a, Message> {
+        let id = NEXT_CODE_BLOCK_ID.fetch_add(1, Ordering::Relaxed);
+        let is_hovered = self.hovered_set.contains(&id);
         let language_label = language.unwrap_or("text").to_ascii_lowercase();
+
+        let copy_btn: Element<Message> = if is_hovered {
+            button(
+                text("⎘")
+                    .size(FS_LABEL)
+                    .font(Font::with_name("JetBrains Mono")),
+            )
+            .on_press(Message::CopyText(code.to_string()))
+            .padding([3, 8])
+            .style(secondary_btn)
+            .into()
+        } else {
+            Space::new()
+                .width(Length::Shrink)
+                .height(Length::Shrink)
+                .into()
+        };
 
         let header = row![
             container(
@@ -78,13 +103,7 @@ impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer {
                 ..Default::default()
             }),
             Space::new().width(Length::Fill),
-            button(
-                text("Copy")
-                    .size(FS_LABEL)
-                    .font(Font::with_name("JetBrains Mono"))
-            )
-            .on_press(Message::CopyText(code.to_string()))
-            .padding([3, 10]),
+            copy_btn,
         ]
         .spacing(8);
 
@@ -98,9 +117,10 @@ impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer {
 
         let code_body = scrollable(code_text)
             .direction(Direction::Horizontal(hscrollbar()))
+            .style(dark_scrollable)
             .width(Length::Fill);
 
-        container(column![header, code_body].spacing(0))
+        let inner = container(column![header, code_body].spacing(0))
             .padding(10)
             .width(Length::Fill)
             .style(|_theme: &Theme| container::Style {
@@ -111,7 +131,11 @@ impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer {
                     radius: 12.0.into(),
                 },
                 ..Default::default()
-            })
+            });
+
+        mouse_area(inner)
+            .on_enter((self.on_hover)(id, true))
+            .on_exit((self.on_hover)(id, false))
             .into()
     }
 }

@@ -216,7 +216,14 @@ impl App {
                     let mut settings: markdown::Settings = (&self.theme()).into();
                     settings.style.inline_code_font = Font::with_name("JetBrains Mono");
                     settings.style.code_block_font = Font::with_name("JetBrains Mono");
-                    markdown::view_with(b.md_items.iter(), settings, &CodewarpViewer)
+                    markdown::view_with(
+                        b.md_items.iter(),
+                        settings,
+                        &CodewarpViewer {
+                            hovered_set: &self.hovered_code_blocks,
+                            on_hover: Message::CodeBlockHovered,
+                        },
+                    )
                 }
                 (BlockBody::ToolResult { .. }, _) => {
                     text("도구 결과 렌더링 경로 오류").size(FS_SUBTITLE).into()

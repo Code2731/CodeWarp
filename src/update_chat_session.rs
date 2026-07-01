@@ -1,6 +1,7 @@
 // update_chat_session.rs — Session management update methods (main.rs child module)
-use super::{App, Arc, BlockBody, InactiveSession, Message, persisted_to_block, session};
+use super::{App, BlockBody, InactiveSession, Message, persisted_to_block, session};
 use iced::Task;
+use std::sync::Arc;
 
 impl App {
     pub(crate) fn new_chat(&mut self) -> Task<Message> {
@@ -157,7 +158,7 @@ impl App {
             .map(|s| session::PersistedSessionData {
                 id: s.id,
                 title: s.title.clone(),
-                conversation: (*s.conversation).clone(),
+                conversation: Arc::clone(&s.conversation),
                 blocks: s.blocks.clone(),
                 next_block_id: s.next_block_id,
                 scroll_y: s.scroll_y,
@@ -166,7 +167,7 @@ impl App {
         sessions.push(session::PersistedSessionData {
             id: self.current_session_id,
             title: self.current_session_title.clone(),
-            conversation: (*self.conversation).clone(),
+            conversation: Arc::clone(&self.conversation),
             blocks: current_blocks_persisted,
             next_block_id: self.next_block_id,
             scroll_y: self.current_scroll_y,

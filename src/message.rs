@@ -195,4 +195,6 @@ pub(crate) enum Message {
     RefreshFileTree,
     SkeletonTick,
     ToggleTldrView(u64),
+    CodeBlockHovered(u64, bool),
+    DismissToast,
 }

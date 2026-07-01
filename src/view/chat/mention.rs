@@ -100,6 +100,7 @@ impl App {
             container(
                 scrollable(chips)
                     .direction(Direction::Horizontal(hscrollbar()))
+                    .style(dark_scrollable)
                     .width(Length::Fill),
             )
             .padding([4, 0])

@@ -1,7 +1,9 @@
 use crate::view::ui::{
-    FS_BODY, FS_LABEL, FS_MICRO, dark_scrollable, primary_btn, secondary_btn, section_header,
+    FS_BODY, FS_LABEL, FS_MICRO, app_vscrollbar, dark_scrollable, primary_btn, secondary_btn,
+    section_header,
 };
 use crate::{App, Message};
+use iced::widget::scrollable::Direction;
 use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Color, Element, Length, Theme};
 
@@ -86,6 +88,7 @@ impl App {
                 scrollable(
                     column![col, Space::new().height(Length::Fixed(8.0)), action_row,].spacing(6)
                 )
+                .direction(Direction::Vertical(app_vscrollbar()))
                 .style(dark_scrollable),
             ]
             .spacing(6),

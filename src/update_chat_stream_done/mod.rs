@@ -44,6 +44,7 @@ impl App {
             self.status =
                 "[WARN] 모델이 빈 응답을 반환했습니다. Provider/Runtime 로그를 확인해 주세요."
                     .into();
+            self.toast = Some(self.status.clone());
             if let Some(idx) = self.streaming_block_idx
                 && idx < self.blocks.len()
                 && self.blocks[idx].id == ai_id
@@ -134,6 +135,7 @@ impl App {
         } else {
             self.status = format!("[ERROR] {humanized}");
         }
+        self.toast = Some(self.status.clone());
         Task::none()
     }
 }

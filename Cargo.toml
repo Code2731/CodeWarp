@@ -12,7 +12,7 @@ iced = { version = "0.14", features = ["tokio", "advanced", "highlighter", "mark
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "sync", "process", "io-util"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
 keyring = { version = "4", features = ["v1"] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1.0.150"
 futures-util = "0.3"
 async-stream = "0.3"

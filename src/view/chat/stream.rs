@@ -1,6 +1,7 @@
+use crate::view::render_diff;
 use crate::view::ui::{
-    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, danger_btn, panel_style, primary_btn, secondary_btn,
-    semibold_font,
+    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, danger_btn, editor_input, panel_style, primary_btn,
+    secondary_btn, semibold_font,
 };
 use crate::{AgentMode, App, Message};
 use iced::keyboard::Key;
@@ -95,6 +96,7 @@ impl App {
             .size(FS_BODY)
             .line_height(1.55)
             .padding(10)
+            .style(editor_input)
             .key_binding(move |press| {
                 let KeyPress {
                     ref key, modifiers, ..
@@ -128,11 +130,34 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
+        let compare_diff: Element<Message> =
+            if let (Some(old), Some(new)) = (&self.compare_old_text, &self.compare_new_text) {
+                container(
+                    column![
+                        row![
+                            text("Compare Diff").size(FS_SUBTITLE).font(semibold_font()),
+                            Space::new().width(Length::Fill),
+                        ]
+                        .spacing(6)
+                        .align_y(Alignment::Center),
+                        render_diff(old, new),
+                    ]
+                    .spacing(6),
+                )
+                .padding(12)
+                .style(panel_style)
+                .width(Length::Fill)
+                .into()
+            } else {
+                Space::new().height(Length::Shrink).into()
+            };
+
         column![
             container(blocks_view)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .padding([14, 18]),
+            container(compare_diff).padding([0, 14]),
             container(confirm_panel).padding([0, 14]),
             container(slash_hint).padding([0, 14]),
             container(mention_popup).padding([0, 14]),

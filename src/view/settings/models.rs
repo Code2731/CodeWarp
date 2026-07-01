@@ -1,6 +1,6 @@
 use crate::view::ui::{
-    FS_BODY, FS_LABEL, FS_SUBTITLE, danger_btn, field_input, panel_style, primary_btn,
-    secondary_btn, semibold_font,
+    FS_BODY, FS_LABEL, danger_btn, field_input, panel_style, primary_btn, secondary_btn,
+    section_header, semibold_font,
 };
 use crate::{App, Message, fmt_bytes, list_downloaded_models};
 use iced::widget::{Space, button, column, container, row, text, text_input};
@@ -9,9 +9,6 @@ use iced::{Alignment, Element, Font, Length};
 impl App {
     #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
     pub(crate) fn view_model_manager(&self) -> Element<'_, Message> {
-        let header = text("모델 매니저 (HuggingFace 다운로드)")
-            .size(FS_SUBTITLE)
-            .font(semibold_font());
         let local_model_count =
             list_downloaded_models(std::path::Path::new(&self.model_dir_input)).len();
         let local_state: Element<Message> = if local_model_count == 0 {
@@ -134,7 +131,7 @@ impl App {
 
         container(
             column![
-                header,
+                section_header("모델 매니저"),
                 local_state,
                 text("HuggingFace에서 모델 받아 디스크에 저장.").size(FS_LABEL),
                 Space::new().height(Length::Fixed(4.0)),

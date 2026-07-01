@@ -1,5 +1,6 @@
+use super::FS_BODY;
 use iced::widget::{button, container, scrollable, text_input};
-use iced::{Border, Color, Font, Shadow, Theme, Vector, font};
+use iced::{Border, Color, Font, Length, Shadow, Theme, Vector, font};
 
 const BORDER_WIDTH: f32 = 1.0;
 const PANEL_RADIUS: f32 = 12.0;
@@ -128,6 +129,7 @@ pub(crate) fn primary_btn(theme: &Theme, status: button::Status) -> button::Styl
         style.text_color = disabled_text_color();
         style.shadow = Shadow::default();
     }
+    style.snap = true;
     style
 }
 
@@ -143,7 +145,7 @@ pub(crate) fn secondary_btn(theme: &Theme, status: button::Status) -> button::St
                 width: BORDER_WIDTH,
                 radius: CONTROL_RADIUS.into(),
             },
-            ..Default::default()
+            snap: true,
         };
     }
     let (bg, border_color, shadow) =
@@ -178,22 +180,7 @@ pub(crate) fn secondary_btn(theme: &Theme, status: button::Status) -> button::St
             width: BORDER_WIDTH,
             radius: CONTROL_RADIUS.into(),
         },
-        ..Default::default()
-    }
-}
-
-pub(crate) fn context_item_style(theme: &Theme) -> container::Style {
-    let p = theme.extended_palette();
-    container::Style {
-        background: Some(bg_weak_alpha(theme, CONTEXT_BG_ALPHA).into()),
-        border: Border {
-            color: border_color(theme, BORDER_ALPHA),
-            width: BORDER_WIDTH,
-            radius: CONTEXT_ITEM_RADIUS.into(),
-        },
-        shadow: SHADOW_PANEL,
-        text_color: Some(p.background.base.text),
-        ..Default::default()
+        snap: true,
     }
 }
 
@@ -209,7 +196,7 @@ pub(crate) fn danger_btn(theme: &Theme, status: button::Status) -> button::Style
                 width: BORDER_WIDTH,
                 radius: CONTROL_RADIUS.into(),
             },
-            ..Default::default()
+            snap: true,
         };
     }
     let (bg, shadow) = if matches!(status, button::Status::Hovered | button::Status::Pressed) {
@@ -237,6 +224,21 @@ pub(crate) fn danger_btn(theme: &Theme, status: button::Status) -> button::Style
             width: BORDER_WIDTH,
             radius: CONTROL_RADIUS.into(),
         },
+        snap: true,
+    }
+}
+
+pub(crate) fn context_item_style(theme: &Theme) -> container::Style {
+    let p = theme.extended_palette();
+    container::Style {
+        background: Some(bg_weak_alpha(theme, CONTEXT_BG_ALPHA).into()),
+        border: Border {
+            color: border_color(theme, BORDER_ALPHA),
+            width: BORDER_WIDTH,
+            radius: CONTEXT_ITEM_RADIUS.into(),
+        },
+        shadow: SHADOW_PANEL,
+        text_color: Some(p.background.base.text),
         ..Default::default()
     }
 }
@@ -320,6 +322,37 @@ pub(crate) fn dark_scrollable(theme: &Theme, _status: scrollable::Status) -> scr
             icon: Color::TRANSPARENT,
         },
     }
+}
+
+pub(crate) fn divider<'a, Msg: 'a>() -> iced::widget::container::Container<'a, Msg> {
+    use iced::widget::container;
+    container(iced::widget::text(""))
+        .width(Length::Fill)
+        .height(Length::Fixed(1.0))
+        .style(|theme: &Theme| {
+            let p = theme.extended_palette();
+            container::Style {
+                background: Some(
+                    Color::from_rgba(
+                        p.background.strong.color.r,
+                        p.background.strong.color.g,
+                        p.background.strong.color.b,
+                        0.15,
+                    )
+                    .into(),
+                ),
+                ..Default::default()
+            }
+        })
+}
+
+pub(crate) fn section_header<'a, Msg: 'a>(label: &'a str) -> iced::widget::Column<'a, Msg> {
+    use iced::widget::{column, text};
+    column![
+        text(label).size(FS_BODY).font(semibold_font()),
+        divider::<Msg>(),
+    ]
+    .spacing(4)
 }
 
 pub(crate) const UI_FONT_FAMILY: &str = "Pretendard";

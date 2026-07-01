@@ -1,9 +1,36 @@
 use super::settings::TabHealth;
-use super::ui::{FS_BODY, app_vscrollbar, bold_font, dark_scrollable, secondary_btn};
+use super::ui::{FS_BODY, app_vscrollbar, bold_font, dark_scrollable, divider, secondary_btn};
 use crate::{App, Message, SettingsTab, list_downloaded_models};
 use iced::widget::scrollable::Direction;
 use iced::widget::{Space, button, column, container, row, scrollable, text};
-use iced::{Alignment, Element, Length, Theme};
+use iced::{Alignment, Color, Element, Length, Theme};
+
+fn active_section_box<'a>(
+    content: Element<'a, Message>,
+    health: TabHealth,
+) -> Element<'a, Message> {
+    container(content)
+        .padding([4, 4])
+        .width(Length::Fill)
+        .style(move |theme: &Theme| {
+            let p = theme.extended_palette();
+            let accent = match health {
+                TabHealth::Good => p.success.base.color,
+                TabHealth::Warn => p.primary.base.color,
+                TabHealth::Bad => p.danger.base.color,
+            };
+            container::Style {
+                background: Some(Color::from_rgba(accent.r, accent.g, accent.b, 0.06).into()),
+                border: iced::Border {
+                    color: accent,
+                    width: 1.0,
+                    radius: 12.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .into()
+}
 
 impl App {
     #[allow(clippy::too_many_lines)]
@@ -33,98 +60,12 @@ impl App {
         .align_y(Alignment::Center);
 
         let active_section: Element<Message> = match self.ui.settings_tab {
-            SettingsTab::Provider => container(self.view_provider_tab())
-                .padding([4, 4])
-                .width(Length::Fill)
-                .style(move |theme: &Theme| {
-                    let p = theme.extended_palette();
-                    let accent = match provider_health {
-                        TabHealth::Good => p.success.base.color,
-                        TabHealth::Warn => p.primary.base.color,
-                        TabHealth::Bad => p.danger.base.color,
-                    };
-                    container::Style {
-                        background: Some(
-                            iced::Color::from_rgba(accent.r, accent.g, accent.b, 0.06).into(),
-                        ),
-                        border: iced::Border {
-                            color: accent,
-                            width: 1.0,
-                            radius: 12.0.into(),
-                        },
-                        ..Default::default()
-                    }
-                })
-                .into(),
-            SettingsTab::Runtime => container(self.view_inference_runner())
-                .padding([4, 4])
-                .width(Length::Fill)
-                .style(move |theme: &Theme| {
-                    let p = theme.extended_palette();
-                    let accent = match runtime_health {
-                        TabHealth::Good => p.success.base.color,
-                        TabHealth::Warn => p.primary.base.color,
-                        TabHealth::Bad => p.danger.base.color,
-                    };
-                    container::Style {
-                        background: Some(
-                            iced::Color::from_rgba(accent.r, accent.g, accent.b, 0.06).into(),
-                        ),
-                        border: iced::Border {
-                            color: accent,
-                            width: 1.0,
-                            radius: 12.0.into(),
-                        },
-                        ..Default::default()
-                    }
-                })
-                .into(),
-            SettingsTab::Models => container(self.view_model_manager())
-                .padding([4, 4])
-                .width(Length::Fill)
-                .style(move |theme: &Theme| {
-                    let p = theme.extended_palette();
-                    let accent = match model_health {
-                        TabHealth::Good => p.success.base.color,
-                        TabHealth::Warn => p.primary.base.color,
-                        TabHealth::Bad => p.danger.base.color,
-                    };
-                    container::Style {
-                        background: Some(
-                            iced::Color::from_rgba(accent.r, accent.g, accent.b, 0.06).into(),
-                        ),
-                        border: iced::Border {
-                            color: accent,
-                            width: 1.0,
-                            radius: 12.0.into(),
-                        },
-                        ..Default::default()
-                    }
-                })
-                .into(),
-            SettingsTab::Mcp => container(self.view_mcp_settings())
-                .padding([4, 4])
-                .width(Length::Fill)
-                .style(move |theme: &Theme| {
-                    let p = theme.extended_palette();
-                    let accent = match mcp_health {
-                        TabHealth::Good => p.success.base.color,
-                        TabHealth::Warn => p.primary.base.color,
-                        TabHealth::Bad => p.danger.base.color,
-                    };
-                    container::Style {
-                        background: Some(
-                            iced::Color::from_rgba(accent.r, accent.g, accent.b, 0.06).into(),
-                        ),
-                        border: iced::Border {
-                            color: accent,
-                            width: 1.0,
-                            radius: 12.0.into(),
-                        },
-                        ..Default::default()
-                    }
-                })
-                .into(),
+            SettingsTab::Provider => active_section_box(self.view_provider_tab(), provider_health),
+            SettingsTab::Runtime => {
+                active_section_box(self.view_inference_runner(), runtime_health)
+            }
+            SettingsTab::Models => active_section_box(self.view_model_manager(), model_health),
+            SettingsTab::Mcp => active_section_box(self.view_mcp_settings(), mcp_health),
             SettingsTab::Theme => container(self.view_theme_tab())
                 .padding([4, 4])
                 .width(Length::Fill)
@@ -146,7 +87,8 @@ impl App {
                 Space::new().height(Length::Fixed(8.0)),
                 tabs,
                 summary,
-                Space::new().height(Length::Fixed(8.0)),
+                divider(),
+                Space::new().height(Length::Fixed(4.0)),
                 active_panel,
                 active_section,
             ]

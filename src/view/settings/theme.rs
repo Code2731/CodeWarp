@@ -1,5 +1,5 @@
 use crate::view::ui::{
-    FS_BODY, FS_LABEL, FS_MICRO, dark_scrollable, primary_btn, secondary_btn, semibold_font,
+    FS_BODY, FS_LABEL, FS_MICRO, dark_scrollable, primary_btn, secondary_btn, section_header,
 };
 use crate::{App, Message};
 use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
@@ -82,8 +82,7 @@ impl App {
 
         container(
             column![
-                Space::new().height(Length::Fixed(8.0)),
-                text("커스텀 테마").size(FS_BODY).font(semibold_font()),
+                section_header("커스텀 테마"),
                 scrollable(
                     column![col, Space::new().height(Length::Fixed(8.0)), action_row,].spacing(6)
                 )

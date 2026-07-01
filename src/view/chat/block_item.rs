@@ -5,7 +5,8 @@ use crate::view::ui::{
 };
 use crate::{App, Block, BlockBody, Message, ViewMode};
 use iced::widget::markdown;
-use iced::widget::{Space, button, column, container, row, text, text_editor};
+use iced::widget::tooltip::Position;
+use iced::widget::{Space, button, column, container, row, text, text_editor, tooltip};
 use iced::{Alignment, Color, Element, Font, Length, Shadow, Theme, Vector};
 
 impl App {
@@ -24,23 +25,46 @@ impl App {
             success,
         } = &b.body
         {
+            let accent_color = if *success {
+                Color::from_rgba8(0x4a, 0xd0, 0x7c, 1.0)
+            } else {
+                Color::from_rgba8(0xf0, 0x5b, 0x6f, 1.0)
+            };
+            let accent_bar = container(text(""))
+                .width(Length::Fixed(3.0))
+                .height(Length::Fill)
+                .style(move |_: &Theme| container::Style {
+                    background: Some(accent_color.into()),
+                    border: iced::Border {
+                        radius: 2.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
             let icon = if *success { "✓" } else { "✗" };
-            let chip = container(
-                text(format!("{icon} {name} → {summary}"))
+            let label = row![
+                text(format!(" {icon} {name}"))
                     .size(FS_LABEL)
                     .font(Font::with_name("JetBrains Mono")),
+                text(format!(" → {summary}"))
+                    .size(FS_LABEL)
+                    .font(Font::with_name("JetBrains Mono")),
+            ]
+            .spacing(0)
+            .align_y(Alignment::Center);
+            let chip = container(
+                row![accent_bar, label]
+                    .spacing(8)
+                    .align_y(Alignment::Center),
             )
             .padding([4, 10])
             .style({
-                let success = *success;
-                move |_theme: &Theme| container::Style {
+                let border_c =
+                    Color::from_rgba(accent_color.r, accent_color.g, accent_color.b, 0.35);
+                move |_: &Theme| container::Style {
                     background: Some(Color::from_rgba8(0x0f, 0x16, 0x26, 0.88).into()),
                     border: iced::Border {
-                        color: if success {
-                            Color::from_rgba8(0x4a, 0xd0, 0x7c, 0.50)
-                        } else {
-                            Color::from_rgba8(0xf0, 0x5b, 0x6f, 0.50)
-                        },
+                        color: border_c,
                         width: 1.0,
                         radius: 10.0.into(),
                     },
@@ -60,11 +84,15 @@ impl App {
         let is_assistant = matches!(&b.body, BlockBody::Assistant(_));
         let collapse_btn: Element<Message> = if is_assistant && has_content && !streaming {
             let label = if is_collapsed { "▸" } else { "▾" };
-            button(text(label).size(FS_MICRO))
-                .on_press(Message::ToggleBlockCollapse(b.id))
-                .padding([2, 6])
-                .style(secondary_btn)
-                .into()
+            tooltip(
+                button(text(label).size(FS_MICRO))
+                    .on_press(Message::ToggleBlockCollapse(b.id))
+                    .padding([2, 6])
+                    .style(secondary_btn),
+                text("접기/펼치기").size(FS_MICRO),
+                Position::Bottom,
+            )
+            .into()
         } else {
             Space::new()
                 .width(Length::Shrink)
@@ -72,11 +100,15 @@ impl App {
                 .into()
         };
         let copy_btn: Element<Message> = if has_content && !is_collapsed {
-            button(text("복사").size(FS_MICRO))
-                .on_press(Message::CopyBlock(b.id))
-                .padding([2, 8])
-                .style(secondary_btn)
-                .into()
+            tooltip(
+                button(text("복사").size(FS_MICRO))
+                    .on_press(Message::CopyBlock(b.id))
+                    .padding([2, 8])
+                    .style(secondary_btn),
+                text("블록 복사").size(FS_MICRO),
+                Position::Bottom,
+            )
+            .into()
         } else {
             Space::new()
                 .width(Length::Shrink)
@@ -88,11 +120,15 @@ impl App {
                 ViewMode::Rendered => "원문",
                 ViewMode::Raw => "예쁘게",
             };
-            button(text(label).size(FS_MICRO))
-                .on_press(Message::ToggleBlockView(b.id))
-                .padding([2, 8])
-                .style(secondary_btn)
-                .into()
+            tooltip(
+                button(text(label).size(FS_MICRO))
+                    .on_press(Message::ToggleBlockView(b.id))
+                    .padding([2, 8])
+                    .style(secondary_btn),
+                text("보기 모드 전환").size(FS_MICRO),
+                Position::Bottom,
+            )
+            .into()
         } else {
             Space::new()
                 .width(Length::Shrink)
@@ -105,17 +141,25 @@ impl App {
                 .height(Length::Shrink)
                 .into()
         } else if Some(i) == last_user_idx && matches!(&b.body, BlockBody::User(_)) {
-            button(text("✎").size(FS_MICRO))
-                .on_press(Message::EditLastUser)
-                .padding([2, 8])
-                .style(secondary_btn)
-                .into()
+            tooltip(
+                button(text("✎").size(FS_MICRO))
+                    .on_press(Message::EditLastUser)
+                    .padding([2, 8])
+                    .style(secondary_btn),
+                text("마지막 질문 수정").size(FS_MICRO),
+                Position::Bottom,
+            )
+            .into()
         } else if Some(i) == last_asst_idx && is_assistant && has_content && !is_collapsed {
-            button(text("↻").size(FS_MICRO))
-                .on_press(Message::RegenerateLast)
-                .padding([2, 8])
-                .style(secondary_btn)
-                .into()
+            tooltip(
+                button(text("↻").size(FS_MICRO))
+                    .on_press(Message::RegenerateLast)
+                    .padding([2, 8])
+                    .style(secondary_btn),
+                text("재생성").size(FS_MICRO),
+                Position::Bottom,
+            )
+            .into()
         } else {
             Space::new()
                 .width(Length::Shrink)
@@ -150,7 +194,14 @@ impl App {
                 (BlockBody::User(s), _) => text(s).size(FS_SUBTITLE).into(),
                 (BlockBody::Assistant(content), ViewMode::Raw) => {
                     if self.streaming_block_id == Some(b.id) && !self.streaming_raw.is_empty() {
-                        text(&self.streaming_raw).size(FS_SUBTITLE).into()
+                        let cursor = if super::skeleton::cursor_visible(self.skeleton_phase) {
+                            text("▊").size(FS_SUBTITLE)
+                        } else {
+                            text(" ").size(FS_SUBTITLE)
+                        };
+                        row![text(&self.streaming_raw).size(FS_SUBTITLE), cursor]
+                            .spacing(0)
+                            .into()
                     } else {
                         let id = b.id;
                         text_editor(content)
@@ -186,16 +237,30 @@ impl App {
         } else {
             a_asst
         };
+        let is_streaming_block = self.streaming_block_id == Some(b.id);
         let accent_bar = container(text(""))
             .width(Length::Fixed(3.0))
             .height(Length::Fill)
-            .style(move |_: &Theme| container::Style {
-                background: Some(accent_color.into()),
-                border: iced::Border {
-                    radius: 2.0.into(),
+            .style(move |_: &Theme| {
+                let c = accent_color;
+                let c = if is_streaming_block {
+                    Color::from_rgba(
+                        c.r,
+                        c.g,
+                        c.b,
+                        0.6 + 0.4 * (self.skeleton_phase as f32 / 3.0),
+                    )
+                } else {
+                    c
+                };
+                container::Style {
+                    background: Some(c.into()),
+                    border: iced::Border {
+                        radius: 2.0.into(),
+                        ..Default::default()
+                    },
                     ..Default::default()
-                },
-                ..Default::default()
+                }
             });
         let inner =
             container(column![header, body_view, self.view_block_apply_section(b),].spacing(6))

@@ -9,6 +9,10 @@ pub(crate) fn pulse_opacity(phase: u8) -> f32 {
     }
 }
 
+pub(crate) fn cursor_visible(phase: u8) -> bool {
+    phase == 0 || phase == 1
+}
+
 pub(crate) fn view_skeleton_block(phase: u8) -> Element<'static, Message> {
     let op = pulse_opacity(phase);
 

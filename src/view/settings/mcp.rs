@@ -1,6 +1,6 @@
 use crate::view::ui::{
-    FS_BODY, FS_LABEL, FS_SUBTITLE, danger_btn, field_input, panel_style, primary_btn,
-    semibold_font, shorten_tail,
+    FS_BODY, FS_LABEL, danger_btn, field_input, panel_style, primary_btn, section_header,
+    shorten_tail,
 };
 use crate::{App, Message};
 use iced::widget::{Space, button, column, container, row, text, text_input};
@@ -8,9 +8,6 @@ use iced::{Alignment, Element, Length};
 
 impl App {
     pub(crate) fn view_mcp_settings(&self) -> Element<'_, Message> {
-        let header = text("MCP 서버 (Model Context Protocol)")
-            .size(FS_SUBTITLE)
-            .font(semibold_font());
         let hint = text("stdio MCP 서버를 등록해 AI tool을 동적으로 확장합니다.").size(FS_LABEL);
 
         let mut server_list = column![].spacing(4);
@@ -70,10 +67,19 @@ impl App {
             Space::new().height(Length::Shrink).into()
         };
 
-        container(column![header, hint, empty_state, server_list, add_row].spacing(8))
-            .padding([14, 16])
-            .width(Length::Fill)
-            .style(panel_style)
-            .into()
+        container(
+            column![
+                section_header("MCP 서버"),
+                hint,
+                empty_state,
+                server_list,
+                add_row
+            ]
+            .spacing(8),
+        )
+        .padding([14, 16])
+        .width(Length::Fill)
+        .style(panel_style)
+        .into()
     }
 }

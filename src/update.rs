@@ -221,7 +221,7 @@ impl App {
             Duration::from_secs(60)
         };
         let timer_sub = iced::time::every(interval).map(|_| Message::AutoSave);
-        let skeleton_sub = if self.streaming_block_id.is_some() && self.streaming_raw.is_empty() {
+        let skeleton_sub = if self.streaming_block_id.is_some() {
             iced::time::every(Duration::from_millis(600)).map(|_| Message::SkeletonTick)
         } else {
             Subscription::none()

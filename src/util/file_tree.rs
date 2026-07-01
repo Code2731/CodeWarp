@@ -41,8 +41,8 @@ fn walk_dir(dir: &Path, depth: usize, items: &mut Vec<FileTreeItem>) {
             files.push((name, path));
         }
     }
-    dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-    files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    dirs.sort_by_cached_key(|a| a.0.to_ascii_lowercase());
+    files.sort_by_cached_key(|a| a.0.to_ascii_lowercase());
     for (name, path) in &dirs {
         items.push(FileTreeItem {
             depth,
@@ -108,20 +108,14 @@ fn is_text_file(name: &str) -> bool {
         "gitignore",
         "gitattributes",
     ];
-    let lower = name.to_lowercase();
-    // Check common text extensions
-    if let Some(dot) = lower.rfind('.') {
-        let ext = &lower[dot + 1..];
-        if exts.contains(&ext) {
+    if let Some(dot) = name.rfind('.') {
+        let ext = &name[dot + 1..];
+        if exts.iter().any(|e| ext.eq_ignore_ascii_case(e)) {
             return true;
         }
     }
-    // Also accept files without extension like "Dockerfile", "Makefile"
     let no_ext_names = ["dockerfile", "makefile", "cmakelists"];
-    if no_ext_names.contains(&lower.as_str()) {
-        return true;
-    }
-    false
+    no_ext_names.iter().any(|n| name.eq_ignore_ascii_case(n))
 }
 
 #[cfg(test)]

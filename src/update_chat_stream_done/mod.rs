@@ -13,12 +13,11 @@ impl App {
         finish_reason: Option<&String>,
         generation_id: Option<String>,
     ) -> Task<Message> {
-        let assistant_text = self.streaming_raw.clone();
-
         let has_tools = !self.pending_tool_calls.is_empty()
             && (finish_reason.map(String::as_str) == Some("tool_calls") || finish_reason.is_none());
 
         if has_tools && self.tool_round < MAX_TOOL_ROUNDS {
+            let assistant_text = self.streaming_raw.clone();
             return self.run_tool_round(assistant_text);
         }
 

@@ -23,6 +23,16 @@ impl App {
             Some(c) if c > 0.0 => format!("최근: ${c:.4}"),
             _ => String::new(),
         };
+        let time_label = match self.last_response_time_ms {
+            Some(ms) if ms > 0 => {
+                if ms < 1000 {
+                    format!("{ms}ms")
+                } else {
+                    format!("{:.1}s", ms as f64 / 1000.0)
+                }
+            }
+            _ => String::new(),
+        };
         let streaming_indicator: Element<Message> = if self.streaming_block_id.is_some() {
             container(
                 text("▶ 응답 생성 중...")
@@ -92,6 +102,13 @@ impl App {
         if !last_cost_label.is_empty() {
             bar = bar.push(
                 text(last_cost_label)
+                    .size(FS_LABEL)
+                    .font(Font::with_name("JetBrains Mono")),
+            );
+        }
+        if !time_label.is_empty() {
+            bar = bar.push(
+                text(time_label)
                     .size(FS_LABEL)
                     .font(Font::with_name("JetBrains Mono")),
             );

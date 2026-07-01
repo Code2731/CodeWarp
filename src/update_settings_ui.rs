@@ -134,6 +134,8 @@ impl App {
     pub(crate) fn close_all_overlays(&mut self) -> Task<Message> {
         self.ui.show_command_palette = false;
         self.ui.show_settings = false;
+        self.ui.show_shortcut_guide = false;
+        self.ui.renaming_session_id = None;
         self.show_write_confirm = false;
         self.close_mention();
         Task::none()
@@ -155,6 +157,49 @@ impl App {
             PaletteAction::CycleSort => Task::done(Message::CycleSortMode),
             PaletteAction::ToggleFavorite => Task::done(Message::ToggleFavorite),
         }
+    }
+    pub(crate) fn start_rename_session(&mut self, id: u64) -> Task<Message> {
+        let title = if self.current_session_id == id {
+            self.current_session_title.clone()
+        } else if let Some(s) = self.inactive_sessions.iter().find(|s| s.id == id) {
+            s.title.clone()
+        } else {
+            return Task::none();
+        };
+        self.ui.renaming_session_id = Some(id);
+        self.ui.rename_input = if title == "(빈 세션)" {
+            String::new()
+        } else {
+            title
+        };
+        Task::none()
+    }
+    pub(crate) fn cancel_rename_session(&mut self) -> Task<Message> {
+        self.ui.renaming_session_id = None;
+        Task::none()
+    }
+    pub(crate) fn rename_session(&mut self, id: u64, new_title: String) -> Task<Message> {
+        let trimmed = new_title.trim().to_string();
+        if trimmed.is_empty() {
+            self.ui.renaming_session_id = None;
+            return Task::none();
+        }
+        if self.current_session_id == id {
+            self.current_session_title = trimmed;
+        } else if let Some(s) = self.inactive_sessions.iter_mut().find(|s| s.id == id) {
+            s.title = trimmed;
+        }
+        self.ui.renaming_session_id = None;
+        self.save_session();
+        Task::none()
+    }
+    pub(crate) fn update_session_search(&mut self, value: String) -> Task<Message> {
+        self.ui.session_search = value;
+        Task::none()
+    }
+    pub(crate) fn toggle_shortcut_guide(&mut self) -> Task<Message> {
+        self.ui.show_shortcut_guide = !self.ui.show_shortcut_guide;
+        Task::none()
     }
     pub(crate) fn apply_picked_cwd(
         &mut self,

@@ -96,6 +96,8 @@ impl App {
             next_session_id: 1,
             usage: session::load_usage(),
             last_response_cost: None,
+            last_response_time_ms: None,
+            response_started_at: None,
             attached_files: Vec::new(),
             show_mention: false,
             pty_visible: false,

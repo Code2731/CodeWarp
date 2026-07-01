@@ -18,6 +18,7 @@ pub(crate) fn handle_key(key: &Key, modifiers: Modifiers) -> Option<Message> {
             Key::Character("b") if modifiers.shift() => {
                 Some(Message::SetAgentMode(AgentMode::Build))
             }
+            Key::Character("/") => Some(Message::ToggleShortcutGuide),
             _ => None,
         };
     }

@@ -24,6 +24,9 @@ impl App {
         if self.tool_round >= MAX_TOOL_ROUNDS && !self.pending_tool_calls.is_empty() {
             self.status = format!("최대 도구 라운드 {MAX_TOOL_ROUNDS} 초과");
         } else {
+            if let Some(started) = self.response_started_at.take() {
+                self.last_response_time_ms = Some(started.elapsed().as_millis() as u64);
+            }
             self.status = "준비됨".into();
         }
 
@@ -128,6 +131,7 @@ impl App {
         self.streaming_raw.clear();
         self.abort_handle = None;
         self.pending_tool_calls.clear();
+        self.response_started_at = None;
         let humanized = openrouter::humanize_error(error);
         if error.contains("OpenRouter 401") || error.contains("OpenRouter 402") {
             self.status = format!("[WARN] {humanized} | Open Settings and check API key / credits");

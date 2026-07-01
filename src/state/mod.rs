@@ -90,6 +90,8 @@ pub(crate) struct App {
     pub(crate) next_session_id: u64,
     pub(crate) usage: session::UsageStore,
     pub(crate) last_response_cost: Option<f64>,
+    pub(crate) last_response_time_ms: Option<u64>,
+    pub(crate) response_started_at: Option<std::time::Instant>,
     pub(crate) attached_files: Vec<(PathBuf, String)>,
     pub(crate) show_mention: bool,
     pub(crate) mention_query: String,

@@ -20,6 +20,10 @@ pub(crate) struct UiState {
     pub(crate) expanded_confirm_idx: Option<usize>,
     pub(crate) collapsed_blocks: std::collections::HashSet<u64>,
     pub(crate) theme_hex_inputs: Vec<String>,
+    pub(crate) renaming_session_id: Option<u64>,
+    pub(crate) rename_input: String,
+    pub(crate) session_search: String,
+    pub(crate) show_shortcut_guide: bool,
 }
 
 impl UiState {
@@ -34,6 +38,10 @@ impl UiState {
             expanded_confirm_idx: None,
             collapsed_blocks: std::collections::HashSet::new(),
             theme_hex_inputs: Self::theme_hex_vec(&default_theme),
+            renaming_session_id: None,
+            rename_input: String::new(),
+            session_search: String::new(),
+            show_shortcut_guide: false,
         }
     }
 

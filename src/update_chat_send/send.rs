@@ -46,6 +46,7 @@ impl App {
         self.streaming_block_idx = Some(self.blocks.len() - 1);
         self.status = "응답 다시 생성 중…".into();
         self.follow_bottom = true;
+        self.response_started_at = Some(std::time::Instant::now());
 
         let (chat_task, handle) = Task::run(
             openrouter::chat_stream(
@@ -145,6 +146,7 @@ impl App {
         self.editor_content = text_editor::Content::new();
         self.status = "응답 생성 중…".into();
         self.follow_bottom = true;
+        self.response_started_at = Some(std::time::Instant::now());
 
         let (chat_task, handle) = Task::run(
             openrouter::chat_stream(

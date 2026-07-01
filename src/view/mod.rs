@@ -13,11 +13,23 @@ mod view_palette;
 mod view_topbar;
 mod view_viewer;
 
-use iced::widget::{button, column, container, row, stack, text};
+use iced::widget::{Space, button, column, container, row, stack, text};
 use iced::{Alignment, Element, Font, Length, Padding, Shadow, Theme, Vector};
 pub(crate) use ui::*;
 use ui::{secondary_btn, toast_style};
 use view_viewer::CodewarpViewer;
+
+const SHORTCUT_ENTRIES: &[(&str, &str)] = &[
+    ("Ctrl+K", "명령 팔레트 열기"),
+    ("Ctrl+N", "새 채팅"),
+    ("Ctrl+,", "설정 열기"),
+    ("Ctrl+`", "터미널 토글"),
+    ("Ctrl+Shift+P", "계획 모드"),
+    ("Ctrl+Shift+B", "빌드 모드"),
+    ("Ctrl+/", "단축키 가이드"),
+    ("Esc", "모든 오버레이 닫기"),
+    ("↑/↓", "멘션 선택 이동"),
+];
 
 /// 두 텍스트의 line-by-line diff를 색상 표시된 Element로 변환.
 /// 추가 라인은 녹색, 삭제 라인은 빨강, 동일 라인은 흐리게.
@@ -100,6 +112,35 @@ fn modal_overlay(content: Element<'_, Message>) -> Element<'_, Message> {
         .into()
 }
 
+pub(super) fn view_shortcut_guide() -> Element<'static, Message> {
+    let mut col = column![
+        text("키보드 단축키").size(20).font(semibold_font()),
+        Space::new().height(Length::Fixed(12.0)),
+    ]
+    .spacing(0);
+    for (key, desc) in SHORTCUT_ENTRIES {
+        col = col.push(
+            row![
+                text(*key)
+                    .size(FS_BODY)
+                    .font(Font::with_name("JetBrains Mono"))
+                    .width(Length::Fixed(180.0)),
+                text(*desc).size(FS_BODY),
+            ]
+            .spacing(8)
+            .padding([3, 0]),
+        );
+    }
+    col = col.push(Space::new().height(Length::Fixed(12.0)));
+    col = col.push(
+        button(text("닫기").size(FS_SUBTITLE).font(semibold_font()))
+            .on_press(Message::ToggleShortcutGuide)
+            .padding([6, 16])
+            .style(secondary_btn),
+    );
+    container(col).padding(20).width(Length::Shrink).into()
+}
+
 impl App {
     fn right_panel_visible(&self) -> bool {
         self.window_width >= 1100.0
@@ -132,6 +173,8 @@ impl App {
             stack![main_view, modal_overlay(self.view_command_palette())].into()
         } else if self.ui.show_settings {
             stack![main_view, modal_overlay(self.view_settings())].into()
+        } else if self.ui.show_shortcut_guide {
+            stack![main_view, modal_overlay(view_shortcut_guide())].into()
         } else {
             // write_confirm은 입력창 위 인라인 패널(view_stream 안에서 처리)
             main_view

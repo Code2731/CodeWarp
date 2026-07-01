@@ -228,6 +228,11 @@ impl App {
                 self.toast = None;
                 Task::none()
             }
+            Message::StartRenameSession(id) => self.start_rename_session(id),
+            Message::RenameSession(id, title) => self.rename_session(id, title),
+            Message::CancelRenameSession => self.cancel_rename_session(),
+            Message::SessionSearchChanged(v) => self.update_session_search(v),
+            Message::ToggleShortcutGuide => self.toggle_shortcut_guide(),
         }
     }
 

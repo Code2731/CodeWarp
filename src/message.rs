@@ -197,4 +197,9 @@ pub(crate) enum Message {
     ToggleTldrView(u64),
     CodeBlockHovered(u64, bool),
     DismissToast,
+    StartRenameSession(u64),
+    RenameSession(u64, String),
+    CancelRenameSession,
+    SessionSearchChanged(String),
+    ToggleShortcutGuide,
 }

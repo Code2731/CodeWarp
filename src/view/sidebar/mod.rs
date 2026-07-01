@@ -1,11 +1,11 @@
 use super::ui::{
     FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, PAD_LG, PAD_MD, PAD_XS, SCROLL_GUTTER_PAD_X,
-    SPACE_SM, SPACE_XS, app_vscrollbar, danger_btn, dark_scrollable, panel_style, primary_btn,
-    secondary_btn, semibold_font, shorten_tail,
+    SPACE_SM, SPACE_XS, app_vscrollbar, danger_btn, dark_scrollable, field_input, panel_style,
+    primary_btn, secondary_btn, semibold_font, shorten_tail,
 };
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
-use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 
 mod context;
@@ -53,21 +53,30 @@ impl App {
             }),
         ]
         .spacing(2);
-        if self.inactive_sessions.is_empty() {
-            let empty: Element<Message> = text("저장된 세션이 없습니다")
-                .size(FS_MICRO)
-                .style(|theme: &Theme| iced::widget::text::Style {
-                    color: Some(iced::Color::from_rgba(
-                        theme.extended_palette().background.strong.text.r,
-                        theme.extended_palette().background.strong.text.g,
-                        theme.extended_palette().background.strong.text.b,
-                        0.5,
-                    )),
-                })
-                .into();
+        if self.ui.renaming_session_id.is_none() {
+            let empty: Element<Message> = if self.inactive_sessions.is_empty() {
+                text("저장된 세션이 없습니다")
+                    .size(FS_MICRO)
+                    .style(|theme: &Theme| iced::widget::text::Style {
+                        color: Some(iced::Color::from_rgba(
+                            theme.extended_palette().background.strong.text.r,
+                            theme.extended_palette().background.strong.text.g,
+                            theme.extended_palette().background.strong.text.b,
+                            0.5,
+                        )),
+                    })
+                    .into()
+            } else {
+                Space::new().height(Length::Shrink).into()
+            };
             sessions_col = sessions_col.push(empty);
         }
+        let search_q = self.ui.session_search.to_lowercase();
         for s in &self.inactive_sessions {
+            if !search_q.is_empty() && !s.title.to_lowercase().contains(&search_q) {
+                continue;
+            }
+            let is_renaming = self.ui.renaming_session_id == Some(s.id);
             let title = if s.title.trim().is_empty() {
                 "(빈 세션)".to_string()
             } else {
@@ -88,32 +97,62 @@ impl App {
                 ]
                 .spacing(2)
                 .into()
+            } else if is_renaming {
+                Space::new().width(Length::Shrink).into()
             } else {
-                button(text("✕").size(FS_MICRO))
-                    .on_press(Message::AskDeleteSession(s.id))
-                    .padding([2, 6])
-                    .style(danger_btn)
-                    .into()
+                row![
+                    button(text("✎").size(FS_MICRO))
+                        .on_press(Message::StartRenameSession(s.id))
+                        .padding([2, 4])
+                        .style(secondary_btn),
+                    button(text("✕").size(FS_MICRO))
+                        .on_press(Message::AskDeleteSession(s.id))
+                        .padding([2, 6])
+                        .style(danger_btn),
+                ]
+                .spacing(2)
+                .into()
             };
-            let row_widget = row![
-                button(
-                    row![
-                        text(format!("📂 {title}")).size(FS_BODY),
-                        text(format!(" {msg_count}"))
-                            .size(FS_MICRO)
-                            .style(|theme: &Theme| iced::widget::text::Style {
-                                color: Some(theme.extended_palette().background.strong.text),
-                            }),
-                    ]
-                    .align_y(Alignment::Center),
-                )
-                .on_press(Message::SwitchSession(s.id))
-                .padding([4, 8])
-                .width(Length::Fill)
-                .style(secondary_btn),
-                trailing,
-            ]
-            .spacing(2);
+            let row_widget = if is_renaming {
+                row![
+                    text_input("세션 이름…", &self.ui.rename_input)
+                        .on_input(|v| Message::RenameSession(s.id, v))
+                        .on_submit(Message::RenameSession(s.id, self.ui.rename_input.clone()))
+                        .padding([4, 6])
+                        .size(FS_BODY)
+                        .style(field_input),
+                    button(text("✓").size(FS_MICRO))
+                        .on_press(Message::RenameSession(s.id, self.ui.rename_input.clone()))
+                        .padding([2, 6])
+                        .style(primary_btn),
+                    button(text("✗").size(FS_MICRO))
+                        .on_press(Message::CancelRenameSession)
+                        .padding([2, 6])
+                        .style(secondary_btn),
+                ]
+                .spacing(2)
+                .align_y(Alignment::Center)
+            } else {
+                row![
+                    button(
+                        row![
+                            text(format!("📂 {title}")).size(FS_BODY),
+                            text(format!(" {msg_count}"))
+                                .size(FS_MICRO)
+                                .style(|theme: &Theme| iced::widget::text::Style {
+                                    color: Some(theme.extended_palette().background.strong.text),
+                                }),
+                        ]
+                        .align_y(Alignment::Center),
+                    )
+                    .on_press(Message::SwitchSession(s.id))
+                    .padding([4, 8])
+                    .width(Length::Fill)
+                    .style(secondary_btn),
+                    trailing,
+                ]
+                .spacing(2)
+            };
             sessions_col = sessions_col.push(row_widget);
         }
 
@@ -125,6 +164,11 @@ impl App {
                 .style(primary_btn),
             Space::new().height(Length::Fixed(8.0)),
             text("채팅").size(FS_LABEL).font(semibold_font()),
+            text_input("세션 검색…", &self.ui.session_search)
+                .on_input(Message::SessionSearchChanged)
+                .padding([4, 6])
+                .size(FS_MICRO)
+                .style(field_input),
             scrollable(sessions_col)
                 .direction(Direction::Vertical(app_vscrollbar(),))
                 .style(dark_scrollable)

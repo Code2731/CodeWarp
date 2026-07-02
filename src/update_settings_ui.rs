@@ -104,7 +104,7 @@ impl App {
                 self.model_filter.favorites.insert(id.clone());
             }
             let favs: Vec<String> = self.model_filter.favorites.iter().cloned().collect();
-            let _ = session::write_favorites(&favs);
+            self.try_persist(session::write_favorites(&favs), "즐겨찾기 저장");
             self.refresh_model_combo();
         }
         Task::none()
@@ -207,7 +207,10 @@ impl App {
     ) -> Task<Message> {
         if let Some(path) = maybe_path {
             self.cwd.clone_from(&path);
-            let _ = keystore::write_cwd(&path.display().to_string());
+            self.try_persist(
+                keystore::write_cwd(&path.display().to_string()),
+                "작업 폴더 저장",
+            );
             self.status = format!("작업 폴더: {}", path.display());
             self.ensure_system_message();
             return Task::done(Message::RefreshFileTree);

@@ -18,7 +18,10 @@ impl App {
                 self.tabby_url_input = format!("http://localhost:{TABBY_API_DEFAULT_PORT}");
             }
             self.inference_binary_path = launcher.display().to_string();
-            let _ = keystore::write_inference_binary(&self.inference_binary_path);
+            self.try_persist(
+                keystore::write_inference_binary(&self.inference_binary_path),
+                "Inference 바이너리 저장",
+            );
         }
     }
 

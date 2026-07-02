@@ -5,12 +5,15 @@ use iced::Task;
 impl App {
     pub(crate) fn set_inference_binary(&mut self, value: &str) -> Task<Message> {
         self.inference_binary_path = value.to_string();
-        let _ = keystore::write_inference_binary(value);
+        self.try_persist(
+            keystore::write_inference_binary(value),
+            "Inference 바이너리 저장",
+        );
         Task::none()
     }
     pub(crate) fn set_model_dir(&mut self, value: &str) -> Task<Message> {
         self.model_dir_input = value.to_string();
-        let _ = keystore::write_model_dir(value);
+        self.try_persist(keystore::write_model_dir(value), "모델 디렉토리 저장");
         self.sync_selected_local_model_for_model_dir();
         Task::none()
     }

@@ -1,6 +1,40 @@
 use super::{App, MAX_ATTACH_BYTES, Message, fmt_bytes, fuzzy_match_paths};
 use iced::Task;
 
+async fn read_and_validate_attachment(
+    read_path: std::path::PathBuf,
+    display_path: std::path::PathBuf,
+    existing_total: u64,
+) -> Result<(std::path::PathBuf, String), String> {
+    let content = tokio::fs::read_to_string(&read_path)
+        .await
+        .map_err(|e| format!("File read failed: {e}"))?;
+    #[allow(clippy::cast_possible_truncation)]
+    if content.len() > MAX_ATTACH_BYTES as usize {
+        return Err(format!(
+            "Attachment too large (max {}): {}",
+            fmt_bytes(MAX_ATTACH_BYTES),
+            display_path.display()
+        ));
+    }
+    let next_total = existing_total + content.len() as u64;
+    if next_total > MAX_ATTACH_BYTES {
+        return Err(format!(
+            "Attachment limit exceeded: {} / {}",
+            fmt_bytes(next_total),
+            fmt_bytes(MAX_ATTACH_BYTES)
+        ));
+    }
+    Ok((display_path, content))
+}
+
+fn attach_result_mapper(r: Result<(std::path::PathBuf, String), String>) -> Message {
+    match r {
+        Ok((p, s)) => Message::FileReadDone(p, s),
+        Err(msg) => Message::FileAttachError(msg),
+    }
+}
+
 impl App {
     pub(crate) fn confirm_mention(&mut self) -> Task<Message> {
         if !self.show_mention {
@@ -18,35 +52,12 @@ impl App {
             self.status = format!("Already attached: {}", chosen.display());
             return Task::none();
         }
-        let full_path = self.cwd.join(&chosen);
+        let read_path = self.cwd.join(&chosen);
+        let display_path = chosen;
         let existing_total = self.total_attached_bytes();
         Task::perform(
-            async move {
-                let content = tokio::fs::read_to_string(&full_path)
-                    .await
-                    .map_err(|e| format!("File read failed: {e}"))?;
-                #[allow(clippy::cast_possible_truncation)]
-                if content.len() > MAX_ATTACH_BYTES as usize {
-                    return Err(format!(
-                        "Attachment too large (max {}): {}",
-                        fmt_bytes(MAX_ATTACH_BYTES),
-                        chosen.display()
-                    ));
-                }
-                let next_total = existing_total + content.len() as u64;
-                if next_total > MAX_ATTACH_BYTES {
-                    return Err(format!(
-                        "Attachment limit exceeded: {} / {}",
-                        fmt_bytes(next_total),
-                        fmt_bytes(MAX_ATTACH_BYTES)
-                    ));
-                }
-                Ok((chosen, content))
-            },
-            |r| match r {
-                Ok((p, s)) => Message::FileReadDone(p, s),
-                Err(msg) => Message::FileAttachError(msg),
-            },
+            read_and_validate_attachment(read_path, display_path, existing_total),
+            attach_result_mapper,
         )
     }
     pub(crate) fn pick_attachment(&self) -> Task<Message> {
@@ -76,32 +87,8 @@ impl App {
         }
         let existing_total = self.total_attached_bytes();
         Task::perform(
-            async move {
-                let content = tokio::fs::read_to_string(&path)
-                    .await
-                    .map_err(|e| format!("File read failed: {e}"))?;
-                #[allow(clippy::cast_possible_truncation)]
-                if content.len() > MAX_ATTACH_BYTES as usize {
-                    return Err(format!(
-                        "Attachment too large (max {}): {}",
-                        fmt_bytes(MAX_ATTACH_BYTES),
-                        path.display()
-                    ));
-                }
-                let next_total = existing_total + content.len() as u64;
-                if next_total > MAX_ATTACH_BYTES {
-                    return Err(format!(
-                        "Attachment limit exceeded: {} / {}",
-                        fmt_bytes(next_total),
-                        fmt_bytes(MAX_ATTACH_BYTES)
-                    ));
-                }
-                Ok((path, content))
-            },
-            |r| match r {
-                Ok((p, s)) => Message::FileReadDone(p, s),
-                Err(msg) => Message::FileAttachError(msg),
-            },
+            read_and_validate_attachment(path.clone(), path, existing_total),
+            attach_result_mapper,
         )
     }
     pub(crate) fn on_file_dropped(&mut self, path: std::path::PathBuf) -> Task<Message> {
@@ -111,32 +98,8 @@ impl App {
         }
         let existing_total = self.total_attached_bytes();
         Task::perform(
-            async move {
-                let content = tokio::fs::read_to_string(&path)
-                    .await
-                    .map_err(|e| format!("File read failed: {e}"))?;
-                #[allow(clippy::cast_possible_truncation)]
-                if content.len() > MAX_ATTACH_BYTES as usize {
-                    return Err(format!(
-                        "Attachment too large (max {}): {}",
-                        fmt_bytes(MAX_ATTACH_BYTES),
-                        path.display()
-                    ));
-                }
-                let next_total = existing_total + content.len() as u64;
-                if next_total > MAX_ATTACH_BYTES {
-                    return Err(format!(
-                        "Attachment limit exceeded: {} / {}",
-                        fmt_bytes(next_total),
-                        fmt_bytes(MAX_ATTACH_BYTES)
-                    ));
-                }
-                Ok((path, content))
-            },
-            |r| match r {
-                Ok((p, s)) => Message::FileReadDone(p, s),
-                Err(msg) => Message::FileAttachError(msg),
-            },
+            read_and_validate_attachment(path.clone(), path, existing_total),
+            attach_result_mapper,
         )
     }
 }

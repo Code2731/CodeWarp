@@ -124,3 +124,11 @@ impl Drop for App {
         }
     }
 }
+
+impl App {
+    pub(crate) fn try_persist(&mut self, result: Result<(), String>, context: &str) {
+        if let Err(e) = result {
+            self.status = format!("{context}: {e}");
+        }
+    }
+}

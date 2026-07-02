@@ -25,7 +25,10 @@ impl App {
     }
     pub(crate) fn set_inference_command(&mut self, value: &str) -> Task<Message> {
         self.inference_command_input = value.to_string();
-        let _ = keystore::write_inference_command(value);
+        self.try_persist(
+            keystore::write_inference_command(value),
+            "Inference 명령 저장",
+        );
         Task::none()
     }
     pub(crate) fn set_inference_model(&mut self, value: String) -> Task<Message> {
@@ -103,7 +106,7 @@ impl App {
                 self.model_ids.clear();
                 self.selected_model = None;
                 self.selected_model_provider = None;
-                let _ = keystore::clear_selected_model();
+                self.try_persist(keystore::clear_selected_model(), "모델 선택 초기화");
                 self.status = "키 삭제됨".into();
             }
             Err(e) => self.status = format!("삭제 실패: {e}"),
@@ -112,7 +115,10 @@ impl App {
     }
     pub(crate) fn set_openai_compat_label(&mut self, value: String) -> Task<Message> {
         self.openai_compat_label = value;
-        let _ = keystore::write_openai_compat_label(&self.openai_compat_label);
+        self.try_persist(
+            keystore::write_openai_compat_label(&self.openai_compat_label),
+            "호환 레이블 저장",
+        );
         let new_label = self.openai_compat_label.clone();
         for opt in &mut self.model_options {
             if opt.provider == LlmProvider::OpenAICompat {
@@ -150,8 +156,8 @@ impl App {
         Task::none()
     }
     pub(crate) fn clear_tabby_settings(&mut self) -> Task<Message> {
-        let _ = keystore::clear_tabby_base_url();
-        let _ = keystore::clear_tabby_token();
+        self.try_persist(keystore::clear_tabby_base_url(), "Tabby URL 초기화");
+        self.try_persist(keystore::clear_tabby_token(), "Tabby 토큰 초기화");
         self.tabby_url_input.clear();
         self.tabby_token_input.clear();
         self.tabby_connect_retry_left = 0;
@@ -172,7 +178,7 @@ impl App {
                 self.selected_model_provider = None;
             }
             if let Some(id) = &self.selected_model {
-                let _ = keystore::write_selected_model(id);
+                self.try_persist(keystore::write_selected_model(id), "모델 선택 저장");
             }
         }
         Task::none()

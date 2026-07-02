@@ -14,7 +14,7 @@ impl App {
     ) -> Task<Message> {
         if let Some(path) = maybe_path {
             let s = path.display().to_string();
-            let _ = keystore::write_model_dir(&s);
+            self.try_persist(keystore::write_model_dir(&s), "모델 디렉토리 저장");
             self.model_dir_input = s;
             self.sync_selected_local_model_for_model_dir();
             self.status = "모델 다운로드 경로 저장됨".into();
@@ -39,16 +39,28 @@ impl App {
         self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
         if let Some(launcher) = find_tabbyapi_launcher(&default_tabbyapi_runtime_dir()) {
             self.inference_binary_path = launcher.display().to_string();
-            let _ = keystore::write_inference_binary(&self.inference_binary_path);
+            self.try_persist(
+                keystore::write_inference_binary(&self.inference_binary_path),
+                "Inference 바이너리 저장",
+            );
         } else {
             self.inference_binary_path.clear();
-            let _ = keystore::clear_inference_binary();
+            self.try_persist(
+                keystore::clear_inference_binary(),
+                "Inference 바이너리 초기화",
+            );
         }
         self.tabby_url_input = format!("http://localhost:{}", self.inference_port_input);
-        let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+        self.try_persist(
+            keystore::write_tabby_base_url(&self.tabby_url_input),
+            "Tabby URL 저장",
+        );
         if self.openai_compat_label.trim().is_empty() {
             self.openai_compat_label = "TabbyAPI".into();
-            let _ = keystore::write_openai_compat_label("TabbyAPI");
+            self.try_persist(
+                keystore::write_openai_compat_label("TabbyAPI"),
+                "호환 레이블 저장",
+            );
         }
         self.ui.settings_tab = SettingsTab::Runtime;
         self.status =
@@ -65,15 +77,27 @@ impl App {
         match engine {
             InferenceEngine::TabbyApi => {
                 self.tabby_url_input = format!("http://localhost:{}", engine.default_port());
-                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                self.try_persist(
+                    keystore::write_tabby_base_url(&self.tabby_url_input),
+                    "Tabby URL 저장",
+                );
                 self.openai_compat_label = "TabbyAPI".into();
-                let _ = keystore::write_openai_compat_label("TabbyAPI");
+                self.try_persist(
+                    keystore::write_openai_compat_label("TabbyAPI"),
+                    "호환 레이블 저장",
+                );
             }
             InferenceEngine::TabbyMl => {
                 self.tabby_url_input = format!("http://localhost:{}", engine.default_port());
-                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                self.try_persist(
+                    keystore::write_tabby_base_url(&self.tabby_url_input),
+                    "Tabby URL 저장",
+                );
                 self.openai_compat_label = "TabbyML".into();
-                let _ = keystore::write_openai_compat_label("TabbyML");
+                self.try_persist(
+                    keystore::write_openai_compat_label("TabbyML"),
+                    "호환 레이블 저장",
+                );
             }
             _ => {}
         }
@@ -99,7 +123,10 @@ impl App {
                     && (current_url_port == prev_port || current_url_port.is_none()));
             if should_sync {
                 self.tabby_url_input = format!("http://localhost:{new_port}");
-                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
+                self.try_persist(
+                    keystore::write_tabby_base_url(&self.tabby_url_input),
+                    "Tabby URL 저장",
+                );
             }
         }
         Task::none()
@@ -117,7 +144,10 @@ impl App {
                 self.tabby_status = Some(Err(msg));
                 return Task::none();
             }
-            let _ = keystore::write_inference_binary(&s);
+            self.try_persist(
+                keystore::write_inference_binary(&s),
+                "Inference 바이너리 저장",
+            );
             self.inference_binary_path = s;
             self.status = if matches!(self.inference_engine, InferenceEngine::TabbyApi) {
                 "TabbyAPI script 경로 저장됨".into()
@@ -161,9 +191,18 @@ impl App {
                 self.inference_port_input = TABBY_API_DEFAULT_PORT.to_string();
                 self.tabby_url_input = format!("http://localhost:{TABBY_API_DEFAULT_PORT}");
                 self.openai_compat_label = "TabbyAPI".into();
-                let _ = keystore::write_inference_binary(&s);
-                let _ = keystore::write_tabby_base_url(&self.tabby_url_input);
-                let _ = keystore::write_openai_compat_label("TabbyAPI");
+                self.try_persist(
+                    keystore::write_inference_binary(&s),
+                    "Inference 바이너리 저장",
+                );
+                self.try_persist(
+                    keystore::write_tabby_base_url(&self.tabby_url_input),
+                    "Tabby URL 저장",
+                );
+                self.try_persist(
+                    keystore::write_openai_compat_label("TabbyAPI"),
+                    "호환 레이블 저장",
+                );
                 self.status = format!(
                     "TabbyAPI 런타임 설치/감지 완료: {} — 모델 선택 후 시작하세요.",
                     launcher.display()

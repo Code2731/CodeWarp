@@ -44,7 +44,7 @@ impl App {
         Task::none()
     }
     pub(crate) fn select_model(&mut self, opt: ModelOption) -> Task<Message> {
-        let _ = keystore::write_selected_model(&opt.id);
+        self.try_persist(keystore::write_selected_model(&opt.id), "모델 선택 저장");
         self.selected_model_provider = Some(opt.provider);
         self.selected_model = Some(opt.id);
         Task::none()
@@ -109,7 +109,7 @@ impl App {
                         .as_ref()
                         .map(|_| LlmProvider::OpenRouter);
                     if let Some(id) = &self.selected_model {
-                        let _ = keystore::write_selected_model(id);
+                        self.try_persist(keystore::write_selected_model(id), "모델 선택 저장");
                     }
                 }
                 self.models = models;

@@ -27,7 +27,7 @@ impl App {
                 entry.completion_tokens += data.native_tokens_completion.unwrap_or(0);
                 entry.call_count += 1;
             }
-            let _ = session::save_usage(&self.usage);
+            self.try_persist(session::save_usage(&self.usage), "사용량 저장");
             return Task::done(Message::FetchAccount);
         }
         Task::none()

@@ -39,7 +39,7 @@ impl App {
         if idx < self.mcp_servers.len() {
             let removed = self.mcp_servers.remove(idx);
             self.mcp_tools.retain(|t| t.server_name != removed.name);
-            let _ = mcp::save_servers(&self.mcp_servers);
+            self.try_persist(mcp::save_servers(&self.mcp_servers), "MCP 서버 저장");
             self.status = format!("MCP 서버 제거됨: {}", removed.name);
         }
         Task::none()

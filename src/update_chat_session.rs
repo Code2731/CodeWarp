@@ -76,38 +76,38 @@ impl App {
             },
         )
     }
+    fn current_blocks_persisted(&self) -> Vec<session::PersistedBlock> {
+        let sid = self.streaming_block_id;
+        let mut v = Vec::with_capacity(self.blocks.len());
+        for b in &self.blocks {
+            let content = if sid == Some(b.id) {
+                self.streaming_raw.clone()
+            } else {
+                b.body.to_text()
+            };
+            match &b.body {
+                BlockBody::User(_) | BlockBody::Assistant(_) => {
+                    v.push(session::PersistedBlock {
+                        id: b.id,
+                        role: if matches!(&b.body, BlockBody::User(_)) {
+                            "user".into()
+                        } else {
+                            "assistant".into()
+                        },
+                        content,
+                        model: b.model.clone().unwrap_or_default(),
+                    });
+                }
+                BlockBody::ToolResult { .. } => {}
+            }
+        }
+        v
+    }
     pub(crate) fn snapshot_current_to_inactive(&mut self) {
         if self.conversation.is_empty() && self.blocks.is_empty() {
             return; // 빈 세션은 보관 X
         }
-        let sid = self.streaming_block_id;
-        let raw = &self.streaming_raw;
-        let blocks_persisted: Vec<session::PersistedBlock> = {
-            let mut v = Vec::with_capacity(self.blocks.len());
-            for b in &self.blocks {
-                let content = if sid == Some(b.id) {
-                    raw.clone()
-                } else {
-                    b.body.to_text()
-                };
-                match &b.body {
-                    BlockBody::User(_) | BlockBody::Assistant(_) => {
-                        v.push(session::PersistedBlock {
-                            id: b.id,
-                            role: if matches!(&b.body, BlockBody::User(_)) {
-                                "user".into()
-                            } else {
-                                "assistant".into()
-                            },
-                            content,
-                            model: b.model.clone().unwrap_or_default(),
-                        });
-                    }
-                    BlockBody::ToolResult { .. } => {}
-                }
-            }
-            v
-        };
+        let blocks_persisted = self.current_blocks_persisted();
         let snap = InactiveSession {
             id: self.current_session_id,
             title: self.current_session_title.clone(),
@@ -122,35 +122,8 @@ impl App {
             self.inactive_sessions.push(snap);
         }
     }
-    pub(crate) fn save_session(&self) {
-        let sid = self.streaming_block_id;
-        let raw = &self.streaming_raw;
-        let current_blocks_persisted: Vec<session::PersistedBlock> = {
-            let mut v = Vec::with_capacity(self.blocks.len());
-            for b in &self.blocks {
-                let content = if sid == Some(b.id) {
-                    raw.clone()
-                } else {
-                    b.body.to_text()
-                };
-                match &b.body {
-                    BlockBody::User(_) | BlockBody::Assistant(_) => {
-                        v.push(session::PersistedBlock {
-                            id: b.id,
-                            role: if matches!(&b.body, BlockBody::User(_)) {
-                                "user".into()
-                            } else {
-                                "assistant".into()
-                            },
-                            content,
-                            model: b.model.clone().unwrap_or_default(),
-                        });
-                    }
-                    BlockBody::ToolResult { .. } => {}
-                }
-            }
-            v
-        };
+    pub(crate) fn save_session(&mut self) {
+        let current_blocks_persisted = self.current_blocks_persisted();
 
         let mut sessions: Vec<session::PersistedSessionData> = self
             .inactive_sessions
@@ -182,7 +155,9 @@ impl App {
             sessions,
             active_idx,
         };
-        let _ = session::save_all(&p);
+        if let Err(e) = session::save_all(&p) {
+            self.status = format!("세션 저장 실패: {e}");
+        }
     }
     pub(crate) fn maybe_update_title(&mut self) {
         if (self.current_session_title.is_empty()

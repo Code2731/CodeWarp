@@ -83,7 +83,7 @@ impl App {
                     if !selected_is_tabby {
                         self.selected_model = Some(id.clone());
                         self.selected_model_provider = Some(LlmProvider::OpenAICompat);
-                        let _ = keystore::write_selected_model(&id);
+                        self.try_persist(keystore::write_selected_model(&id), "모델 선택 저장");
                     }
                 }
             }

@@ -76,7 +76,7 @@ impl App {
             }
             if !local_write.is_empty() {
                 self.pending_write_calls = local_write;
-                self.show_write_confirm = true;
+                self.ui.show_write_confirm = true;
             }
 
             let mut tasks = Vec::with_capacity(mcp_calls.len());
@@ -123,7 +123,7 @@ impl App {
 
         if !write_calls.is_empty() {
             self.pending_write_calls = write_calls;
-            self.show_write_confirm = true;
+            self.ui.show_write_confirm = true;
             self.status = "파일 쓰기 승인 대기".into();
             return Task::none();
         }

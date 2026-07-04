@@ -1,9 +1,10 @@
 use super::ui::{
-    CONTROL_PAD_X, CONTROL_PAD_Y, FS_BODY, FS_HEADING, TOPBAR_PAD_X, TOPBAR_PAD_Y,
+    CONTROL_PAD_X, CONTROL_PAD_Y, FS_BODY, FS_HEADING, FS_MICRO, TOPBAR_PAD_X, TOPBAR_PAD_Y,
     TOPBAR_ROW_SPACING, panel_style, secondary_btn, topbar_style,
 };
-use crate::{App, Message};
-use iced::widget::{Space, button, checkbox, combo_box, container, row, text};
+use crate::{App, Message, ModelCategory};
+use iced::widget::tooltip::Position;
+use iced::widget::{Space, button, checkbox, combo_box, container, row, text, tooltip};
 use iced::{Alignment, Element, Length};
 
 impl App {
@@ -38,33 +39,49 @@ impl App {
             .selected_model
             .as_ref()
             .is_some_and(|id| self.model_filter.favorites.contains(id));
-        let fav_btn = button(text(if is_fav { "★" } else { "☆" }).size(FS_HEADING))
-            .on_press(Message::ToggleFavorite)
-            .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
-            .style(secondary_btn);
+        let fav_btn = tooltip(
+            button(text(if is_fav { "★" } else { "☆" }).size(FS_HEADING))
+                .on_press(Message::ToggleFavorite)
+                .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
+                .style(secondary_btn),
+            text("즐겨찾기 토글").size(FS_MICRO),
+            Position::Bottom,
+        );
 
         let filters = row![
-            checkbox(self.model_filter.filter_coding)
-                .label("코딩")
-                .on_toggle(Message::ToggleFilterCoding)
-                .size(16)
-                .text_size(FS_BODY),
-            checkbox(self.model_filter.filter_reasoning)
-                .label("추론")
-                .on_toggle(Message::ToggleFilterReasoning)
-                .size(16)
-                .text_size(FS_BODY),
-            checkbox(self.model_filter.filter_general)
-                .label("범용")
-                .on_toggle(Message::ToggleFilterGeneral)
-                .size(16)
-                .text_size(FS_BODY),
+            checkbox(
+                self.model_filter
+                    .filter_categories
+                    .contains(&ModelCategory::Coding)
+            )
+            .label("코딩")
+            .on_toggle(Message::ToggleFilterCoding)
+            .size(16)
+            .text_size(FS_BODY),
+            checkbox(
+                self.model_filter
+                    .filter_categories
+                    .contains(&ModelCategory::Reasoning)
+            )
+            .label("추론")
+            .on_toggle(Message::ToggleFilterReasoning)
+            .size(16)
+            .text_size(FS_BODY),
+            checkbox(
+                self.model_filter
+                    .filter_categories
+                    .contains(&ModelCategory::General)
+            )
+            .label("범용")
+            .on_toggle(Message::ToggleFilterGeneral)
+            .size(16)
+            .text_size(FS_BODY),
             checkbox(self.model_filter.filter_favorites_only)
                 .label("⭐만")
                 .on_toggle(Message::ToggleFilterFavorites)
                 .size(16)
                 .text_size(FS_BODY),
-            checkbox(self.compare_both)
+            checkbox(self.ui.compare_both)
                 .label("둘 다 답변")
                 .on_toggle(Message::ToggleCompareBoth)
                 .size(16)
@@ -84,10 +101,14 @@ impl App {
             sort_btn,
             model_picker,
             fav_btn,
-            button(text("⚙").size(FS_HEADING).align_y(Alignment::Center))
-                .on_press(Message::OpenSettings)
-                .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
-                .style(secondary_btn),
+            tooltip(
+                button(text("⚙").size(FS_HEADING).align_y(Alignment::Center))
+                    .on_press(Message::OpenSettings)
+                    .padding([CONTROL_PAD_Y, CONTROL_PAD_X])
+                    .style(secondary_btn),
+                text("설정 열기").size(FS_MICRO),
+                Position::Bottom,
+            ),
         ]
         .spacing(TOPBAR_ROW_SPACING)
         .align_y(Alignment::Center);

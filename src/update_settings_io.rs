@@ -20,7 +20,7 @@ impl App {
         Task::none()
     }
     pub(crate) fn toggle_tabby_token_visible(&mut self) -> Task<Message> {
-        self.show_tabby_token = !self.show_tabby_token;
+        self.ui.show_tabby_token = !self.ui.show_tabby_token;
         Task::none()
     }
     pub(crate) fn set_inference_command(&mut self, value: &str) -> Task<Message> {

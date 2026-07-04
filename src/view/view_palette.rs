@@ -5,8 +5,10 @@ use super::ui::{
 };
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
-use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
-use iced::{Element, Length};
+use iced::widget::{
+    Space, button, column, container, mouse_area, row, scrollable, text, text_input,
+};
+use iced::{Color, Element, Length, Theme};
 
 impl App {
     pub(super) fn view_command_palette(&self) -> Element<'_, Message> {
@@ -30,18 +32,47 @@ impl App {
             list = list.push(text("(매칭 없음)").size(FS_BODY));
         } else {
             for (i, cmd) in filtered.iter().enumerate() {
+                let is_hovered = self.hovered_palette_idx == Some(i);
+                let item = button(
+                    column![
+                        text(cmd.label).size(FS_SUBTITLE).font(semibold_font()),
+                        text(cmd.hint).size(FS_LABEL),
+                    ]
+                    .spacing(2),
+                )
+                .on_press(Message::ExecuteCommand(i))
+                .padding([6, 10])
+                .width(Length::Fill)
+                .style(secondary_btn);
                 list = list.push(
-                    button(
-                        column![
-                            text(cmd.label).size(FS_SUBTITLE).font(semibold_font()),
-                            text(cmd.hint).size(FS_LABEL),
-                        ]
-                        .spacing(2),
+                    container(
+                        mouse_area(item)
+                            .on_enter(Message::PaletteHovered(Some(i)))
+                            .on_exit(Message::PaletteHovered(None)),
                     )
-                    .on_press(Message::ExecuteCommand(i))
-                    .padding([6, 10])
-                    .width(Length::Fill)
-                    .style(secondary_btn),
+                    .style(move |theme: &Theme| {
+                        if is_hovered {
+                            let p = theme.extended_palette();
+                            container::Style {
+                                background: Some(
+                                    Color::from_rgba(
+                                        p.primary.base.color.r,
+                                        p.primary.base.color.g,
+                                        p.primary.base.color.b,
+                                        0.06,
+                                    )
+                                    .into(),
+                                ),
+                                border: iced::Border {
+                                    radius: 10.0.into(),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            }
+                        } else {
+                            container::Style::default()
+                        }
+                    }),
                 );
             }
         }

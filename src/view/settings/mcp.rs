@@ -1,9 +1,10 @@
 use crate::view::ui::{
-    FS_BODY, FS_LABEL, danger_btn, field_input, panel_style, primary_btn, section_header,
+    FS_BODY, FS_LABEL, FS_MICRO, danger_btn, field_input, panel_style, primary_btn, section_header,
     shorten_tail,
 };
 use crate::{App, Message};
-use iced::widget::{Space, button, column, container, row, text, text_input};
+use iced::widget::tooltip::Position;
+use iced::widget::{Space, button, column, container, row, text, text_input, tooltip};
 use iced::{Alignment, Element, Length};
 
 impl App {
@@ -23,10 +24,14 @@ impl App {
                     text(shorten_tail(&label, 72))
                         .size(FS_BODY)
                         .width(Length::Fill),
-                    button(text("✕").size(FS_LABEL))
-                        .on_press(Message::RemoveMcpServer(i))
-                        .padding([2, 6])
-                        .style(danger_btn),
+                    tooltip(
+                        button(text("✕").size(FS_LABEL))
+                            .on_press(Message::RemoveMcpServer(i))
+                            .padding([2, 6])
+                            .style(danger_btn),
+                        text("서버 제거").size(FS_MICRO),
+                        Position::Bottom,
+                    ),
                 ]
                 .spacing(8)
                 .align_y(Alignment::Center),

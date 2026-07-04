@@ -21,7 +21,7 @@ impl App {
         openrouter_result: Result<String, String>,
         tabby_result: Result<String, String>,
     ) -> Task<Message> {
-        if !self.compare_pending {
+        if !self.ui.compare_pending {
             return Task::none();
         }
         let openrouter_text = match openrouter_result {
@@ -41,11 +41,11 @@ impl App {
         )));
         self.compare_old_text = Some(openrouter_text);
         self.compare_new_text = Some(tabby_text);
-        self.compare_pending = false;
+        self.ui.compare_pending = false;
         self.status = "Compare 응답 완료".into();
         self.maybe_update_title();
         self.save_session();
-        if self.follow_bottom {
+        if self.ui.follow_bottom {
             snap_to_end(self.stream_id.clone())
         } else {
             Task::none()
@@ -108,9 +108,9 @@ impl App {
 
         self.input.clear();
         self.editor_content = text_editor::Content::new();
-        self.compare_pending = true;
+        self.ui.compare_pending = true;
         self.status = "Compare 응답 생성 중…".into();
-        self.follow_bottom = true;
+        self.ui.follow_bottom = true;
 
         let openrouter_messages = messages.clone();
         let tabby_messages = messages;

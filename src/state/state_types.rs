@@ -1,4 +1,5 @@
 use super::{HashSet, SettingsTab, SortMode, session};
+use crate::ModelCategory;
 
 #[derive(Debug)]
 pub(crate) struct HfDownload {
@@ -11,6 +12,7 @@ pub(crate) struct HfDownload {
 }
 
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct UiState {
     pub(crate) show_settings: bool,
     pub(crate) settings_tab: SettingsTab,
@@ -24,10 +26,17 @@ pub(crate) struct UiState {
     pub(crate) rename_input: String,
     pub(crate) session_search: String,
     pub(crate) show_shortcut_guide: bool,
+    pub(crate) show_tabby_token: bool,
+    pub(crate) compare_both: bool,
+    pub(crate) compare_pending: bool,
+    pub(crate) follow_bottom: bool,
+    pub(crate) show_write_confirm: bool,
+    pub(crate) show_mention: bool,
+    pub(crate) pty_visible: bool,
 }
 
 impl UiState {
-    pub(crate) fn new(show_settings: bool) -> Self {
+    pub(crate) fn new(show_settings: bool, show_tabby_token: bool) -> Self {
         let default_theme = session::ThemeConfig::default_dark();
         Self {
             show_settings,
@@ -42,6 +51,13 @@ impl UiState {
             rename_input: String::new(),
             session_search: String::new(),
             show_shortcut_guide: false,
+            show_tabby_token,
+            compare_both: false,
+            compare_pending: false,
+            follow_bottom: true,
+            show_write_confirm: false,
+            show_mention: false,
+            pty_visible: false,
         }
     }
 
@@ -64,12 +80,9 @@ impl UiState {
     }
 }
 
-#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub(crate) struct ModelFilterState {
-    pub(crate) filter_coding: bool,
-    pub(crate) filter_reasoning: bool,
-    pub(crate) filter_general: bool,
+    pub(crate) filter_categories: HashSet<ModelCategory>,
     pub(crate) filter_favorites_only: bool,
     pub(crate) favorites: HashSet<String>,
     pub(crate) sort_mode: SortMode,
@@ -78,9 +91,11 @@ pub(crate) struct ModelFilterState {
 impl ModelFilterState {
     pub(crate) fn new() -> Self {
         Self {
-            filter_coding: true,
-            filter_reasoning: true,
-            filter_general: true,
+            filter_categories: HashSet::from([
+                ModelCategory::Coding,
+                ModelCategory::Reasoning,
+                ModelCategory::General,
+            ]),
             filter_favorites_only: false,
             favorites: session::read_favorites().into_iter().collect(),
             sort_mode: SortMode::Default,

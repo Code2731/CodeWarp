@@ -145,3 +145,73 @@ impl Default for ThemeConfig {
         Self::default_dark()
     }
 }
+
+pub(crate) struct ThemePreset {
+    pub(crate) name: &'static str,
+    pub(crate) config: ThemeConfig,
+}
+
+pub(crate) fn theme_presets() -> Vec<ThemePreset> {
+    vec![
+        ThemePreset {
+            name: "Default Dark",
+            config: ThemeConfig::default_dark(),
+        },
+        ThemePreset {
+            name: "Nord",
+            config: ThemeConfig {
+                background: [0x2e, 0x34, 0x40],
+                text: [0xec, 0xef, 0xf4],
+                primary: [0x88, 0xc0, 0xd0],
+                success: [0xa3, 0xbe, 0x8c],
+                warning: [0xeb, 0xcb, 0x8b],
+                danger: [0xbf, 0x61, 0x6a],
+                accent_user: [0x88, 0xc0, 0xd0],
+                accent_assistant: [0xb4, 0x8e, 0xad],
+                accent_error: [0xbf, 0x61, 0x6a],
+            },
+        },
+        ThemePreset {
+            name: "Dracula",
+            config: ThemeConfig {
+                background: [0x28, 0x2a, 0x36],
+                text: [0xf8, 0xf8, 0xf2],
+                primary: [0xbd, 0x93, 0xf9],
+                success: [0x50, 0xfa, 0x7b],
+                warning: [0xf1, 0xfa, 0x8c],
+                danger: [0xff, 0x55, 0x55],
+                accent_user: [0xbd, 0x93, 0xf9],
+                accent_assistant: [0xff, 0x79, 0xc6],
+                accent_error: [0xff, 0x55, 0x55],
+            },
+        },
+        ThemePreset {
+            name: "Monokai",
+            config: ThemeConfig {
+                background: [0x27, 0x28, 0x22],
+                text: [0xf8, 0xf8, 0xf2],
+                primary: [0x66, 0xd9, 0xef],
+                success: [0xa6, 0xe2, 0x2e],
+                warning: [0xe6, 0xdb, 0x74],
+                danger: [0xf9, 0x26, 0x72],
+                accent_user: [0x66, 0xd9, 0xef],
+                accent_assistant: [0xae, 0x81, 0xff],
+                accent_error: [0xf9, 0x26, 0x72],
+            },
+        },
+        ThemePreset {
+            name: "Catppuccin",
+            config: ThemeConfig {
+                background: [0x1e, 0x1e, 0x2e],
+                text: [0xcd, 0xd6, 0xf4],
+                primary: [0x89, 0xb4, 0xfa],
+                success: [0xa6, 0xe3, 0xa1],
+                warning: [0xf9, 0xe2, 0xaf],
+                danger: [0xf3, 0x8b, 0xa8],
+                accent_user: [0x89, 0xb4, 0xfa],
+                accent_assistant: [0xcb, 0xa6, 0xf7],
+                accent_error: [0xf3, 0x8b, 0xa8],
+            },
+        },
+    ]
+}

@@ -4,8 +4,8 @@ use iced::Task;
 
 impl App {
     pub(crate) fn toggle_pty(&mut self) -> Task<Message> {
-        self.pty_visible = !self.pty_visible;
-        if self.pty_visible && self.pty_session.is_none() {
+        self.ui.pty_visible = !self.ui.pty_visible;
+        if self.ui.pty_visible && self.pty_session.is_none() {
             return Task::done(Message::PtyStart);
         }
         Task::none()

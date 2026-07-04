@@ -5,7 +5,7 @@ use iced::Task;
 impl App {
     pub(crate) fn stop_stream(&mut self) -> Task<Message> {
         self.abort_active_chat_stream(true);
-        self.compare_pending = false;
+        self.ui.compare_pending = false;
         self.status = "중지됨".into();
         self.maybe_update_title();
         self.save_session();
@@ -15,7 +15,7 @@ impl App {
         if let Some(h) = self.abort_handle.take() {
             h.abort();
         }
-        self.compare_pending = false;
+        self.ui.compare_pending = false;
         if keep_partial_assistant && let Some(ai_id) = self.streaming_block_id {
             let txt = if !self.streaming_raw.is_empty() {
                 std::mem::take(&mut self.streaming_raw)

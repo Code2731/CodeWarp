@@ -37,7 +37,7 @@ fn attach_result_mapper(r: Result<(std::path::PathBuf, String), String>) -> Mess
 
 impl App {
     pub(crate) fn confirm_mention(&mut self) -> Task<Message> {
-        if !self.show_mention {
+        if !self.ui.show_mention {
             return Task::none();
         }
         let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);

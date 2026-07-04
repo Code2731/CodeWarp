@@ -11,5 +11,5 @@ pub(crate) use persist::{
     PersistedAllSessions, PersistedBlock, PersistedSessionData, load_all, save_all,
 };
 pub(crate) use recovery::{mark_clean_shutdown, was_clean_shutdown};
-pub(crate) use theme::{ThemeConfig, read_theme, write_theme};
+pub(crate) use theme::{ThemeConfig, read_theme, theme_presets, write_theme};
 pub(crate) use usage::{ModelUsage, UsageStore, load_usage, save_usage};

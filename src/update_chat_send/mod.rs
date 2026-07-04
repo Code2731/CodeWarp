@@ -38,8 +38,8 @@ impl App {
             Some(q) => {
                 self.mention_query = q.to_string();
                 self.mention_selected = 0;
-                if !self.show_mention {
-                    self.show_mention = true;
+                if !self.ui.show_mention {
+                    self.ui.show_mention = true;
                     let cwd = self.cwd.clone();
                     return Task::perform(
                         collect_mention_candidates(cwd),
@@ -48,7 +48,7 @@ impl App {
                 }
             }
             None => {
-                if self.show_mention {
+                if self.ui.show_mention {
                     self.close_mention();
                 }
             }

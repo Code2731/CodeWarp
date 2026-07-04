@@ -1,7 +1,7 @@
 // update_inference_tabby — Model selection & provider resolution (main.rs child module)
 use super::{
-    App, LlmProvider, ModelCategory, ModelOption, SortMode, categorize_model, combo_box, keystore,
-    openrouter, tabby, tools,
+    App, LlmProvider, ModelOption, SortMode, categorize_model, combo_box, keystore, openrouter,
+    tabby, tools,
 };
 
 mod selection;
@@ -20,10 +20,8 @@ impl App {
                     return false;
                 }
                 let cats = categorize_model(&opt.id);
-                (self.model_filter.filter_coding && cats.contains(&ModelCategory::Coding))
-                    || (self.model_filter.filter_reasoning
-                        && cats.contains(&ModelCategory::Reasoning))
-                    || (self.model_filter.filter_general && cats.contains(&ModelCategory::General))
+                cats.iter()
+                    .any(|cat| self.model_filter.filter_categories.contains(cat))
             })
             .cloned()
             .collect();

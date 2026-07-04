@@ -5,7 +5,10 @@ use super::ui::{
 };
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
-use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
+use iced::widget::tooltip::Position;
+use iced::widget::{
+    Space, button, column, container, mouse_area, row, scrollable, text, text_input, tooltip,
+};
 use iced::{Alignment, Element, Length, Theme};
 
 mod context;
@@ -86,14 +89,22 @@ impl App {
             let is_pending = self.ui.pending_delete_session == Some(s.id);
             let trailing: Element<Message> = if is_pending {
                 row![
-                    button(text("✓").size(FS_MICRO))
-                        .on_press(Message::DeleteSession(s.id))
-                        .padding([2, 6])
-                        .style(primary_btn),
-                    button(text("✗").size(FS_MICRO))
-                        .on_press(Message::CancelDeleteSession)
-                        .padding([2, 6])
-                        .style(secondary_btn),
+                    tooltip(
+                        button(text("✓").size(FS_MICRO))
+                            .on_press(Message::DeleteSession(s.id))
+                            .padding([2, 6])
+                            .style(primary_btn),
+                        text("삭제 확인").size(FS_MICRO),
+                        Position::Bottom,
+                    ),
+                    tooltip(
+                        button(text("✗").size(FS_MICRO))
+                            .on_press(Message::CancelDeleteSession)
+                            .padding([2, 6])
+                            .style(secondary_btn),
+                        text("취소").size(FS_MICRO),
+                        Position::Bottom,
+                    ),
                 ]
                 .spacing(2)
                 .into()
@@ -101,19 +112,28 @@ impl App {
                 Space::new().width(Length::Shrink).into()
             } else {
                 row![
-                    button(text("✎").size(FS_MICRO))
-                        .on_press(Message::StartRenameSession(s.id))
-                        .padding([2, 4])
-                        .style(secondary_btn),
-                    button(text("✕").size(FS_MICRO))
-                        .on_press(Message::AskDeleteSession(s.id))
-                        .padding([2, 6])
-                        .style(danger_btn),
+                    tooltip(
+                        button(text("✎").size(FS_MICRO))
+                            .on_press(Message::StartRenameSession(s.id))
+                            .padding([2, 4])
+                            .style(secondary_btn),
+                        text("세션 이름 변경").size(FS_MICRO),
+                        Position::Bottom,
+                    ),
+                    tooltip(
+                        button(text("✕").size(FS_MICRO))
+                            .on_press(Message::AskDeleteSession(s.id))
+                            .padding([2, 6])
+                            .style(danger_btn),
+                        text("세션 삭제").size(FS_MICRO),
+                        Position::Bottom,
+                    ),
                 ]
                 .spacing(2)
                 .into()
             };
-            let row_widget = if is_renaming {
+            let is_hovered = self.hovered_session == Some(s.id);
+            let row_content: Element<Message> = if is_renaming {
                 row![
                     text_input("세션 이름…", &self.ui.rename_input)
                         .on_input(|v| Message::RenameSession(s.id, v))
@@ -121,17 +141,26 @@ impl App {
                         .padding([4, 6])
                         .size(FS_BODY)
                         .style(field_input),
-                    button(text("✓").size(FS_MICRO))
-                        .on_press(Message::RenameSession(s.id, self.ui.rename_input.clone()))
-                        .padding([2, 6])
-                        .style(primary_btn),
-                    button(text("✗").size(FS_MICRO))
-                        .on_press(Message::CancelRenameSession)
-                        .padding([2, 6])
-                        .style(secondary_btn),
+                    tooltip(
+                        button(text("✓").size(FS_MICRO))
+                            .on_press(Message::RenameSession(s.id, self.ui.rename_input.clone()))
+                            .padding([2, 6])
+                            .style(primary_btn),
+                        text("확인").size(FS_MICRO),
+                        Position::Bottom,
+                    ),
+                    tooltip(
+                        button(text("✗").size(FS_MICRO))
+                            .on_press(Message::CancelRenameSession)
+                            .padding([2, 6])
+                            .style(secondary_btn),
+                        text("취소").size(FS_MICRO),
+                        Position::Bottom,
+                    ),
                 ]
                 .spacing(2)
                 .align_y(Alignment::Center)
+                .into()
             } else {
                 row![
                     button(
@@ -152,7 +181,42 @@ impl App {
                     trailing,
                 ]
                 .spacing(2)
+                .into()
             };
+            let row_widget = container(
+                mouse_area(row_content)
+                    .on_enter(Message::SessionHovered(Some(s.id)))
+                    .on_exit(Message::SessionHovered(None)),
+            )
+            .style(move |theme: &Theme| {
+                if is_hovered {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(
+                            iced::Color::from_rgba(
+                                p.primary.weak.color.r,
+                                p.primary.weak.color.g,
+                                p.primary.weak.color.b,
+                                0.12,
+                            )
+                            .into(),
+                        ),
+                        border: iced::Border {
+                            radius: 6.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                } else {
+                    container::Style {
+                        border: iced::Border {
+                            radius: 6.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }
+            });
             sessions_col = sessions_col.push(row_widget);
         }
 
@@ -196,10 +260,14 @@ impl App {
         let resize_row = row![
             text(format!("너비 {:.0}px", self.sidebar_width)).size(FS_LABEL),
             Space::new().width(Length::Fill),
-            button(text("◀▶").size(FS_LABEL).font(semibold_font()))
-                .on_press(Message::CycleSidebarWidth)
-                .padding([PAD_XS, PAD_MD])
-                .style(secondary_btn),
+            tooltip(
+                button(text("◀▶").size(FS_LABEL).font(semibold_font()))
+                    .on_press(Message::CycleSidebarWidth)
+                    .padding([PAD_XS, PAD_MD])
+                    .style(secondary_btn),
+                text("사이드바 너비 변경").size(FS_MICRO),
+                Position::Bottom,
+            ),
         ]
         .spacing(SPACE_XS)
         .align_y(Alignment::Center);

@@ -1,4 +1,5 @@
 use super::{App, Message, Task, session};
+use session::theme_presets;
 
 const THEME_FIELDS: &[&str] = &[
     "background",
@@ -53,6 +54,22 @@ impl App {
             async move { session::write_theme(&cfg) },
             Message::ThemeSaved,
         )
+    }
+
+    pub(crate) fn apply_theme_preset(&mut self, idx: usize) -> Task<Message> {
+        let presets = theme_presets();
+        if let Some(preset) = presets.get(idx) {
+            self.theme_config = preset.config.clone();
+            self.ui.sync_theme_inputs(&self.theme_config);
+            self.theme_apply_msg = format!("프리셋 적용됨: {}", preset.name);
+            let cfg = self.theme_config.clone();
+            Task::perform(
+                async move { session::write_theme(&cfg) },
+                Message::ThemeSaved,
+            )
+        } else {
+            Task::none()
+        }
     }
 
     pub(crate) fn on_theme_saved(&mut self, _result: Result<(), String>) -> Task<Message> {

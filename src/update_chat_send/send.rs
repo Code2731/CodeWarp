@@ -45,7 +45,7 @@ impl App {
         self.streaming_block_id = Some(ai_id);
         self.streaming_block_idx = Some(self.blocks.len() - 1);
         self.status = "응답 다시 생성 중…".into();
-        self.follow_bottom = true;
+        self.ui.follow_bottom = true;
         self.response_started_at = Some(std::time::Instant::now());
 
         let (chat_task, handle) = Task::run(
@@ -88,10 +88,10 @@ impl App {
             }
             _ => {}
         }
-        if self.streaming_block_id.is_some() || self.compare_pending {
+        if self.streaming_block_id.is_some() || self.ui.compare_pending {
             return Task::none();
         }
-        if self.compare_both {
+        if self.ui.compare_both {
             return self.compare_send_message(text);
         }
         let (base_url, api_key) = match self.resolve_provider() {
@@ -145,7 +145,7 @@ impl App {
         self.input.clear();
         self.editor_content = text_editor::Content::new();
         self.status = "응답 생성 중…".into();
-        self.follow_bottom = true;
+        self.ui.follow_bottom = true;
         self.response_started_at = Some(std::time::Instant::now());
 
         let (chat_task, handle) = Task::run(

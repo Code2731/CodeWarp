@@ -6,7 +6,7 @@ use crate::view::ui::{
 use crate::{App, Block, BlockBody, Message, ViewMode};
 use iced::widget::markdown;
 use iced::widget::tooltip::Position;
-use iced::widget::{Space, button, column, container, row, text, text_editor, tooltip};
+use iced::widget::{Space, button, column, container, mouse_area, row, text, text_editor, tooltip};
 use iced::{Alignment, Color, Element, Font, Length, Shadow, Theme, Vector};
 
 impl App {
@@ -65,6 +65,7 @@ impl App {
         } else {
             a_asst
         };
+        let is_hovered = self.hovered_block == Some(b.id);
         let accent_bar = self.view_accent_bar(accent_color, self.streaming_block_id == Some(b.id));
         let inner =
             container(column![header, body_view, self.view_block_apply_section(b),].spacing(6))
@@ -73,13 +74,14 @@ impl App {
                 .style(block_container_style(
                     is_user,
                     is_error_assistant,
+                    is_hovered,
                     a_user,
                     a_asst,
                     a_err,
                 ));
-        row![accent_bar, inner]
-            .spacing(8)
-            .align_y(Alignment::Start)
+        mouse_area(row![accent_bar, inner].spacing(8).align_y(Alignment::Start))
+            .on_enter(Message::BlockHovered(Some(b.id)))
+            .on_exit(Message::BlockHovered(None))
             .into()
     }
 

@@ -42,7 +42,7 @@ impl App {
                 return self.handle_chat_error(ai_id, &e);
             }
         }
-        if self.follow_bottom {
+        if self.ui.follow_bottom {
             snap_to_end(self.stream_id.clone())
         } else {
             Task::none()

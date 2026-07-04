@@ -1,10 +1,11 @@
 use super::ui::{
-    FS_BODY, FS_LABEL, FS_SUBTITLE, SCROLL_GUTTER_PAD_X, app_vscrollbar, danger_btn,
+    FS_BODY, FS_LABEL, FS_MICRO, FS_SUBTITLE, SCROLL_GUTTER_PAD_X, app_vscrollbar, danger_btn,
     dark_scrollable, field_input, panel_style, primary_btn, secondary_btn, semibold_font,
 };
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
-use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
+use iced::widget::tooltip::Position;
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input, tooltip};
 use iced::{Alignment, Element, Font, Length};
 
 impl App {
@@ -17,10 +18,14 @@ impl App {
                 .on_press(Message::PtyClear)
                 .padding([2, 8])
                 .style(secondary_btn),
-            button(text("✕").size(FS_LABEL))
-                .on_press(Message::PtyToggle)
-                .padding([2, 8])
-                .style(secondary_btn),
+            tooltip(
+                button(text("✕").size(FS_LABEL))
+                    .on_press(Message::PtyToggle)
+                    .padding([2, 8])
+                    .style(secondary_btn),
+                text("터미널 닫기").size(FS_MICRO),
+                Position::Bottom,
+            ),
         ]
         .spacing(4)
         .align_y(Alignment::Center)
@@ -67,14 +72,18 @@ impl App {
                 })
                 .padding([6, 10])
                 .style(primary_btn),
-            button(text("^C").size(FS_LABEL))
-                .on_press_maybe(if session_active {
-                    Some(Message::PtyCtrlC)
-                } else {
-                    None
-                })
-                .padding([6, 8])
-                .style(danger_btn),
+            tooltip(
+                button(text("^C").size(FS_LABEL))
+                    .on_press_maybe(if session_active {
+                        Some(Message::PtyCtrlC)
+                    } else {
+                        None
+                    })
+                    .padding([6, 8])
+                    .style(danger_btn),
+                text("인터럽트 (Ctrl+C)").size(FS_MICRO),
+                Position::Bottom,
+            ),
         ]
         .spacing(6)
         .align_y(Alignment::Center);

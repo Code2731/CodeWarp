@@ -37,7 +37,7 @@ impl App {
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     pub(crate) fn move_mention_selection(&mut self, delta: i32) -> Task<Message> {
-        if !self.show_mention || self.mention_candidates.is_empty() {
+        if !self.ui.show_mention || self.mention_candidates.is_empty() {
             return Task::none();
         }
         let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
@@ -57,7 +57,7 @@ impl App {
         Task::none()
     }
     pub(crate) fn close_mention(&mut self) {
-        self.show_mention = false;
+        self.ui.show_mention = false;
         self.mention_query.clear();
         self.mention_selected = 0;
     }

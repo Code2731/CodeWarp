@@ -1,11 +1,12 @@
 use super::render_diff;
 use super::ui::{
-    FS_BODY, FS_LABEL, app_vscrollbar, danger_btn, dark_scrollable, primary_btn, secondary_btn,
-    semibold_font,
+    FS_BODY, FS_LABEL, FS_MICRO, app_vscrollbar, danger_btn, dark_scrollable, primary_btn,
+    secondary_btn, semibold_font,
 };
 use crate::{App, Message, tools};
 use iced::widget::scrollable::Direction;
-use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::widget::tooltip::Position;
+use iced::widget::{Space, button, column, container, row, scrollable, text, tooltip};
 use iced::{Alignment, Color, Element, Font, Length, Shadow, Theme, Vector};
 
 impl App {
@@ -70,11 +71,15 @@ impl App {
             .style(secondary_btn)
             .into();
 
-            let discard_btn: Element<Message> = button(text("✗").size(FS_LABEL))
-                .on_press(Message::DiscardWriteCall(idx))
-                .padding([2, 6])
-                .style(danger_btn)
-                .into();
+            let discard_btn: Element<Message> = tooltip(
+                button(text("✗").size(FS_LABEL))
+                    .on_press(Message::DiscardWriteCall(idx))
+                    .padding([2, 6])
+                    .style(danger_btn),
+                text("개별 거부").size(FS_MICRO),
+                Position::Bottom,
+            )
+            .into();
 
             let row_widget = row![summary_btn, discard_btn].spacing(4);
             let mut card_col = column![row_widget].spacing(2);

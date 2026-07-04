@@ -1,6 +1,9 @@
-use crate::view::ui::{FS_BODY, FS_LABEL, field_input, panel_style, secondary_btn, semibold_font};
+use crate::view::ui::{
+    FS_BODY, FS_LABEL, FS_MICRO, field_input, panel_style, secondary_btn, semibold_font,
+};
 use crate::{App, InferenceEngine, Message};
-use iced::widget::{Space, button, container, row, text, text_input};
+use iced::widget::tooltip::Position;
+use iced::widget::{Space, button, container, row, text, text_input, tooltip};
 use iced::{Alignment, Element, Length};
 
 impl App {
@@ -47,10 +50,14 @@ impl App {
                 .size(FS_BODY)
                 .style(field_input)
                 .width(Length::Fixed(300.0)),
-            button(text(pick_label).size(FS_LABEL))
-                .on_press(Message::PickInferenceBinary)
-                .padding([4, 8])
-                .style(secondary_btn),
+            tooltip(
+                button(text(pick_label).size(FS_LABEL))
+                    .on_press(Message::PickInferenceBinary)
+                    .padding([4, 8])
+                    .style(secondary_btn),
+                text("실행 파일 선택").size(FS_MICRO),
+                Position::Bottom,
+            ),
             install_btn,
         ]
         .spacing(6)

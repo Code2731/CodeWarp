@@ -1,7 +1,8 @@
-use super::{Color, FS_LABEL, Message, hscrollbar};
+use super::{Color, FS_LABEL, FS_MICRO, Message, hscrollbar};
 use crate::view::ui::{dark_scrollable, secondary_btn};
 use iced::widget::scrollable::Direction;
-use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
+use iced::widget::tooltip::Position;
+use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text, tooltip};
 use iced::{Element, Font, Length, Theme};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -70,14 +71,18 @@ impl<'a> iced::widget::markdown::Viewer<'a, Message> for CodewarpViewer<'a> {
         let language_label = language.unwrap_or("text").to_ascii_lowercase();
 
         let copy_btn: Element<Message> = if is_hovered {
-            button(
-                text("⎘")
-                    .size(FS_LABEL)
-                    .font(Font::with_name("JetBrains Mono")),
+            tooltip(
+                button(
+                    text("⎘")
+                        .size(FS_LABEL)
+                        .font(Font::with_name("JetBrains Mono")),
+                )
+                .on_press(Message::CopyText(code.to_string()))
+                .padding([3, 8])
+                .style(secondary_btn),
+                text("코드 복사").size(FS_MICRO),
+                Position::Bottom,
             )
-            .on_press(Message::CopyText(code.to_string()))
-            .padding([3, 8])
-            .style(secondary_btn)
             .into()
         } else {
             Space::new()

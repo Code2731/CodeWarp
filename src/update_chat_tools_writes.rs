@@ -51,7 +51,7 @@ impl App {
     }
     pub(crate) fn continue_after_writes(&mut self, approved: bool) -> Task<Message> {
         let calls = std::mem::take(&mut self.pending_write_calls);
-        self.show_write_confirm = false;
+        self.ui.show_write_confirm = false;
 
         if approved {
             let mut names: Vec<String> = Vec::with_capacity(calls.len());

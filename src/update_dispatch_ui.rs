@@ -49,6 +49,7 @@ impl App {
                 self.on_theme_hex_changed(field.clone(), value.clone());
                 Some(Task::none())
             }
+            Message::ApplyThemePreset(idx) => Some(self.apply_theme_preset(*idx)),
             Message::ApplyTheme => Some(self.apply_theme()),
             Message::ResetTheme => Some(self.reset_theme()),
             Message::ThemeSaved(r) => Some(self.on_theme_saved(r.clone())),
@@ -68,6 +69,26 @@ impl App {
                 } else {
                     self.hovered_code_blocks.remove(id);
                 }
+                Some(Task::none())
+            }
+            Message::BlockHovered(id) => {
+                self.hovered_block = *id;
+                Some(Task::none())
+            }
+            Message::SessionHovered(id) => {
+                self.hovered_session = *id;
+                Some(Task::none())
+            }
+            Message::SettingsTabHovered(tab) => {
+                self.hovered_settings_tab = *tab;
+                Some(Task::none())
+            }
+            Message::ContextHovered(idx) => {
+                self.hovered_context_idx = *idx;
+                Some(Task::none())
+            }
+            Message::PaletteHovered(idx) => {
+                self.hovered_palette_idx = *idx;
                 Some(Task::none())
             }
             Message::DismissToast => {

@@ -11,7 +11,7 @@ impl App {
         Arc::make_mut(&mut self.conversation).clear();
         self.pending_tool_calls.clear();
         self.pending_write_calls.clear();
-        self.show_write_confirm = false;
+        self.ui.show_write_confirm = false;
         self.streaming_block_id = None;
         self.streaming_block_idx = None;
         self.tool_round = 0;
@@ -60,7 +60,7 @@ impl App {
         self.current_scroll_y = target.scroll_y;
         self.pending_tool_calls.clear();
         self.pending_write_calls.clear();
-        self.show_write_confirm = false;
+        self.ui.show_write_confirm = false;
         self.streaming_block_id = None;
         self.streaming_block_idx = None;
         self.tool_round = 0;

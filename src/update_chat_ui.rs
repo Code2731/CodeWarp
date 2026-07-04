@@ -8,7 +8,7 @@ impl App {
         viewport: &iced::widget::scrollable::Viewport,
     ) -> Task<Message> {
         let rel = viewport.relative_offset();
-        self.follow_bottom = rel.y > 0.95;
+        self.ui.follow_bottom = rel.y > 0.95;
         self.current_scroll_y = viewport.absolute_offset().y;
         Task::none()
     }

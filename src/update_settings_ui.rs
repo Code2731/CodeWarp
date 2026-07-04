@@ -2,6 +2,7 @@
 use super::{
     AgentMode, App, Message, PaletteAction, SIDEBAR_WIDTH, SettingsTab, keystore, session,
 };
+use crate::ModelCategory;
 use crate::view::{SIDEBAR_WIDTH_COMPACT, SIDEBAR_WIDTH_WIDE};
 use iced::Task;
 
@@ -36,17 +37,41 @@ impl App {
         Task::none()
     }
     pub(crate) fn set_filter_coding(&mut self, enabled: bool) -> Task<Message> {
-        self.model_filter.filter_coding = enabled;
+        if enabled {
+            self.model_filter
+                .filter_categories
+                .insert(ModelCategory::Coding);
+        } else {
+            self.model_filter
+                .filter_categories
+                .remove(&ModelCategory::Coding);
+        }
         self.refresh_model_combo();
         Task::none()
     }
     pub(crate) fn set_filter_reasoning(&mut self, enabled: bool) -> Task<Message> {
-        self.model_filter.filter_reasoning = enabled;
+        if enabled {
+            self.model_filter
+                .filter_categories
+                .insert(ModelCategory::Reasoning);
+        } else {
+            self.model_filter
+                .filter_categories
+                .remove(&ModelCategory::Reasoning);
+        }
         self.refresh_model_combo();
         Task::none()
     }
     pub(crate) fn set_filter_general(&mut self, enabled: bool) -> Task<Message> {
-        self.model_filter.filter_general = enabled;
+        if enabled {
+            self.model_filter
+                .filter_categories
+                .insert(ModelCategory::General);
+        } else {
+            self.model_filter
+                .filter_categories
+                .remove(&ModelCategory::General);
+        }
         self.refresh_model_combo();
         Task::none()
     }
@@ -110,7 +135,7 @@ impl App {
         Task::none()
     }
     pub(crate) fn set_compare_both(&mut self, enabled: bool) -> Task<Message> {
-        self.compare_both = enabled;
+        self.ui.compare_both = enabled;
         self.status = if enabled {
             "Compare 모드 — OpenRouter와 Tabby가 각각 답변합니다.".into()
         } else {
@@ -136,7 +161,7 @@ impl App {
         self.ui.show_settings = false;
         self.ui.show_shortcut_guide = false;
         self.ui.renaming_session_id = None;
-        self.show_write_confirm = false;
+        self.ui.show_write_confirm = false;
         self.close_mention();
         Task::none()
     }
@@ -229,12 +254,12 @@ mod tests {
 
         let _ = app.update(Message::ToggleCompareBoth(true));
 
-        assert!(app.compare_both);
+        assert!(app.ui.compare_both);
         assert!(app.status.contains("Compare 모드"), "got: {}", app.status);
 
         let _ = app.update(Message::ToggleCompareBoth(false));
 
-        assert!(!app.compare_both);
+        assert!(!app.ui.compare_both);
         assert!(app.status.contains("Single 모드"), "got: {}", app.status);
     }
 }

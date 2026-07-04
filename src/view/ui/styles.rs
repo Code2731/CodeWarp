@@ -277,6 +277,7 @@ pub(crate) fn editor_input(theme: &Theme, status: text_editor::Status) -> text_e
     let p = theme.extended_palette();
     let mut style = text_editor::default(theme, status);
     style.background = Background::Color(with_alpha(p.background.base.color, INPUT_BG_ALPHA));
+    style.selection = with_alpha(p.primary.strong.color, INPUT_SELECTION_ALPHA);
     style.border = Border {
         color: p.background.strong.color,
         width: BORDER_WIDTH,
@@ -289,6 +290,11 @@ pub(crate) fn editor_input(theme: &Theme, status: text_editor::Status) -> text_e
         }
         text_editor::Status::Hovered => {
             style.border.color = with_alpha(p.primary.strong.color, 0.65);
+            style
+        }
+        text_editor::Status::Disabled => {
+            style.background = Background::Color(with_alpha(p.background.weak.color, 0.40));
+            style.value = with_alpha(p.background.strong.text, INPUT_DISABLED_ALPHA);
             style
         }
         _ => style,

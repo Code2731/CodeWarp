@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn compare_mode_send_requires_registered_providers() {
     let (mut app, _) = App::new();
-    app.compare_both = true;
+    app.ui.compare_both = true;
     app.input = "compare this".into();
     app.selected_model = None;
     app.model_options.clear();

@@ -5,12 +5,13 @@ use crate::view::ui::{
 };
 use crate::{App, Message, fuzzy_match_paths, hscrollbar};
 use iced::widget::scrollable::Direction;
-use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::widget::tooltip::Position;
+use iced::widget::{Space, button, column, container, row, scrollable, text, tooltip};
 use iced::{Alignment, Color, Element, Length, Shadow, Theme, Vector};
 
 impl App {
     pub(crate) fn view_mention_popup(&self) -> Element<'_, Message> {
-        if self.show_mention {
+        if self.ui.show_mention {
             let filtered = fuzzy_match_paths(&self.mention_candidates, &self.mention_query, 8);
             if filtered.is_empty() {
                 Space::new().height(Length::Shrink).into()
@@ -74,10 +75,14 @@ impl App {
                     container(
                         row![
                             text(format!("📄 {name}")).size(FS_LABEL),
-                            button(text("✕").size(FS_MICRO))
-                                .on_press(Message::RemoveAttachment(i))
-                                .padding([1, 4])
-                                .style(secondary_btn),
+                            tooltip(
+                                button(text("✕").size(FS_MICRO))
+                                    .on_press(Message::RemoveAttachment(i))
+                                    .padding([1, 4])
+                                    .style(secondary_btn),
+                                text("파일 제거").size(FS_MICRO),
+                                Position::Bottom,
+                            ),
                         ]
                         .spacing(4)
                         .align_y(Alignment::Center),

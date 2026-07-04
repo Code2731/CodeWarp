@@ -13,7 +13,8 @@ mod view_palette;
 mod view_topbar;
 mod view_viewer;
 
-use iced::widget::{Space, button, column, container, row, stack, text};
+use iced::widget::tooltip::Position;
+use iced::widget::{Space, button, column, container, row, stack, text, tooltip};
 use iced::{Alignment, Element, Font, Length, Padding, Shadow, Theme, Vector};
 pub(crate) use ui::*;
 use ui::{secondary_btn, toast_style};
@@ -183,7 +184,7 @@ impl App {
         let statusbar = self.view_statusbar();
 
         let mut col = column![topbar, middle];
-        if self.pty_visible {
+        if self.ui.pty_visible {
             col = col.push(self.view_pty_panel());
         }
         let base = col.push(statusbar).width(Length::Fill).height(Length::Fill);
@@ -192,10 +193,14 @@ impl App {
             let toast = container(
                 row![
                     text(toast_text).size(FS_LABEL),
-                    button(text("✕").size(FS_MICRO))
-                        .on_press(Message::DismissToast)
-                        .padding([2, 6])
-                        .style(secondary_btn),
+                    tooltip(
+                        button(text("✕").size(FS_MICRO))
+                            .on_press(Message::DismissToast)
+                            .padding([2, 6])
+                            .style(secondary_btn),
+                        text("닫기").size(FS_MICRO),
+                        Position::Bottom,
+                    ),
                 ]
                 .spacing(8)
                 .align_y(Alignment::Center),

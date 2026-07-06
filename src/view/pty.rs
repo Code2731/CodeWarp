@@ -5,31 +5,62 @@ use super::ui::{
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
 use iced::widget::tooltip::Position;
-use iced::widget::{Space, button, column, container, row, scrollable, text, text_input, tooltip};
-use iced::{Alignment, Element, Font, Length};
+use iced::widget::{
+    Space, button, column, container, mouse_area, row, scrollable, text, text_input, tooltip,
+};
+use iced::{Alignment, Color, Element, Font, Length, Theme};
 
 impl App {
     pub(super) fn view_pty_panel(&self) -> Element<'_, Message> {
         // 헤더 행: 제목 + 버튼들
-        let header = row![
-            text("터미널").size(FS_SUBTITLE).font(semibold_font()),
-            Space::new().width(Length::Fill),
-            button(text("✕ Clear").size(FS_LABEL))
-                .on_press(Message::PtyClear)
-                .padding([2, 8])
-                .style(secondary_btn),
-            tooltip(
-                button(text("✕").size(FS_LABEL))
-                    .on_press(Message::PtyToggle)
+        let is_hovered = self.hovered_pty;
+        let header = {
+            let content = row![
+                text("터미널").size(FS_SUBTITLE).font(semibold_font()),
+                Space::new().width(Length::Fill),
+                button(text("✕ Clear").size(FS_LABEL))
+                    .on_press(Message::PtyClear)
                     .padding([2, 8])
                     .style(secondary_btn),
-                text("터미널 닫기").size(FS_MICRO),
-                Position::Bottom,
-            ),
-        ]
-        .spacing(4)
-        .align_y(Alignment::Center)
-        .padding([4, 8]);
+                tooltip(
+                    button(text("✕").size(FS_LABEL))
+                        .on_press(Message::PtyToggle)
+                        .padding([2, 8])
+                        .style(secondary_btn),
+                    text("터미널 닫기").size(FS_MICRO),
+                    Position::Bottom,
+                ),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center);
+            let hdr = container(content)
+                .padding([4, 8])
+                .width(Length::Fill)
+                .style(move |theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(
+                            (if is_hovered {
+                                Color::from_rgba(
+                                    p.primary.base.color.r,
+                                    p.primary.base.color.g,
+                                    p.primary.base.color.b,
+                                    0.06,
+                                )
+                            } else {
+                                Color::from_rgba(0.0, 0.0, 0.0, 0.0)
+                            })
+                            .into(),
+                        ),
+                        ..Default::default()
+                    }
+                });
+            let hdr: Element<'_, Message> = mouse_area(hdr)
+                .on_enter(Message::PtyPanelHovered(true))
+                .on_exit(Message::PtyPanelHovered(false))
+                .into();
+            hdr
+        };
 
         // 출력 영역 (최근 줄이 아래)
         let mut out_col = column![].spacing(0);

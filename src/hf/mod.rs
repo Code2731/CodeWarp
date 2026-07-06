@@ -19,9 +19,53 @@ mod tests;
 
 // ── Public download API ─────────────────────────────────────────────
 
+struct DownloadSetup {
+    client: reqwest::Client,
+    info: ModelInfo,
+    target_root: std::path::PathBuf,
+    rev_path: String,
+}
+
+async fn init_download(
+    repo_id: &str,
+    dest_dir: &std::path::Path,
+    token: &Option<String>,
+    revision: &Option<String>,
+    folder_name: &Option<String>,
+) -> Result<DownloadSetup, String> {
+    let client = http_client()?;
+    let token_ref = token.as_deref();
+    let mut rev = revision.as_deref().unwrap_or("main").to_string();
+    let requested_rev = rev.clone();
+
+    let mut info =
+        fetch_model_info_with_fallback(&client, repo_id, token_ref, &mut rev, &requested_rev)
+            .await?;
+    match fetch_model_tree(&client, repo_id, token_ref, &rev).await {
+        Ok(tree) if !tree.siblings.is_empty() => info = tree,
+        Ok(_) => {}
+        Err(e) => {
+            return Err(format!(
+                "HF file tree fetch failed for revision '{rev}': {e}"
+            ));
+        }
+    }
+    let rev_path = encode_path_segment(&rev);
+    let safe_id = folder_name
+        .clone()
+        .unwrap_or_else(|| repo_id.replace('/', "--"));
+    let target_root = dest_dir.join(&safe_id);
+    std::fs::create_dir_all(&target_root).map_err(|e| format!("디렉토리 생성 실패: {e}"))?;
+    Ok(DownloadSetup {
+        client,
+        info,
+        target_root,
+        rev_path,
+    })
+}
+
 /// `repo_id` 예: "turboderp/Llama-3.2-1B-Instruct-exl2". siblings를
 /// `dest_dir/<folder_name>/{filename}`으로 저장. revision으로 branch 선택 (EXL2 bpw).
-#[allow(clippy::too_many_lines)]
 pub(crate) fn download_repo(
     repo_id: String,
     dest_dir: std::path::PathBuf,
@@ -30,53 +74,21 @@ pub(crate) fn download_repo(
     folder_name: Option<String>,
 ) -> impl Stream<Item = DownloadEvent> {
     async_stream::stream! {
-        let client = match http_client() {
-            Ok(c) => c,
+        let setup = match init_download(&repo_id, &dest_dir, &token, &revision, &folder_name).await {
+            Ok(s) => s,
             Err(e) => { yield DownloadEvent::Error(e); return; }
         };
-        let token_ref = token.as_deref();
-        let mut rev = revision.as_deref().unwrap_or("main").to_string();
-        let requested_rev = rev.clone();
-
-        let mut info: ModelInfo = match fetch_model_info_with_fallback(
-            &client, &repo_id, token_ref, &mut rev, &requested_rev
-        ).await {
-            Ok(v) => v,
-            Err(e) => {
-                yield DownloadEvent::Error(e);
-                return;
-            }
-        };
-        match fetch_model_tree(&client, &repo_id, token_ref, &rev).await {
-            Ok(tree) if !tree.siblings.is_empty() => {
-                info = tree;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                yield DownloadEvent::Error(format!(
-                    "HF file tree fetch failed for revision '{rev}': {e}"
-                ));
-                return;
-            }
-        }
-        let total_files = info.siblings.len();
+        let total_files = setup.info.siblings.len();
         yield DownloadEvent::Started { total_files };
-        let rev_path = encode_path_segment(&rev);
 
-        let safe_id = folder_name.unwrap_or_else(|| repo_id.replace('/', "--"));
-        let target_root = dest_dir.join(&safe_id);
-        if let Err(e) = std::fs::create_dir_all(&target_root) {
-            yield DownloadEvent::Error(format!("디렉토리 생성 실패: {e}"));
-            return;
-        }
-
-        for (idx, sibling) in info.siblings.iter().enumerate() {
+        for (idx, sibling) in setup.info.siblings.iter().enumerate() {
             let filename = &sibling.rfilename;
             let encoded_filename = encode_repo_file_path(filename);
             let dl_url = format!(
-                "{HF_BASE}/{repo_id}/resolve/{rev_path}/{encoded_filename}"
+                "{HF_BASE}/{repo_id}/resolve/{}/{encoded_filename}",
+                setup.rev_path
             );
-            let mut request = client.get(&dl_url);
+            let mut request = setup.client.get(&dl_url);
             if let Some(t) = token.as_ref().filter(|s| !s.trim().is_empty()) {
                 request = request.bearer_auth(t.trim());
             }
@@ -97,7 +109,7 @@ pub(crate) fn download_repo(
                 size: total_bytes,
             };
 
-            let target_file = target_root.join(filename);
+            let target_file = setup.target_root.join(filename);
             if let Some(parent) = target_file.parent()
                 && let Err(e) = std::fs::create_dir_all(parent) {
                     yield DownloadEvent::Error(format!("디렉토리 생성 실패: {e}"));

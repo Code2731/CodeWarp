@@ -33,23 +33,29 @@ fn active_section_box<'a>(
 }
 
 impl App {
-    #[allow(clippy::too_many_lines)]
-    pub(crate) fn view_settings(&self) -> Element<'_, Message> {
-        let provider_health = self.compute_provider_health();
-        let runtime_health = self.compute_runtime_health();
-        let model_health = self.compute_model_health();
-        let mcp_health = self.compute_mcp_health();
-        let local_model_count =
-            list_downloaded_models(std::path::Path::new(&self.model_dir_input)).len();
-        let active_health = match self.ui.settings_tab {
-            SettingsTab::Provider => provider_health,
-            SettingsTab::Runtime => runtime_health,
-            SettingsTab::Models => model_health,
-            SettingsTab::Mcp => mcp_health,
-            SettingsTab::Theme => TabHealth::Good,
-        };
+    fn settings_tab_health(&self) -> (TabHealth, TabHealth, TabHealth, TabHealth, usize) {
+        (
+            self.compute_provider_health(),
+            self.compute_runtime_health(),
+            self.compute_model_health(),
+            self.compute_mcp_health(),
+            list_downloaded_models(std::path::Path::new(&self.model_dir_input)).len(),
+        )
+    }
 
-        let header = row![
+    fn settings_health_for_tab(&self) -> TabHealth {
+        let (p, r, m, mcp, _) = self.settings_tab_health();
+        match self.ui.settings_tab {
+            SettingsTab::Provider => p,
+            SettingsTab::Runtime => r,
+            SettingsTab::Models => m,
+            SettingsTab::Mcp => mcp,
+            SettingsTab::Theme => TabHealth::Good,
+        }
+    }
+
+    fn view_settings_header(&self) -> Element<'_, Message> {
+        row![
             text("Settings").size(18).font(bold_font()),
             Space::new().width(Length::Fill),
             button(text("?リ린").size(FS_BODY))
@@ -57,30 +63,35 @@ impl App {
                 .padding([4, 12])
                 .style(secondary_btn),
         ]
-        .align_y(Alignment::Center);
+        .align_y(Alignment::Center)
+        .into()
+    }
 
-        let active_section: Element<Message> = match self.ui.settings_tab {
-            SettingsTab::Provider => active_section_box(self.view_provider_tab(), provider_health),
-            SettingsTab::Runtime => {
-                active_section_box(self.view_inference_runner(), runtime_health)
-            }
-            SettingsTab::Models => active_section_box(self.view_model_manager(), model_health),
-            SettingsTab::Mcp => active_section_box(self.view_mcp_settings(), mcp_health),
+    fn view_active_section(
+        &self,
+        ph: TabHealth,
+        rh: TabHealth,
+        mh: TabHealth,
+        mcp_h: TabHealth,
+    ) -> Element<'_, Message> {
+        match self.ui.settings_tab {
+            SettingsTab::Provider => active_section_box(self.view_provider_tab(), ph),
+            SettingsTab::Runtime => active_section_box(self.view_inference_runner(), rh),
+            SettingsTab::Models => active_section_box(self.view_model_manager(), mh),
+            SettingsTab::Mcp => active_section_box(self.view_mcp_settings(), mcp_h),
             SettingsTab::Theme => container(self.view_theme_tab())
                 .padding([4, 4])
                 .width(Length::Fill)
                 .into(),
-        };
+        }
+    }
 
-        let tabs = self.view_settings_tab_bar(
-            provider_health,
-            runtime_health,
-            model_health,
-            mcp_health,
-            local_model_count,
-        );
-        let (summary, active_panel) =
-            self.view_settings_status_panel(active_health, local_model_count);
+    pub(crate) fn view_settings(&self) -> Element<'_, Message> {
+        let (ph, rh, mh, mcp_h, local_count) = self.settings_tab_health();
+        let active_health = self.settings_health_for_tab();
+        let tabs = self.view_settings_tab_bar(ph, rh, mh, mcp_h, local_count);
+        let (summary, active_panel) = self.view_settings_status_panel(active_health, local_count);
+        let active_section = self.view_active_section(ph, rh, mh, mcp_h);
 
         let scroll_body = container(
             column![
@@ -99,7 +110,7 @@ impl App {
         .width(Length::Fill);
 
         let body = column![
-            header,
+            self.view_settings_header(),
             scrollable(scroll_body)
                 .direction(Direction::Vertical(app_vscrollbar()))
                 .style(dark_scrollable)

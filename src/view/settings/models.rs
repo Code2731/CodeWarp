@@ -7,11 +7,9 @@ use iced::widget::{Space, button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Font, Length};
 
 impl App {
-    #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
-    pub(crate) fn view_model_manager(&self) -> Element<'_, Message> {
-        let local_model_count =
-            list_downloaded_models(std::path::Path::new(&self.model_dir_input)).len();
-        let local_state: Element<Message> = if local_model_count == 0 {
+    fn view_model_local_state(&self) -> Element<'_, Message> {
+        let count = list_downloaded_models(std::path::Path::new(&self.model_dir_input)).len();
+        if count == 0 {
             container(
                 text("로컬 모델이 비어 있습니다. 프리셋 1개를 먼저 내려받으세요.").size(FS_LABEL),
             )
@@ -19,34 +17,33 @@ impl App {
             .style(panel_style)
             .into()
         } else {
-            container(
-                text(format!(
-                    "로컬 모델 {local_model_count}개가 준비되어 있습니다."
-                ))
-                .size(FS_LABEL),
-            )
-            .padding([8, 10])
-            .style(panel_style)
-            .into()
-        };
+            container(text(format!("로컬 모델 {count}개가 준비되어 있습니다.")).size(FS_LABEL))
+                .padding([8, 10])
+                .style(panel_style)
+                .into()
+        }
+    }
 
-        let dir_input = text_input("예: C:\\models 또는 ~/models", &self.model_dir_input)
-            .on_input(Message::ModelDirChanged)
-            .padding(8)
-            .size(FS_BODY)
-            .style(field_input)
-            .width(Length::Fixed(360.0));
-        let dir_row = row![
-            dir_input,
+    fn view_model_dir_row(&self) -> Element<'_, Message> {
+        row![
+            text_input("예: C:\\models 또는 ~/models", &self.model_dir_input)
+                .on_input(Message::ModelDirChanged)
+                .padding(8)
+                .size(FS_BODY)
+                .style(field_input)
+                .width(Length::Fixed(360.0)),
             button(text("📁 찾아보기").size(FS_LABEL))
                 .on_press(Message::PickModelDir)
                 .padding([6, 12])
                 .style(secondary_btn),
         ]
         .spacing(6)
-        .align_y(Alignment::Center);
+        .align_y(Alignment::Center)
+        .into()
+    }
 
-        let token_toggle = button(
+    fn view_model_token_section(&self) -> Element<'_, Message> {
+        let toggle = button(
             text(if self.show_hf_token {
                 "토큰 숨기기"
             } else {
@@ -57,7 +54,7 @@ impl App {
         .on_press(Message::ToggleHfTokenVisible)
         .padding([4, 10])
         .style(secondary_btn);
-        let token_section: Element<Message> = if self.show_hf_token {
+        let input: Element<Message> = if self.show_hf_token {
             row![
                 text_input("hf_xxx... (gated repo용, 선택)", &self.hf_token_input)
                     .on_input(Message::HfTokenChanged)
@@ -77,7 +74,10 @@ impl App {
         } else {
             Space::new().height(Length::Shrink).into()
         };
+        column![toggle, input].spacing(4).into()
+    }
 
+    fn view_model_download_row(&self) -> Element<'_, Message> {
         let repo_input = text_input(
             "HF repo (예: Qwen/Qwen2.5-Coder-7B-Instruct)",
             &self.hf_repo_input,
@@ -101,11 +101,15 @@ impl App {
                 .style(primary_btn)
                 .into()
         };
-        let dl_row = row![repo_input, action_btn]
+        row![repo_input, action_btn]
             .spacing(6)
-            .align_y(Alignment::Center);
+            .align_y(Alignment::Center)
+            .into()
+    }
 
-        let progress: Element<Message> = if let Some(dl) = &self.hf_dl {
+    #[allow(clippy::cast_precision_loss)]
+    fn view_model_download_progress(&self) -> Element<'_, Message> {
+        if let Some(dl) = &self.hf_dl {
             let pct_text = match dl.file_bytes_total {
                 Some(t) if t > 0 => {
                     format!("{:.0}%", (dl.file_bytes_done as f64 / t as f64) * 100.0)
@@ -127,18 +131,20 @@ impl App {
             .into()
         } else {
             Space::new().height(Length::Shrink).into()
-        };
+        }
+    }
 
+    pub(crate) fn view_model_manager(&self) -> Element<'_, Message> {
         container(
             column![
                 section_header("모델 매니저"),
-                local_state,
+                self.view_model_local_state(),
                 text("HuggingFace에서 모델 받아 디스크에 저장.").size(FS_LABEL),
                 Space::new().height(Length::Fixed(4.0)),
                 text("저장 경로 (변경 가능)")
                     .size(FS_LABEL)
                     .font(semibold_font()),
-                dir_row,
+                self.view_model_dir_row(),
                 Space::new().height(Length::Fixed(12.0)),
                 self.view_exl2_presets(),
                 Space::new().height(Length::Fixed(12.0)),
@@ -147,11 +153,10 @@ impl App {
                 Self::view_model_presets(),
                 Space::new().height(Length::Fixed(8.0)),
                 text("또는 직접 입력").size(FS_LABEL).font(semibold_font()),
-                dl_row,
-                progress,
+                self.view_model_download_row(),
+                self.view_model_download_progress(),
                 Space::new().height(Length::Fixed(12.0)),
-                token_toggle,
-                token_section,
+                self.view_model_token_section(),
             ]
             .spacing(6),
         )

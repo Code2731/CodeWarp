@@ -147,10 +147,8 @@ impl App {
         self.window_width >= 1100.0
     }
 
-    pub(crate) fn view(&self) -> Element<'_, Message> {
-        let topbar = self.view_topbar();
-
-        let mut main_row = row![
+    fn view_main_row(&self) -> Element<'_, Message> {
+        let mut row = row![
             self.view_sidebar(),
             container(self.view_stream())
                 .width(Length::Fill)
@@ -159,36 +157,28 @@ impl App {
         ]
         .spacing(MAIN_ROW_SPACING)
         .height(Length::Fill);
-
         if self.right_panel_visible() {
-            main_row = main_row.push(self.view_rightpanel());
+            row = row.push(self.view_rightpanel());
         }
-
-        let main_view: Element<Message> = container(main_row)
+        container(row)
             .padding([MAIN_PAD_Y, MAIN_PAD_X])
             .height(Length::Fill)
-            .into();
+            .into()
+    }
 
-        // overlay가 필요하면 stack으로 메인 위에 띄움 (backdrop + 가운데 모달 박스)
-        let middle: Element<Message> = if self.ui.show_command_palette {
+    fn view_overlay<'a>(&'a self, main_view: Element<'a, Message>) -> Element<'a, Message> {
+        if self.ui.show_command_palette {
             stack![main_view, modal_overlay(self.view_command_palette())].into()
         } else if self.ui.show_settings {
             stack![main_view, modal_overlay(self.view_settings())].into()
         } else if self.ui.show_shortcut_guide {
             stack![main_view, modal_overlay(view_shortcut_guide())].into()
         } else {
-            // write_confirm은 입력창 위 인라인 패널(view_stream 안에서 처리)
             main_view
-        };
-
-        let statusbar = self.view_statusbar();
-
-        let mut col = column![topbar, middle];
-        if self.ui.pty_visible {
-            col = col.push(self.view_pty_panel());
         }
-        let base = col.push(statusbar).width(Length::Fill).height(Length::Fill);
+    }
 
+    fn view_toast<'a>(&'a self, base: Element<'a, Message>) -> Element<'a, Message> {
         if let Some(toast_text) = &self.toast {
             let toast = container(
                 row![
@@ -215,7 +205,22 @@ impl App {
                 .padding(Padding::new(0.0).bottom(48.0));
             stack![base, toast_layer].into()
         } else {
-            base.into()
+            base
         }
+    }
+
+    pub(crate) fn view(&self) -> Element<'_, Message> {
+        let main_view = self.view_main_row();
+        let middle = self.view_overlay(main_view);
+        let mut col = column![self.view_topbar(), middle];
+        if self.ui.pty_visible {
+            col = col.push(self.view_pty_panel());
+        }
+        let base: Element<'_, Message> = col
+            .push(self.view_statusbar())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+        self.view_toast(base)
     }
 }

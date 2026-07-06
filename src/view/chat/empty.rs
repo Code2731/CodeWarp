@@ -3,11 +3,11 @@ use crate::view::ui::{
     SPACE_XXS, bold_font, context_item_style, panel_style, secondary_btn, semibold_font,
 };
 use crate::{App, Message};
-use iced::widget::{Space, button, column, container, row, text};
+use iced::widget::{Space, button, column, container, mouse_area, row, text};
 use iced::{Alignment, Color, Element, Font, Length, Theme};
 
 impl App {
-    pub(crate) fn view_empty_chat() -> Element<'static, Message> {
+    pub(crate) fn view_empty_chat(&self) -> Element<'_, Message> {
         const EXAMPLES: &[&str] = &[
             "이 프로젝트의 의존성을 알려줘",
             "src/main.rs의 첫 30줄을 요약해줘",
@@ -57,27 +57,47 @@ impl App {
         ]
         .spacing(2);
 
-        let shortcut_hint = |keys: &'static str, label: &'static str| {
-            container(
-                row![
-                    text(keys)
-                        .size(FS_LABEL)
-                        .font(Font::with_name("JetBrains Mono")),
-                    Space::new().width(Length::Fill),
-                    text(label).size(FS_BODY),
-                ]
-                .spacing(SPACE_SM)
-                .align_y(Alignment::Center),
-            )
-            .padding([PAD_XS, PAD_MD])
-            .style(context_item_style)
+        let shortcut_hint = |idx: usize, keys: &'static str, label: &'static str| {
+            let is_hovered = self.hovered_shortcut_idx == Some(idx);
+            let content = row![
+                text(keys)
+                    .size(FS_LABEL)
+                    .font(Font::with_name("JetBrains Mono")),
+                Space::new().width(Length::Fill),
+                text(label).size(FS_BODY),
+            ]
+            .spacing(SPACE_SM)
+            .align_y(Alignment::Center);
+            let hint = container(content)
+                .padding([PAD_XS, PAD_MD])
+                .style(move |theme: &Theme| {
+                    let mut s = context_item_style(theme);
+                    if is_hovered {
+                        let p = theme.extended_palette();
+                        s.background = Some(
+                            Color::from_rgba(
+                                p.primary.base.color.r,
+                                p.primary.base.color.g,
+                                p.primary.base.color.b,
+                                0.08,
+                            )
+                            .into(),
+                        );
+                    }
+                    s
+                });
+            let hint: Element<'_, Message> = mouse_area(hint)
+                .on_enter(Message::ShortcutHintHovered(Some(idx)))
+                .on_exit(Message::ShortcutHintHovered(None))
+                .into();
+            hint
         };
         let shortcuts = column![
             text("키보드 단축키").size(FS_LABEL).font(semibold_font()),
-            shortcut_hint("Ctrl+K", "명령 팔레트"),
-            shortcut_hint("Ctrl+N", "새 채팅"),
-            shortcut_hint("Ctrl+,", "설정"),
-            shortcut_hint("Ctrl+Shift+P / B", "Plan / Build 모드"),
+            shortcut_hint(0, "Ctrl+K", "명령 팔레트"),
+            shortcut_hint(1, "Ctrl+N", "새 채팅"),
+            shortcut_hint(2, "Ctrl+,", "설정"),
+            shortcut_hint(3, "Ctrl+Shift+P / B", "Plan / Build 모드"),
         ]
         .spacing(SPACE_XS);
 

@@ -91,6 +91,22 @@ impl App {
                 self.hovered_palette_idx = *idx;
                 Some(Task::none())
             }
+            Message::ConfirmCardHovered(idx) => {
+                self.hovered_confirm_idx = *idx;
+                Some(Task::none())
+            }
+            Message::AttachChipHovered(idx) => {
+                self.hovered_attach_idx = *idx;
+                Some(Task::none())
+            }
+            Message::ShortcutHintHovered(idx) => {
+                self.hovered_shortcut_idx = *idx;
+                Some(Task::none())
+            }
+            Message::PtyPanelHovered(hovered) => {
+                self.hovered_pty = *hovered;
+                Some(Task::none())
+            }
             Message::DismissToast => {
                 self.toast = None;
                 Some(Task::none())

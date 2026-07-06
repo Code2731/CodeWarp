@@ -7,7 +7,7 @@ use iced::{Element, Length};
 impl App {
     pub(crate) fn view_blocks(&self) -> Element<'_, Message> {
         if self.blocks.is_empty() {
-            Self::view_empty_chat()
+            self.view_empty_chat()
         } else {
             let last_user_idx = last_user_block_idx(&self.blocks);
             let last_asst_idx = last_assistant_block_idx(&self.blocks);

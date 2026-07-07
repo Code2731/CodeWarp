@@ -6,8 +6,7 @@ impl App {
                 self.editor_content.perform(action.clone());
                 let new_text = self.editor_content.text();
                 if new_text != self.input {
-                    self.input = new_text;
-                    return Some(self.on_input_changed(self.input.clone()));
+                    return Some(self.sync_input_value(new_text, false));
                 }
                 Some(Task::none())
             }

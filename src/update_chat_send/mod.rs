@@ -12,28 +12,15 @@ mod send;
 mod tests;
 
 impl App {
-    pub(crate) fn on_file_read_done(
+    pub(crate) fn sync_input_value(
         &mut self,
-        path: std::path::PathBuf,
-        content: String,
+        value: String,
+        sync_editor_content: bool,
     ) -> Task<Message> {
-        if self.is_already_attached(&path) {
-            self.status = format!("Already attached: {}", path.display());
-        } else {
-            self.attached_files.push((path, content));
-            let current_total = self.total_attached_bytes();
-            self.status = format!(
-                "Attached ({} files): {}/{}",
-                self.attached_files.len(),
-                fmt_bytes(current_total),
-                fmt_bytes(MAX_ATTACH_BYTES)
-            );
-        }
-        Task::none()
-    }
-    pub(crate) fn on_input_changed(&mut self, value: String) -> Task<Message> {
         self.input.clone_from(&value);
-        self.editor_content = text_editor::Content::with_text(&value);
+        if sync_editor_content {
+            self.editor_content = text_editor::Content::with_text(&value);
+        }
         match extract_mention_query(&self.input) {
             Some(q) => {
                 self.mention_query = q.to_string();
@@ -54,6 +41,29 @@ impl App {
             }
         }
         Task::none()
+    }
+
+    pub(crate) fn on_file_read_done(
+        &mut self,
+        path: std::path::PathBuf,
+        content: String,
+    ) -> Task<Message> {
+        if self.is_already_attached(&path) {
+            self.status = format!("Already attached: {}", path.display());
+        } else {
+            self.attached_files.push((path, content));
+            let current_total = self.total_attached_bytes();
+            self.status = format!(
+                "Attached ({} files): {}/{}",
+                self.attached_files.len(),
+                fmt_bytes(current_total),
+                fmt_bytes(MAX_ATTACH_BYTES)
+            );
+        }
+        Task::none()
+    }
+    pub(crate) fn on_input_changed(&mut self, value: String) -> Task<Message> {
+        self.sync_input_value(value, true)
     }
     pub(crate) fn edit_last_user(&mut self) -> Task<Message> {
         if self.streaming_block_id.is_some() {

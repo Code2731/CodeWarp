@@ -107,6 +107,10 @@ impl App {
                 self.hovered_pty = *hovered;
                 Some(Task::none())
             }
+            Message::McpServerHovered(idx) => {
+                self.hovered_mcp_idx = *idx;
+                Some(Task::none())
+            }
             Message::DismissToast => {
                 self.toast = None;
                 Some(Task::none())

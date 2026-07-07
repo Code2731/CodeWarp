@@ -113,6 +113,7 @@ pub(crate) struct App {
     pub(crate) hovered_attach_idx: Option<usize>,
     pub(crate) hovered_shortcut_idx: Option<usize>,
     pub(crate) hovered_pty: bool,
+    pub(crate) hovered_mcp_idx: Option<usize>,
     pub(crate) compare_old_text: Option<String>,
     pub(crate) compare_new_text: Option<String>,
     pub(crate) toast: Option<String>,

@@ -118,6 +118,7 @@ impl App {
             hovered_attach_idx: None,
             hovered_shortcut_idx: None,
             hovered_pty: false,
+            hovered_mcp_idx: None,
             compare_old_text: None,
             compare_new_text: None,
             toast: None,

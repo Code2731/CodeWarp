@@ -4,8 +4,8 @@ use crate::view::ui::{
 };
 use crate::{App, Message};
 use iced::widget::tooltip::Position;
-use iced::widget::{Space, button, column, container, row, text, text_input, tooltip};
-use iced::{Alignment, Element, Length};
+use iced::widget::{Space, button, column, container, mouse_area, row, text, text_input, tooltip};
+use iced::{Alignment, Color, Element, Length, Theme};
 
 impl App {
     pub(crate) fn view_mcp_settings(&self) -> Element<'_, Message> {
@@ -19,22 +19,62 @@ impl App {
                 .filter(|t| t.server_name == s.name)
                 .count();
             let label = format!("{} — {} (tool {tool_count}개)", s.name, s.command);
+            let is_hovered = self.hovered_mcp_idx == Some(i);
+            let row_widget = row![
+                text(shorten_tail(&label, 72))
+                    .size(FS_BODY)
+                    .width(Length::Fill),
+                tooltip(
+                    button(text("✕").size(FS_LABEL))
+                        .on_press(Message::RemoveMcpServer(i))
+                        .padding([2, 6])
+                        .style(danger_btn),
+                    text("서버 제거").size(FS_MICRO),
+                    Position::Bottom,
+                ),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center);
+            let item = container(row_widget)
+                .padding([4, 6])
+                .width(Length::Fill)
+                .style(move |theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(
+                            (if is_hovered {
+                                Color::from_rgba(
+                                    p.primary.base.color.r,
+                                    p.primary.base.color.g,
+                                    p.primary.base.color.b,
+                                    0.06,
+                                )
+                            } else {
+                                Color::from_rgba(0.0, 0.0, 0.0, 0.0)
+                            })
+                            .into(),
+                        ),
+                        border: iced::Border {
+                            color: if is_hovered {
+                                Color::from_rgba(
+                                    p.primary.base.color.r,
+                                    p.primary.base.color.g,
+                                    p.primary.base.color.b,
+                                    0.30,
+                                )
+                            } else {
+                                Color::from_rgba(0.0, 0.0, 0.0, 0.0)
+                            },
+                            width: 1.0,
+                            radius: 6.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                });
             server_list = server_list.push(
-                row![
-                    text(shorten_tail(&label, 72))
-                        .size(FS_BODY)
-                        .width(Length::Fill),
-                    tooltip(
-                        button(text("✕").size(FS_LABEL))
-                            .on_press(Message::RemoveMcpServer(i))
-                            .padding([2, 6])
-                            .style(danger_btn),
-                        text("서버 제거").size(FS_MICRO),
-                        Position::Bottom,
-                    ),
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center),
+                mouse_area(item)
+                    .on_enter(Message::McpServerHovered(Some(i)))
+                    .on_exit(Message::McpServerHovered(None)),
             );
         }
 

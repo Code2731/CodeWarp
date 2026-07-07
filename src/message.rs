@@ -207,6 +207,7 @@ pub(crate) enum Message {
     AttachChipHovered(Option<usize>),
     ShortcutHintHovered(Option<usize>),
     PtyPanelHovered(bool),
+    McpServerHovered(Option<usize>),
     StartRenameSession(u64),
     RenameSession(u64, String),
     CancelRenameSession,

@@ -117,6 +117,8 @@ pub(crate) enum Message {
     CloseCommandPalette,
     CloseAllOverlays,
     CommandPaletteChanged(String),
+    PaletteMove(i32),
+    ActivatePaletteSelection,
     ExecuteCommand(usize),
     TabbyUrlChanged(String),
     TabbyTokenChanged(String),

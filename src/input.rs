@@ -35,8 +35,8 @@ pub(crate) fn on_event(
     match event {
         iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
             match key.as_ref() {
-                Key::Named(Named::ArrowUp) => Some(Message::MentionMove(-1)),
-                Key::Named(Named::ArrowDown) => Some(Message::MentionMove(1)),
+                Key::Named(Named::ArrowUp) => Some(Message::PaletteMove(-1)),
+                Key::Named(Named::ArrowDown) => Some(Message::PaletteMove(1)),
                 _ => handle_key(&key, modifiers),
             }
         }
@@ -59,6 +59,18 @@ pub(crate) fn on_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn arrow_key_event(key: Named) -> iced::Event {
+        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: Key::Named(key),
+            modified_key: Key::Named(key),
+            physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::ArrowUp),
+            location: iced::keyboard::Location::Standard,
+            modifiers: Modifiers::default(),
+            text: None,
+            repeat: false,
+        })
+    }
 
     #[test]
     fn input_escape_closes_overlays() {
@@ -103,6 +115,28 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn input_arrow_up_event_moves_palette() {
+        let result = on_event(
+            arrow_key_event(Named::ArrowUp),
+            iced::event::Status::Ignored,
+            iced::window::Id::unique(),
+        );
+
+        assert!(matches!(result, Some(Message::PaletteMove(-1))));
+    }
+
+    #[test]
+    fn input_arrow_down_event_moves_palette() {
+        let result = on_event(
+            arrow_key_event(Named::ArrowDown),
+            iced::event::Status::Ignored,
+            iced::window::Id::unique(),
+        );
+
+        assert!(matches!(result, Some(Message::PaletteMove(1))));
     }
 
     #[test]

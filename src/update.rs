@@ -49,3 +49,4 @@ include!("update_dispatch_io.rs");
 include!("update_dispatch_session.rs");
 include!("update_dispatch_chat.rs");
 include!("update_dispatch_ui.rs");
+include!("update_palette.rs");

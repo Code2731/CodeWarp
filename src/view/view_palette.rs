@@ -3,10 +3,11 @@ use super::ui::{
     FS_BODY, FS_LABEL, FS_SUBTITLE, app_vscrollbar, bold_font, dark_scrollable, field_input,
     panel_style, secondary_btn, semibold_font,
 };
+use crate::palette::{PALETTE_INPUT_ID, PaletteRowState, palette_row_state};
 use crate::{App, Message};
 use iced::widget::scrollable::Direction;
 use iced::widget::{
-    Space, button, column, container, mouse_area, row, scrollable, text, text_input,
+    Id, Space, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
 use iced::{Color, Element, Length, Theme};
 
@@ -20,8 +21,9 @@ impl App {
         ]
         .spacing(2);
         let input = text_input("명령 검색…", &self.ui.command_palette_input)
+            .id(Id::new(PALETTE_INPUT_ID))
             .on_input(Message::CommandPaletteChanged)
-            .on_submit(Message::ExecuteCommand(0))
+            .on_submit(Message::ActivatePaletteSelection)
             .padding(10)
             .size(FS_BODY)
             .style(field_input);
@@ -32,10 +34,17 @@ impl App {
             list = list.push(text("(매칭 없음)").size(FS_BODY));
         } else {
             for (i, cmd) in filtered.iter().enumerate() {
-                let is_hovered = self.hovered_palette_idx == Some(i);
+                let row_state =
+                    palette_row_state(i, self.ui.active_palette_idx, self.hovered_palette_idx);
+                let is_active = row_state == PaletteRowState::Active;
+                let is_hovered = row_state == PaletteRowState::Hovered;
                 let item = button(
                     column![
-                        text(cmd.label).size(FS_SUBTITLE).font(semibold_font()),
+                        row![
+                            text(if is_active { "▶" } else { "" }).size(FS_SUBTITLE),
+                            text(cmd.label).size(FS_SUBTITLE).font(semibold_font()),
+                        ]
+                        .spacing(4),
                         text(cmd.hint).size(FS_LABEL),
                     ]
                     .spacing(2),
@@ -51,22 +60,32 @@ impl App {
                             .on_exit(Message::PaletteHovered(None)),
                     )
                     .style(move |theme: &Theme| {
-                        if is_hovered {
+                        if is_active || is_hovered {
                             let p = theme.extended_palette();
+                            let alpha = if is_active { 0.12 } else { 0.06 };
+                            let border = if is_active {
+                                iced::Border {
+                                    color: p.primary.base.color,
+                                    width: 1.0,
+                                    radius: 10.0.into(),
+                                }
+                            } else {
+                                iced::Border {
+                                    radius: 10.0.into(),
+                                    ..Default::default()
+                                }
+                            };
                             container::Style {
                                 background: Some(
                                     Color::from_rgba(
                                         p.primary.base.color.r,
                                         p.primary.base.color.g,
                                         p.primary.base.color.b,
-                                        0.06,
+                                        alpha,
                                     )
                                     .into(),
                                 ),
-                                border: iced::Border {
-                                    radius: 10.0.into(),
-                                    ..Default::default()
-                                },
+                                border,
                                 ..Default::default()
                             }
                         } else {

@@ -42,6 +42,8 @@ impl App {
             Message::CloseCommandPalette => Some(self.close_command_palette()),
             Message::CloseAllOverlays => Some(self.close_all_overlays()),
             Message::CommandPaletteChanged(v) => Some(self.update_command_palette_input(v.clone())),
+            Message::PaletteMove(delta) => Some(self.move_palette_selection_or_mention(*delta)),
+            Message::ActivatePaletteSelection => Some(self.activate_palette_selection()),
             Message::ExecuteCommand(idx) => Some(self.execute_palette_command(*idx)),
             Message::ToggleFavorite => Some(self.toggle_favorite()),
             Message::ThemeHexChanged(field, value) => {
@@ -88,6 +90,12 @@ impl App {
             }
             Message::PaletteHovered(idx) => {
                 self.hovered_palette_idx = *idx;
+                if let Some(index) = idx {
+                    self.ui.active_palette_idx = crate::palette::palette_selection_for_mouse_enter(
+                        *index,
+                        self.filtered_palette_commands().len(),
+                    );
+                }
                 Some(Task::none())
             }
             Message::ConfirmCardHovered(idx) => {

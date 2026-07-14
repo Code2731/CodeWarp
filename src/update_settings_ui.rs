@@ -1,7 +1,5 @@
 // update_settings_ui.rs — Settings UI toggle/input/palette methods (main.rs child module)
-use super::{
-    AgentMode, App, Message, PaletteAction, SIDEBAR_WIDTH, SettingsTab, keystore, session,
-};
+use super::{AgentMode, App, Message, SIDEBAR_WIDTH, SettingsTab, keystore, session};
 use crate::ModelCategory;
 use crate::view::{SIDEBAR_WIDTH_COMPACT, SIDEBAR_WIDTH_WIDE};
 use iced::Task;
@@ -96,19 +94,6 @@ impl App {
         self.status = format!("사이드바 너비: {:.0}px", self.sidebar_width);
         Task::none()
     }
-    pub(crate) fn open_command_palette(&mut self) -> Task<Message> {
-        self.ui.show_command_palette = true;
-        self.ui.command_palette_input.clear();
-        Task::none()
-    }
-    pub(crate) fn close_command_palette(&mut self) -> Task<Message> {
-        self.ui.show_command_palette = false;
-        Task::none()
-    }
-    pub(crate) fn update_command_palette_input(&mut self, value: String) -> Task<Message> {
-        self.ui.command_palette_input = value;
-        Task::none()
-    }
     pub(crate) fn ask_delete_session(&mut self, id: u64) -> Task<Message> {
         self.ui.pending_delete_session = if self.ui.pending_delete_session == Some(id) {
             None
@@ -157,31 +142,13 @@ impl App {
         Task::none()
     }
     pub(crate) fn close_all_overlays(&mut self) -> Task<Message> {
-        self.ui.show_command_palette = false;
+        let _ = self.close_command_palette();
         self.ui.show_settings = false;
         self.ui.show_shortcut_guide = false;
         self.ui.renaming_session_id = None;
         self.ui.show_write_confirm = false;
         self.close_mention();
         Task::none()
-    }
-    pub(crate) fn execute_palette_command(&mut self, idx: usize) -> Task<Message> {
-        let filtered = self.filtered_palette_commands();
-        let Some(cmd) = filtered.get(idx) else {
-            return Task::none();
-        };
-        let action = cmd.action;
-        self.ui.show_command_palette = false;
-        self.ui.command_palette_input.clear();
-        match action {
-            PaletteAction::NewChat => Task::done(Message::NewChat),
-            PaletteAction::PlanMode => Task::done(Message::SetAgentMode(AgentMode::Plan)),
-            PaletteAction::BuildMode => Task::done(Message::SetAgentMode(AgentMode::Build)),
-            PaletteAction::OpenSettings => Task::done(Message::OpenSettings),
-            PaletteAction::PickCwd => Task::done(Message::PickCwd),
-            PaletteAction::CycleSort => Task::done(Message::CycleSortMode),
-            PaletteAction::ToggleFavorite => Task::done(Message::ToggleFavorite),
-        }
     }
     pub(crate) fn start_rename_session(&mut self, id: u64) -> Task<Message> {
         let title = if self.current_session_id == id {

@@ -34,6 +34,7 @@ pub(crate) struct UiState {
     pub(crate) show_write_confirm: bool,
     pub(crate) show_mention: bool,
     pub(crate) pty_visible: bool,
+    pub(crate) reduced_motion: bool,
 }
 
 impl UiState {
@@ -60,6 +61,7 @@ impl UiState {
             show_write_confirm: false,
             show_mention: false,
             pty_visible: false,
+            reduced_motion: false,
         }
     }
 

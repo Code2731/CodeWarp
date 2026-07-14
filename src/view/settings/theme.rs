@@ -83,6 +83,18 @@ impl App {
         .spacing(8)
         .align_y(Alignment::Center);
 
+        let motion_control = iced::widget::toggler(self.ui.reduced_motion)
+            .label("동작 줄이기")
+            .text_size(FS_BODY)
+            .on_toggle(Message::SetReducedMotion);
+
+        let motion_section = column![
+            section_header("접근성"),
+            text("스트리밍 중 깜빡임과 펄스를 고정된 표시 상태로 유지합니다.").size(FS_LABEL),
+            motion_control,
+        ]
+        .spacing(6);
+
         let presets = theme_presets();
         let mut preset_row = row![].spacing(6);
         for (i, p) in presets.iter().enumerate() {
@@ -124,6 +136,8 @@ impl App {
                         col,
                         Space::new().height(Length::Fixed(8.0)),
                         action_row,
+                        Space::new().height(Length::Fixed(12.0)),
+                        motion_section,
                         Space::new().height(Length::Fixed(12.0)),
                         section_header("프리셋 테마"),
                         text("자주 쓰는 색 조합을 클릭 한 번으로 불러옵니다.").size(FS_LABEL),

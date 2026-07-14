@@ -54,10 +54,18 @@ impl App {
             Message::ApplyTheme => Some(self.apply_theme()),
             Message::ResetTheme => Some(self.reset_theme()),
             Message::ThemeSaved(r) => Some(self.on_theme_saved(r.clone())),
+            Message::SetReducedMotion(enabled) => {
+                self.ui.reduced_motion = *enabled;
+                if *enabled {
+                    self.skeleton_phase = crate::motion::REDUCED_MOTION_PHASE;
+                }
+                Some(Task::none())
+            }
             Message::FileTreeToggle(p) => Some(self.toggle_file_tree_dir(p.clone())),
             Message::RefreshFileTree => Some(self.refresh_file_tree()),
             Message::SkeletonTick => {
-                self.skeleton_phase = (self.skeleton_phase + 1) % 4;
+                self.skeleton_phase =
+                    crate::motion::next_skeleton_phase(self.skeleton_phase, self.ui.reduced_motion);
                 Some(Task::none())
             }
             Message::ToggleTldrView(id) => {

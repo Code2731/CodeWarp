@@ -289,17 +289,24 @@ impl App {
             return Self::view_collapsed_preview(b);
         }
         if self.streaming_block_id == Some(b.id) && self.streaming_raw.is_empty() {
-            return super::skeleton::view_skeleton_block(self.skeleton_phase);
+            return super::skeleton::view_skeleton_block(crate::motion::rendered_skeleton_phase(
+                self.skeleton_phase,
+                self.ui.reduced_motion,
+            ));
         }
         match (&b.body, b.view_mode) {
             (BlockBody::User(s), _) => text(s).size(FS_SUBTITLE).into(),
             (BlockBody::Assistant(content), ViewMode::Raw) => {
                 if self.streaming_block_id == Some(b.id) && !self.streaming_raw.is_empty() {
-                    let cursor = if super::skeleton::cursor_visible(self.skeleton_phase) {
-                        text("▊").size(FS_SUBTITLE)
-                    } else {
-                        text(" ").size(FS_SUBTITLE)
-                    };
+                    let cursor =
+                        if super::skeleton::cursor_visible(crate::motion::rendered_skeleton_phase(
+                            self.skeleton_phase,
+                            self.ui.reduced_motion,
+                        )) {
+                            text("▊").size(FS_SUBTITLE)
+                        } else {
+                            text(" ").size(FS_SUBTITLE)
+                        };
                     row![text(&self.streaming_raw).size(FS_SUBTITLE), cursor]
                         .spacing(0)
                         .into()
@@ -342,7 +349,7 @@ impl App {
                         accent_color.r,
                         accent_color.g,
                         accent_color.b,
-                        0.6 + 0.4 * (self.skeleton_phase as f32 / 3.0),
+                        crate::motion::accent_opacity(self.skeleton_phase, self.ui.reduced_motion),
                     )
                 } else {
                     accent_color

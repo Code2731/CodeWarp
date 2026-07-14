@@ -34,7 +34,10 @@ impl App {
             Duration::from_secs(60)
         };
         let timer_sub = iced::time::every(interval).map(|_| Message::AutoSave);
-        let skeleton_sub = if self.streaming_block_id.is_some() {
+        let skeleton_sub = if crate::motion::skeleton_tick_required(
+            self.streaming_block_id.is_some(),
+            self.ui.reduced_motion,
+        ) {
             iced::time::every(Duration::from_millis(600)).map(|_| Message::SkeletonTick)
         } else {
             Subscription::none()

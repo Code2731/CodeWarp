@@ -9,6 +9,7 @@ mod keystore;
 mod mcp;
 mod message;
 mod model;
+mod motion;
 mod openrouter;
 mod palette;
 mod pty;

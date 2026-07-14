@@ -81,3 +81,23 @@ pub(crate) fn view_skeleton_block(phase: u8) -> Element<'static, Message> {
         .width(Length::Fill)
         .into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{cursor_visible, pulse_opacity};
+    use crate::motion::{REDUCED_MOTION_PHASE, accent_opacity, rendered_skeleton_phase};
+
+    #[test]
+    fn motion_reduced_mode_renders_stable_visible_skeleton_cursor_and_accent() {
+        // Given: a previously animated phase.
+        let phase = rendered_skeleton_phase(3, true);
+
+        // When: reduced-motion visual policies are applied.
+
+        // Then: each feedback surface remains visibly stable.
+        assert_eq!(phase, REDUCED_MOTION_PHASE);
+        assert_eq!(pulse_opacity(phase), 1.0);
+        assert!(cursor_visible(phase));
+        assert_eq!(accent_opacity(phase, true), 1.0);
+    }
+}

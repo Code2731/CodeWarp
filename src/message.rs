@@ -194,6 +194,7 @@ pub(crate) enum Message {
     ApplyTheme,
     ResetTheme,
     ThemeSaved(Result<(), String>),
+    SetReducedMotion(bool),
     FileTreeToggle(std::path::PathBuf),
     RefreshFileTree,
     SkeletonTick,

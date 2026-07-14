@@ -6,6 +6,7 @@ use iced::widget::{Id, operation};
 
 impl App {
     pub(crate) fn open_command_palette(&mut self) -> iced::Task<Message> {
+        self.clear_top_level_overlays();
         self.ui.show_command_palette = true;
         self.ui.command_palette_input.clear();
         self.ui.active_palette_idx = palette_selection_for_result_count(PALETTE_COMMANDS.len());

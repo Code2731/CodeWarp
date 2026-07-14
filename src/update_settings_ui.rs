@@ -5,7 +5,14 @@ use crate::view::{SIDEBAR_WIDTH_COMPACT, SIDEBAR_WIDTH_WIDE};
 use iced::Task;
 
 impl App {
+    pub(crate) fn clear_top_level_overlays(&mut self) {
+        let _ = self.close_command_palette();
+        self.ui.show_settings = false;
+        self.ui.show_shortcut_guide = false;
+    }
+
     pub(crate) fn open_settings_overlay(&mut self) -> Task<Message> {
+        self.clear_top_level_overlays();
         self.ui.show_settings = true;
         self.ui.settings_tab = SettingsTab::Provider;
         Task::none()
@@ -142,9 +149,7 @@ impl App {
         Task::none()
     }
     pub(crate) fn close_all_overlays(&mut self) -> Task<Message> {
-        let _ = self.close_command_palette();
-        self.ui.show_settings = false;
-        self.ui.show_shortcut_guide = false;
+        self.clear_top_level_overlays();
         self.ui.renaming_session_id = None;
         self.ui.show_write_confirm = false;
         self.close_mention();
@@ -190,7 +195,12 @@ impl App {
         Task::none()
     }
     pub(crate) fn toggle_shortcut_guide(&mut self) -> Task<Message> {
-        self.ui.show_shortcut_guide = !self.ui.show_shortcut_guide;
+        if self.ui.show_shortcut_guide {
+            self.ui.show_shortcut_guide = false;
+        } else {
+            self.clear_top_level_overlays();
+            self.ui.show_shortcut_guide = true;
+        }
         Task::none()
     }
     pub(crate) fn apply_picked_cwd(
@@ -228,5 +238,99 @@ mod tests {
 
         assert!(!app.ui.compare_both);
         assert!(app.status.contains("Single 모드"), "got: {}", app.status);
+    }
+
+    #[test]
+    fn overlay_open_transitions_are_mutually_exclusive() {
+        let (mut app, _) = App::new();
+        app.ui.show_settings = true;
+        app.ui.show_shortcut_guide = true;
+
+        let _ = app.update(Message::OpenCommandPalette);
+
+        assert!(app.ui.show_command_palette);
+        assert!(!app.ui.show_settings);
+        assert!(!app.ui.show_shortcut_guide);
+    }
+
+    #[test]
+    fn overlay_settings_open_is_mutually_exclusive() {
+        let (mut app, _) = App::new();
+        app.ui.show_command_palette = true;
+        app.ui.show_shortcut_guide = true;
+
+        let _ = app.update(Message::OpenSettings);
+
+        assert!(!app.ui.show_command_palette);
+        assert!(app.ui.show_settings);
+        assert!(!app.ui.show_shortcut_guide);
+    }
+
+    #[test]
+    fn overlay_shortcut_guide_toggle_is_exclusive() {
+        let (mut app, _) = App::new();
+        app.ui.show_command_palette = true;
+        app.ui.show_settings = true;
+
+        let _ = app.update(Message::ToggleShortcutGuide);
+
+        assert!(!app.ui.show_command_palette);
+        assert!(!app.ui.show_settings);
+        assert!(app.ui.show_shortcut_guide);
+    }
+
+    #[test]
+    fn overlay_close_does_not_reveal_previous_overlay() {
+        let (mut app, _) = App::new();
+        app.ui.show_settings = true;
+
+        let _ = app.update(Message::OpenCommandPalette);
+        let _ = app.update(Message::CloseCommandPalette);
+
+        assert!(!app.ui.show_command_palette);
+        assert!(!app.ui.show_settings);
+        assert!(!app.ui.show_shortcut_guide);
+    }
+
+    #[test]
+    fn overlay_settings_close_leaves_all_top_level_overlays_closed() {
+        let (mut app, _) = App::new();
+        app.ui.show_settings = true;
+
+        let _ = app.update(Message::CloseSettings);
+
+        assert!(!app.ui.show_command_palette);
+        assert!(!app.ui.show_settings);
+        assert!(!app.ui.show_shortcut_guide);
+    }
+
+    #[test]
+    fn overlay_shortcut_guide_close_leaves_all_top_level_overlays_closed() {
+        let (mut app, _) = App::new();
+
+        let _ = app.update(Message::ToggleShortcutGuide);
+        let _ = app.update(Message::ToggleShortcutGuide);
+
+        assert!(!app.ui.show_command_palette);
+        assert!(!app.ui.show_settings);
+        assert!(!app.ui.show_shortcut_guide);
+    }
+
+    #[test]
+    fn overlay_escape_closes_top_level_and_inline_overlays() {
+        let (mut app, _) = App::new();
+        app.ui.show_command_palette = true;
+        app.ui.show_settings = true;
+        app.ui.show_shortcut_guide = true;
+        app.ui.renaming_session_id = Some(1);
+        app.ui.show_write_confirm = true;
+
+        let _ = app.update(Message::CloseAllOverlays);
+
+        assert!(!app.ui.show_command_palette);
+        assert!(!app.ui.show_settings);
+        assert!(!app.ui.show_shortcut_guide);
+        assert!(app.ui.renaming_session_id.is_none());
+        assert!(!app.ui.show_write_confirm);
     }
 }

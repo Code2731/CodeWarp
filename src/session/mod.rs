@@ -4,6 +4,7 @@ mod persist;
 mod persist_tests;
 mod recovery;
 mod theme;
+mod theme_contrast;
 mod usage;
 
 pub(crate) use favorites::{read_favorites, write_favorites};

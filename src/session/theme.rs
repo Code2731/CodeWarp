@@ -2,7 +2,9 @@ use iced::Color;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+use super::theme_contrast;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ThemeConfig {
     pub(crate) background: [u8; 3],
     pub(crate) text: [u8; 3],
@@ -81,6 +83,12 @@ impl ThemeConfig {
         Ok(())
     }
 
+    pub(crate) fn normal_text_contrast_violation(
+        &self,
+    ) -> Option<theme_contrast::ContrastViolation> {
+        theme_contrast::normal_text_contrast_violation(self)
+    }
+
     fn field_mut(&mut self, field: &str) -> &mut [u8; 3] {
         match field {
             "background" => &mut self.background,
@@ -128,7 +136,17 @@ pub(crate) fn read_theme() -> ThemeConfig {
     let Ok(json) = std::fs::read_to_string(&path) else {
         return ThemeConfig::default_dark();
     };
-    serde_json::from_str(&json).unwrap_or_default()
+    serde_json::from_str(&json)
+        .map(validated_theme)
+        .unwrap_or_default()
+}
+
+fn validated_theme(config: ThemeConfig) -> ThemeConfig {
+    if config.normal_text_contrast_violation().is_none() {
+        config
+    } else {
+        ThemeConfig::default_dark()
+    }
 }
 
 pub(crate) fn write_theme(config: &ThemeConfig) -> Result<(), String> {
@@ -165,7 +183,7 @@ pub(crate) fn theme_presets() -> Vec<ThemePreset> {
                 primary: [0x88, 0xc0, 0xd0],
                 success: [0xa3, 0xbe, 0x8c],
                 warning: [0xeb, 0xcb, 0x8b],
-                danger: [0xbf, 0x61, 0x6a],
+                danger: [0xcf, 0x88, 0x8f],
                 accent_user: [0x88, 0xc0, 0xd0],
                 accent_assistant: [0xb4, 0x8e, 0xad],
                 accent_error: [0xbf, 0x61, 0x6a],
@@ -193,7 +211,7 @@ pub(crate) fn theme_presets() -> Vec<ThemePreset> {
                 primary: [0x66, 0xd9, 0xef],
                 success: [0xa6, 0xe2, 0x2e],
                 warning: [0xe6, 0xdb, 0x74],
-                danger: [0xf9, 0x26, 0x72],
+                danger: [0xfa, 0x49, 0x89],
                 accent_user: [0x66, 0xd9, 0xef],
                 accent_assistant: [0xae, 0x81, 0xff],
                 accent_error: [0xf9, 0x26, 0x72],
@@ -214,4 +232,20 @@ pub(crate) fn theme_presets() -> Vec<ThemePreset> {
             },
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persisted_theme_with_insufficient_normal_text_contrast_falls_back_to_default() {
+        let default_theme = ThemeConfig::default_dark();
+        let mut invalid_theme = default_theme.clone();
+        invalid_theme.danger = invalid_theme.background;
+
+        let loaded_theme = validated_theme(invalid_theme);
+
+        assert_eq!(loaded_theme, default_theme);
+    }
 }

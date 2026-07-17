@@ -4,14 +4,14 @@ This document describes **actual coding patterns currently used in this reposito
 
 Source basis:
 - `src/main.rs`
-- `src/block.rs`
-- `src/model.rs`
+- `src/block/mod.rs`
+- `src/model/mod.rs`
 - `src/palette.rs`
-- `src/runtime_process.rs`
+- `src/runtime_process/mod.rs`
 - `src/update.rs`
-- `src/view.rs`
-- `src/view/ui.rs`
-- `src/session.rs`
+- `src/view/mod.rs`
+- `src/view/ui/mod.rs`
+- `src/session/mod.rs`
 - `Cargo.toml`
 - `scripts/harness.ps1`, `scripts/harness.sh`
 - recent `git log --oneline`
@@ -22,8 +22,8 @@ Source basis:
 - Main entry point is `src/main.rs`.
 - Feature modules are declared at top-level in `main.rs` using lowercase module names:
   - `mod block;`, `mod bootstrap;`, `mod hf;`, `mod input;`, `mod keystore;`, `mod mcp;`, `mod model;`, `mod openrouter;`, `mod palette;`, `mod pty;`, `mod runtime_process;`, `mod session;`, `mod tabby;`, `mod tools;`, `mod update;`, `mod util;`, `mod view;`
-- `update.rs` and `view.rs` are implemented as child modules of `main.rs` and use `use super::*;`.
-- `view/ui.rs` is a child module of `view.rs` and keeps UI constants/style helpers close to rendering code.
+- `src/update.rs` is implemented as a child module of `main.rs` and uses `use super::*;`.
+- `src/view/mod.rs` is a child module of `main.rs`; `src/view/ui/mod.rs` keeps UI constants/style helpers close to rendering code.
 - Core app wiring follows Iced Elm-style flow from `main.rs`:
   - `App::new`
   - `App::update`
@@ -33,16 +33,16 @@ Source basis:
 
 ### Types (PascalCase)
 - Structs and enums use `PascalCase`.
-- Examples from `main.rs` / `model.rs` / `block.rs` / `session.rs`:
+- Examples from `src/main.rs` / `src/model/mod.rs` / `src/block/mod.rs` / `src/session/mod.rs`:
   - `ModelOption`, `ApplyCandidate`, `PersistedSessionData`
   - `LlmProvider`, `InferenceEngine`, `SettingsTab`, `Message`
 
 ### Functions and methods (snake_case)
 - Free functions and methods use `snake_case`.
 - Examples:
-  - `resolve_user_path`, `fmt_context_length`, `extract_mention_query` (`util.rs`)
-  - `validate_tabbyapi_launcher_path`, `run_tool_round`, `kick_chat_stream` (`update.rs`)
-  - `view_topbar`, `view_sidebar`, `view_statusbar` (`view.rs`)
+   - `resolve_user_path`, `fmt_context_length`, `extract_mention_query` (`src/util/mod.rs`)
+   - `validate_tabbyapi_launcher_path`, `run_tool_round`, `kick_chat_stream` (`src/update.rs`)
+   - `view_topbar`, `view_sidebar`, `view_statusbar` (`src/view/mod.rs`)
 
 ### Variables and fields (snake_case)
 - Local variables and struct fields use `snake_case`.
@@ -51,8 +51,8 @@ Source basis:
 ### Constants (SCREAMING_SNAKE_CASE)
 - Constants use `SCREAMING_SNAKE_CASE`.
 - Examples:
-  - `MAX_ATTACH_BYTES`, `PTY_MAX_LINES`, `TABBY_API_DEFAULT_PORT` (`util.rs` / `model.rs`)
-  - `TABBY_CONNECT_RETRIES_AFTER_START`, `TABBY_CONNECT_RETRY_DELAY_SECS` (`update.rs`)
+   - `MAX_ATTACH_BYTES`, `PTY_MAX_LINES`, `TABBY_API_DEFAULT_PORT` (`src/util/mod.rs` / `src/model/mod.rs`)
+   - `TABBY_CONNECT_RETRIES_AFTER_START`, `TABBY_CONNECT_RETRY_DELAY_SECS` (`src/update.rs`)
 
 ### Module names (lowercase)
 - Module file names and declarations are lowercase (for example `session`, `openrouter`, `update`, `view`).
@@ -84,7 +84,7 @@ Examples:
 - `on_key_saved` -> `Task::done(Message::FetchModels)` on success
 - `toggle_pty` -> `Task::done(Message::PtyStart)` only when required
 
-## 5) UI element construction patterns (`view.rs`)
+## 5) UI element construction patterns (`src/view/mod.rs`)
 
 - View methods are split into small composable builders with `view_*` naming:
   - `view_topbar`, `view_sidebar`, `view_stream`, `view_rightpanel`, `view_settings`, `view_statusbar`, etc.
@@ -94,7 +94,7 @@ Examples:
   - compose into larger sections
   - apply spacing/padding/style near composition site
 
-## 6) Serialization and persistence patterns (`session.rs`)
+## 6) Serialization and persistence patterns (`src/session/mod.rs`)
 
 - Persistence models derive serde traits:
   - `#[derive(..., Serialize, Deserialize)]`
@@ -136,12 +136,10 @@ Examples:
 ## 9) Test organization pattern
 
 - **Unit tests** are colocated with source modules using `#[cfg(test)] mod tests`.
-  - Examples: `src/session.rs`, `src/update.rs`, and other modules compiled into `src/main.rs`.
+  - Examples: `src/session/mod.rs`, `src/update.rs`, and other modules compiled into `src/main.rs`.
 - **Integration test** exists under `tests/`:
   - `tests/test.rs`
-- Current test listing from `cargo test --all-targets -- --list` reports:
-  - `288 tests` in unit-test target
-  - `1 test` in integration-test target
+- Run `cargo test --all-targets` for the current executable test count. The dated 2026-07-17 verification reported 569 unit tests and 1 external integration smoke test.
 
 ## 10) Git commit message style
 

@@ -33,7 +33,9 @@ Warp 스타일의 AI 코딩 데스크톱. **Iced (Rust 네이티브 GUI)** 기�
 - [x] **Phase 3-A** — 모듈 분리: `block`, `model`, `util`, `palette`, `bootstrap`, `input`, `runtime_process` 등으로 `main.rs` 책임 축소
 - [x] **Phase 3-B** — OpenCode/oh-my-openagent/MiMo 운영 문서와 검증 스크립트 추가 (`docs/OPENCODE_ROUTING.md`, `docs/OPENCODE_MIMO_RUNBOOK.md`)
 - [x] **Phase 3-C** — 안정화/성능: autosave crash recovery, streaming block lookup O(1), markdown streaming 재파싱 최소화, chat_stream retry, mid-stream error auto-retry
-- [x] **Tests** — 회고적 + TDD 누적: 391 unit tests + 1 integration smoke test (`cargo test --all-targets`)
+- [x] **Tests (Phase 3-C 당시 기록)** — 회고적 + TDD 누적: 391 unit tests + 1 integration smoke test (`cargo test --all-targets`)
+
+현재 검증 기준은 `cargo test --all-targets`입니다. 2026-07-17 검증에서 unit test 569개와 external integration smoke test 1개가 통과했습니다.
 
 ## 왜 Iced로 바꿨나
 
@@ -52,16 +54,16 @@ Warp 본체도 2026년 4월 오픈소스화되어 ([warpdotdev/Warp](https://git
 │  ─ view(state) -> Element                     │
 │                                               │
 │  Subsystems                                   │
-│  ─ model.rs      : provider/model/filter/runtime enums │
-│  ─ block.rs      : chat block + apply parsing          │
+│  ─ model/mod.rs  : provider/model/filter/runtime enums │
+│  ─ block/mod.rs  : chat block + apply parsing          │
 │  ─ update.rs     : state transition + async tasks      │
-│  ─ view.rs       : Iced UI rendering                   │
-│  ─ openrouter.rs : reqwest + SSE 스트림                │
-│  ─ tabby.rs      : OpenAI 호환 endpoint client         │
-│  ─ hf.rs         : HF Hub 다운로드 (EXL2 등)          │
-│  ─ session.rs    : 멀티 세션/usage/favorites 저장      │
-│  ─ tools.rs      : read/write/glob/grep/run            │
-│  ─ mcp.rs        : stdio MCP client                    │
+│  ─ view/mod.rs   : Iced UI rendering                   │
+│  ─ openrouter/mod.rs : reqwest + SSE 스트림            │
+│  ─ tabby/mod.rs  : OpenAI 호환 endpoint client         │
+│  ─ hf/mod.rs     : HF Hub 다운로드 (EXL2 등)          │
+│  ─ session/mod.rs: 멀티 세션/usage/favorites 저장      │
+│  ─ tools/mod.rs  : read/write/glob/grep/run            │
+│  ─ mcp/mod.rs    : stdio MCP client                    │
 │  ─ pty.rs        : PTY terminal                        │
 │  ─ tokio         : async runtime              │
 │  ─ async-stream  : Stream<ChatEvent/DlEvent>  │
@@ -74,7 +76,7 @@ Tauri/webview/JS 의존성 일체 없음. 단일 Cargo 프로젝트.
 
 ### 사전 요구사항
 
-- Rust 1.80+ (`rustup`)
+- Rust 1.90+ (`rustup`); Rust 1.90 is the project MSRV
 - Windows / macOS / Linux 데스크톱
 - OpenRouter API 키 — <https://openrouter.ai/keys> (선택)
 - 또는 로컬 Tabby 서버 — <https://tabby.tabbyml.com/> (선택)

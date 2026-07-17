@@ -1,9 +1,9 @@
 # CodeWarp — Agent Context
 
 ## Project
-- Rust 1.90.0, Edition 2024, Iced 0.14, serde 1.0.228 (derive + rc)
+- Rust MSRV 1.90.0, Edition 2024, Iced 0.14, serde 1.0.228 (derive + rc)
 - `cargo clippy` before any commit; pre-commit `cargo fmt --check`; pre-push `cargo fmt --check && cargo check && cargo test`
-- **528 tests** (527 unit + 1 integration); zero clippy warnings (strict)
+- Test baseline: run `cargo test --all-targets`; the 2026-07-17 verification passed 569 unit tests plus 1 external integration smoke test. Zero clippy warnings (strict).
 
 ## Key Conventions
 - `Message` derives `Clone` (required for `key_binding` Fn closure)
@@ -31,21 +31,21 @@
 | Code block hover | `CodeBlockHovered(u64, bool)` | `hovered_code_blocks: HashSet<u64>` | show copy button |
 
 ## Refactoring: Functions Extracted (all #[allow(clippy::too_many_lines)] removed)
-- `provider.rs`: `view_provider_tab` → `view_openrouter_section` + `view_tabby_endpoint_section` + `view_tabby_presets`
-- `stream.rs`: `view_stream` → `view_mode_label` + `view_slash_hint` + `view_input_action_btn` + `view_chat_editor` + `view_input_hint` + `view_compare_diff`
-- `context.rs`: `view_sidebar_context_area` → `view_context_quota_label` + `view_context_actions` + `view_context_header` + `view_context_empty` + `view_context_files`
-- `sidebar/mod.rs`: `view_sidebar` → `view_active_session_label` + `view_session_list_empty` + `view_session_trailing` + `view_session_row_content` + `view_session_row` + `view_sidebar_body` + `view_resize_row`
-- `view_confirm.rs`: `view_inline_confirm` → `view_confirm_card` + `confirm_panel_style` free fn
-- `settings_view.rs`: `view_settings` → `settings_tab_health` + `settings_health_for_tab` + `view_settings_header` + `view_active_section`
-- `view/mod.rs`: `view` → `view_main_row` + `view_overlay` + `view_toast`
-- `models.rs`: `view_model_manager` → `view_model_local_state` + `view_model_dir_row` + `view_model_token_section` + `view_model_download_row` + `view_model_download_progress` (cast_precision_loss remains)
-- `hf/mod.rs`: `download_repo` → `init_download` async fn + `DownloadSetup` struct
+- `src/view/settings/provider.rs`: `view_provider_tab` → `view_openrouter_section` + `view_tabby_endpoint_section` + `view_tabby_presets`
+- `src/view/chat/stream.rs`: `view_stream` → `view_mode_label` + `view_slash_hint` + `view_input_action_btn` + `view_chat_editor` + `view_input_hint` + `view_compare_diff`
+- `src/view/sidebar/context.rs`: `view_sidebar_context_area` → `view_context_quota_label` + `view_context_actions` + `view_context_header` + `view_context_empty` + `view_context_files`
+- `src/view/sidebar/mod.rs`: `view_sidebar` → `view_active_session_label` + `view_session_list_empty` + `view_session_trailing` + `view_session_row_content` + `view_session_row` + `view_sidebar_body` + `view_resize_row`
+- `src/view/view_confirm.rs`: `view_inline_confirm` → `view_confirm_card` + `confirm_panel_style` free fn
+- `src/view/settings/mod.rs`: `view_settings` → `settings_tab_health` + `settings_health_for_tab` + `view_settings_header` + `view_active_section`
+- `src/view/mod.rs`: `view` → `view_main_row` + `view_overlay` + `view_toast`
+- `src/view/settings/models.rs`: `view_model_manager` → `view_model_local_state` + `view_model_dir_row` + `view_model_token_section` + `view_model_download_row` + `view_model_download_progress` (cast_precision_loss remains)
+- `src/hf/mod.rs`: `download_repo` → `init_download` async fn + `DownloadSetup` struct
 
 ## Theme Presets
-- 5 presets in `session/theme.rs`: Default Dark, Nord, Dracula, Monokai, Catppuccin
+- 5 presets in `src/session/theme.rs`: Default Dark, Nord, Dracula, Monokai, Catppuccin
 - `ThemePreset { name, background, primary, text }` struct + `theme_presets()` free fn
 - `ApplyThemePreset(usize)` message writes to both `theme_config` and `theme_hex_inputs`
-- 3-color swatch preview per preset in settings/theme.rs
+- 3-color swatch preview per preset in `src/view/settings/theme.rs`
 
 ## Relevant Files
 - `src/message.rs` — all Message variants
@@ -65,10 +65,10 @@
 - `src/view/view_viewer.rs` — code block markdown viewer
 
 ## Hover追加 방법 (recipe)
-1. Add variant to `Message` enum in `message.rs` (e.g. `FooHovered(Option<usize>)`)
-2. Add field to `UiState` in `state/mod.rs` (e.g. `hovered_foo: Option<usize>`)
-3. Initialize to `None` in `state_new.rs`
-4. Add handler arm in `update_dispatch_ui.rs` (set field, `Some(Task::none())`)
+1. Add variant to `Message` enum in `src/message.rs` (e.g. `FooHovered(Option<usize>)`)
+2. Add field to `UiState` in `src/state/mod.rs` (e.g. `hovered_foo: Option<usize>`)
+3. Initialize to `None` in `src/state/state_new.rs`
+4. Add handler arm in `src/update_dispatch_ui.rs` (set field, `Some(Task::none())`)
 5. In view function: wrap element in `mouse_area(container(...).style(move |t| {...}))`
    - Extract `is_hovered` bool BEFORE the style closure to avoid `Renderer` inference issues
    - Use `Color::from_rgba(p.primary.base.color.r, ..., ..., alpha)` for consistent primary tint

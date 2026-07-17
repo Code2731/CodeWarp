@@ -18,3 +18,4 @@ Thumbs.db
 
 # Serena local state
 .serena/
+node_modules/

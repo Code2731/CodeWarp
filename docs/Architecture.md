@@ -23,22 +23,24 @@ src/
 ├── main.rs             # App struct, Message enum, module declarations, tests
 ├── bootstrap.rs        # window icon + embedded font setup
 ├── input.rs            # keyboard/window event routing
-├── runtime_process.rs  # inference child process spawn/log/error helpers
+├── runtime_process/
+│   └── mod.rs          # inference child process spawn/log/error helpers
 ├── update.rs           # App::update() dispatcher + async task wiring
-├── view.rs             # App::view() UI rendering shell
-├── view/ui.rs          # UI constants, spacing, style helpers
-├── block.rs            # chat block model, apply candidates, conversation helpers
-├── model.rs            # providers, model options, filters, inference engines, presets
-├── util.rs             # path/fuzzy/format/summarize helpers
+├── view/
+│   ├── mod.rs          # App::view() UI rendering shell
+│   └── ui/mod.rs       # UI constants, spacing, style helpers
+├── block/mod.rs        # chat block model, apply candidates, conversation helpers
+├── model/mod.rs        # providers, model options, filters, inference engines, presets
+├── util/mod.rs         # path/fuzzy/format/summarize helpers
 ├── palette.rs          # command palette state/items
-├── session.rs          # sessions, usage, favorites persistence
-├── openrouter.rs       # OpenRouter HTTP/SSE client, model listing, chat stream
-├── tabby.rs            # OpenAI-compatible endpoint client and chat stream
-├── hf.rs               # Hugging Face download stream, revision fallback handling
-├── tools.rs            # tool calls (read/write/glob/grep/run_command)
-├── mcp.rs              # stdio MCP client and tool definition aggregation
+├── session/mod.rs      # sessions, usage, favorites persistence
+├── openrouter/mod.rs   # OpenRouter HTTP/SSE client, model listing, chat stream
+├── tabby/mod.rs        # OpenAI-compatible endpoint client and chat stream
+├── hf/mod.rs           # Hugging Face download stream, revision fallback handling
+├── tools/mod.rs        # tool calls (read/write/glob/grep/run_command)
+├── mcp/mod.rs          # stdio MCP client and tool definition aggregation
 ├── pty.rs              # PTY terminal (portable-pty based)
-└── keystore.rs         # OS credential manager persistence
+└── keystore/mod.rs     # OS credential manager persistence
 ```
 
 ## App State Composition
@@ -98,4 +100,4 @@ fn toggle_favorite(&mut self) -> Task<Message> {
 
 - API 키는 평문으로 디스크에 저장하지 않음 (OS Credential Manager 사용)
 - 키는 코드/로그/git 어디에도 출력되지 않음
-- `keystore.rs`가 모든 크레덴셜 I/O를 캡슐화
+- `src/keystore/mod.rs`가 모든 크레덜셜 I/O를 캡슐화

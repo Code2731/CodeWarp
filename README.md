@@ -77,7 +77,10 @@ Tauri/webview/JS 의존성 일체 없음. 단일 Cargo 프로젝트.
 ### 사전 요구사항
 
 - Rust 1.90+ (`rustup`); Rust 1.90 is the project MSRV
-- Windows / macOS / Linux 데스크톱
+- **Verified platforms:** Windows and Linux. Each platform runs `cargo fmt -- --check`,
+  `cargo check`, and `cargo test --all-targets` in CI.
+- **Experimental platform:** macOS. Local use is supported as an experiment, but macOS is
+  not a verified CI target until equivalent automation exists.
 - OpenRouter API 키 — <https://openrouter.ai/keys> (선택)
 - 또는 로컬 Tabby 서버 — <https://tabby.tabbyml.com/> (선택)
 
@@ -112,7 +115,7 @@ TabbyML / TabbyAPI / xLLM / vLLM / llama-server / Ollama 등 OpenAI 호환 infer
 - 바이너리/스크립트 경로 picker — PATH에 없을 때 절대 경로 지정
 - TabbyAPI 설치 — `theroyallab/tabbyAPI`를 CodeWarp 런타임 폴더에 clone하고 `start.bat/start.sh`를 자동 연결
 - TabbyAPI 시작 — 선택된 EXL2 모델 폴더를 `config.yml`에 자동 기록하고 로컬 `http://localhost:5000` endpoint로 실행
-- 시작 → 자동 명령 합성 + spawn + 5초 후 endpoint 자동 ping + child 종료 시 endpoint 자동 끊김 표시
+- 시작 → 자동 명령 합성 + spawn + endpoint health를 즉시 폴링(최대 10초) + child 종료 시 endpoint 자동 끊김 표시
 - 앱 종료 시 child도 같이 cleanup (좀비 방지)
 
 모델 셀렉터 표시 예:
@@ -150,7 +153,8 @@ cargo build --release
 Quality harness is now part of the default workflow.
 
 - Local checks: `scripts/harness.ps1` (Windows), `scripts/harness.sh` (Linux/macOS)
-- CI uses the same harness entry path
+- Verified CI platforms: Windows and Linux; both run the harness' fmt, check, and test gates
+- macOS remains experimental and has no CI verification until equivalent automation exists
 - Recommended hooks:
   - `pre-commit`: `cargo fmt -- --check` (only when Rust-related files are staged)
   - `pre-push`: harness (`fmt + check + test`)

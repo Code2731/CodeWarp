@@ -6,7 +6,7 @@ use serde_json::Value;
 
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("CodeWarp/0.2.0")
+        .user_agent(concat!("CodeWarp/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|e| format!("HTTP client 생성 실패: {e}"))

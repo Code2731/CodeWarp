@@ -163,7 +163,7 @@ pub(super) async fn fetch_model_info_with_fallback(
 
 pub(super) fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("CodeWarp/0.2.0")
+        .user_agent(concat!("CodeWarp/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| format!("HTTP client 생성 실패: {e}"))
 }

@@ -10,7 +10,7 @@ env:
 
 jobs:
   harness:
-    name: harness (${{ matrix.os }})
+    name: verified harness (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,7 +29,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Run harness (fmt + check + test)
+      - name: Run verified platform harness (fmt + check + test)
         shell: bash
         run: bash scripts/harness.sh --skip-clippy
 

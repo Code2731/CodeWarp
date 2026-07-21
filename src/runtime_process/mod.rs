@@ -1,24 +1,66 @@
 use super::Message;
 use std::path::PathBuf;
 
+mod lifecycle;
+mod output;
+#[cfg(test)]
+pub(crate) use lifecycle::RuntimeDeadlines;
+use lifecycle::{PRODUCTION_DEADLINES, RuntimeFailure, RuntimeProcess, RuntimeReceipt};
+use output::forward_output;
+
+#[derive(Clone, Debug)]
+pub(crate) struct RuntimeStopHandle {
+    sender: tokio::sync::mpsc::Sender<()>,
+}
+
+impl RuntimeStopHandle {
+    pub(crate) fn request_stop(&self) -> bool {
+        match self.sender.try_send(()) {
+            Ok(()) | Err(tokio::sync::mpsc::error::TrySendError::Full(())) => true,
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(())) => false,
+        }
+    }
+
+    pub(crate) async fn stop_and_wait(&self) -> Result<(), String> {
+        if !self.request_stop() && !self.sender.is_closed() {
+            return Err("inference runtime stop request failed".to_string());
+        }
+        self.sender.closed().await;
+        Ok(())
+    }
+}
+
+pub(crate) struct InferenceLaunch {
+    pub(crate) program: String,
+    pub(crate) args: Vec<String>,
+    pub(crate) work_dir: Option<PathBuf>,
+    pub(crate) health_url: String,
+}
+
 pub(crate) fn spawn_inference_stream(
-    program: String,
-    args: Vec<String>,
-    work_dir: Option<PathBuf>,
-) -> impl futures_util::Stream<Item = Message> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    launch: InferenceLaunch,
+) -> (impl futures_util::Stream<Item = Message>, RuntimeStopHandle) {
+    use tokio::io::BufReader;
     use tokio::process::Command;
 
-    async_stream::stream! {
+    let InferenceLaunch {
+        program,
+        args,
+        work_dir,
+        health_url,
+    } = launch;
+    let (stop_sender, mut stop_receiver) = tokio::sync::mpsc::channel(1);
+    let stop_handle = RuntimeStopHandle {
+        sender: stop_sender,
+    };
+    let stream = async_stream::stream! {
         let mut cmd = Command::new(&program);
         if let Some(dir) = work_dir {
             cmd.current_dir(dir);
         }
-        cmd.args(&args)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
+        cmd.args(&args);
+        let (mut process, stdout, stderr) = match RuntimeProcess::spawn(cmd, PRODUCTION_DEADLINES) {
+            Ok(parts) => parts,
             Err(e) => {
                 yield Message::InferenceLogLine(format!(
                     "[spawn 실패] {}",
@@ -28,55 +70,94 @@ pub(crate) fn spawn_inference_stream(
                 return;
             }
         };
-        if let Some(pid) = child.id() {
+        if let Some(pid) = process.pid() {
             yield Message::InferenceLogLine(format!("[pid:{pid}] {program} {}", args.join(" ")));
         }
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        if let Some(out) = stdout {
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                let mut lines = BufReader::new(out).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    if tx.send(line).is_err() {
-                        break;
-                    }
-                }
-            });
-        }
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(128);
+        let stdout_tx = tx.clone();
+        tokio::spawn(async move {
+            let _read_result = forward_output(BufReader::new(stdout), stdout_tx, "").await;
+        });
         if let Some(err) = stderr {
             let tx = tx.clone();
             tokio::spawn(async move {
-                let mut lines = BufReader::new(err).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    if tx.send(format!("[err] {line}")).is_err() {
-                        break;
-                    }
-                }
+                let _read_result = forward_output(BufReader::new(err), tx, "[err] ").await;
             });
         }
         drop(tx);
-        let mut child_done = false;
-        let mut exit_code: i32 = 0;
+
+        let startup = tokio::select! {
+            result = process.wait_until_healthy(&health_url) => result,
+            _ = stop_receiver.recv() => {
+                match process.shutdown().await {
+                    Ok(receipt) => Err(RuntimeFailure {
+                        message: "runtime startup cancelled".to_string(),
+                        receipt: Some(receipt),
+                    }),
+                    Err(error) => Err(RuntimeFailure {
+                        message: format!("runtime startup cancellation cleanup failed: {error}"),
+                        receipt: None,
+                    }),
+                }
+            }
+        };
+        if let Err(failure) = startup {
+            yield Message::InferenceLogLine(format!("[startup 실패] {}", failure.message));
+            let code = failure
+                .receipt
+                .as_ref()
+                .map_or(-1, exit_code);
+            yield Message::InferenceExited(code);
+            return;
+        }
+        yield Message::InferenceLogLine(format!("[ready] {health_url}"));
+        yield Message::FetchTabbyModels;
+
+        let mut output_open = true;
         loop {
             tokio::select! {
-                line = rx.recv() => {
+                line = rx.recv(), if output_open => {
                     match line {
                         Some(l) => yield Message::InferenceLogLine(l),
-                        None => {
-                            if child_done { break; }
-                        }
+                        None => output_open = false,
                     }
                 }
-                status = child.wait(), if !child_done => {
-                    child_done = true;
-                    exit_code = status.ok().and_then(|s| s.code()).unwrap_or(-1);
+                _ = stop_receiver.recv() => {
+                    let receipt = process.shutdown().await;
+                    match receipt {
+                        Ok(receipt) => {
+                            yield Message::InferenceLogLine(format!(
+                                "[stopped] pid={} forced={}",
+                                receipt.pid.map_or_else(|| "unknown".to_string(), |pid| pid.to_string()),
+                                receipt.forced,
+                            ));
+                            yield Message::InferenceExited(exit_code(&receipt));
+                        }
+                        Err(error) => {
+                            yield Message::InferenceLogLine(format!("[cleanup 실패] {error}"));
+                            yield Message::InferenceExited(-1);
+                        }
+                    }
+                    return;
+                }
+                receipt = process.wait_for_exit() => {
+                    match receipt {
+                        Ok(receipt) => yield Message::InferenceExited(exit_code(&receipt)),
+                        Err(error) => {
+                            yield Message::InferenceLogLine(format!("[cleanup 실패] {error}"));
+                            yield Message::InferenceExited(-1);
+                        }
+                    }
+                    return;
                 }
             }
         }
-        yield Message::InferenceExited(exit_code);
-    }
+    };
+    (stream, stop_handle)
+}
+
+fn exit_code(receipt: &RuntimeReceipt) -> i32 {
+    receipt.status.code().unwrap_or(-1)
 }
 
 pub(crate) fn humanize_inference_spawn_error(program: &str, err: &std::io::Error) -> String {
@@ -124,5 +205,9 @@ pub(crate) fn humanize_inference_spawn_error(program: &str, err: &std::io::Error
     format!("{program}: {raw}")
 }
 
+#[cfg(test)]
+mod lifecycle_contract_tests;
+#[cfg(test)]
+mod output_contract_tests;
 #[cfg(test)]
 mod tests;

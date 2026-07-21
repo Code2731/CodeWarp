@@ -8,6 +8,9 @@ impl App {
         if self.ui.pty_visible && self.pty_session.is_none() {
             return Task::done(Message::PtyStart);
         }
+        if !self.ui.pty_visible {
+            return self.stop_pty(false, true);
+        }
         Task::none()
     }
     pub(crate) fn send_pty_input(&mut self) -> Task<Message> {
@@ -25,11 +28,18 @@ impl App {
         }
     }
     pub(crate) fn pty_start(&mut self) -> Task<Message> {
+        if self.pty_session.is_some() {
+            return self.stop_pty(true, true);
+        }
         match pty::spawn_pty(&self.cwd) {
             Ok((session, stream)) => {
+                let pid = session.pid();
                 self.pty_session = Some(session);
                 self.pty_output.clear();
-                self.status = "터미널 시작됨".into();
+                self.status = pid.map_or_else(
+                    || "터미널 시작됨".into(),
+                    |pid| format!("터미널 시작됨 (pid {pid})"),
+                );
                 Task::run(stream, |event| match event {
                     pty::PtyEvent::Line(l) => Message::PtyLine(l),
                     pty::PtyEvent::Exited => Message::PtyExited,
@@ -49,9 +59,55 @@ impl App {
         Task::none()
     }
     pub(crate) fn on_pty_exited(&mut self) -> Task<Message> {
-        self.pty_session = None;
-        self.push_pty_line("-- 셸 종료 --".into());
-        self.status = "터미널 종료됨".into();
-        Task::none()
+        self.stop_pty(false, false)
+    }
+
+    pub(crate) fn stop_pty(&mut self, restart: bool, graceful: bool) -> Task<Message> {
+        let Some(session) = self.pty_session.take() else {
+            return if restart {
+                Task::done(Message::PtyStart)
+            } else {
+                Task::none()
+            };
+        };
+        Task::perform(
+            async move {
+                if graceful {
+                    session.shutdown().await
+                } else {
+                    session.wait_for_exit().await
+                }
+            },
+            move |result| Message::PtyStopped(result, restart),
+        )
+    }
+
+    pub(crate) fn on_pty_stopped(
+        &mut self,
+        result: Result<pty::PtyReceipt, pty::PtyShutdownFailure>,
+        restart: bool,
+    ) -> Task<Message> {
+        match result {
+            Ok(receipt) => {
+                self.push_pty_line(format!(
+                    "-- 셸 종료 pid={} forced={} exit={} elapsed={:.3}s --",
+                    receipt.pid,
+                    receipt.forced,
+                    receipt.status.exit_code(),
+                    receipt.elapsed.as_secs_f64()
+                ));
+                self.status = format!("터미널 종료됨 (pid {})", receipt.pid);
+            }
+            Err(failure) => {
+                self.status = format!("터미널 종료 실패: {}", failure.message);
+                self.pty_session = Some(failure.session);
+                return Task::none();
+            }
+        }
+        if restart {
+            Task::done(Message::PtyStart)
+        } else {
+            Task::none()
+        }
     }
 }

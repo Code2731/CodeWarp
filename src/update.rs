@@ -1,5 +1,6 @@
 // update.rs — App update 메서드 (main.rs child module)
 use super::{App, Message, on_event, session};
+use crate::state::{CloseLifecycleEvent, CloseReapOutcome};
 use iced::{Subscription, Task};
 use std::time::Duration;
 

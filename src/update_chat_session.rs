@@ -122,7 +122,7 @@ impl App {
             self.inactive_sessions.push(snap);
         }
     }
-    pub(crate) fn save_session(&mut self) {
+    fn persisted_sessions(&self) -> session::PersistedAllSessions {
         let current_blocks_persisted = self.current_blocks_persisted();
 
         let mut sessions: Vec<session::PersistedSessionData> = self
@@ -150,14 +150,33 @@ impl App {
             .iter()
             .position(|s| s.id == self.current_session_id)
             .unwrap_or(sessions.len() - 1);
-
-        let p = session::PersistedAllSessions {
+        session::PersistedAllSessions {
             sessions,
             active_idx,
-        };
-        if let Err(e) = session::save_all(&p) {
-            self.status = format!("세션 저장 실패: {e}");
         }
+    }
+
+    fn observe_session_save(&mut self, result: Result<(), String>) -> bool {
+        match result {
+            Ok(()) => true,
+            Err(error) => {
+                self.status = format!("세션 저장 실패: {error}");
+                false
+            }
+        }
+    }
+
+    pub(crate) fn save_session(&mut self) -> bool {
+        let persisted = self.persisted_sessions();
+        let result = session::save_all(&persisted);
+        self.observe_session_save(result)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn save_session_at(&mut self, dir: &std::path::Path) -> bool {
+        let persisted = self.persisted_sessions();
+        let result = session::save_all_at(dir, &persisted);
+        self.observe_session_save(result)
     }
     pub(crate) fn maybe_update_title(&mut self) {
         if (self.current_session_title.is_empty()

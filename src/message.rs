@@ -1,6 +1,8 @@
 use super::{
     AuthKeyData, ChatEvent, GenerationData, InferenceEngine, ModelOption, OpenRouterModel, hf, mcp,
+    pty,
 };
+use crate::state::CloseReapOutcome;
 use iced::widget::markdown;
 use iced::widget::scrollable::Viewport;
 use iced::widget::text_editor::{self, Action};
@@ -169,6 +171,7 @@ pub(crate) enum Message {
     ClearAttachments,
     AutoSave,
     WindowCloseRequested,
+    WindowProcessesReaped(CloseReapOutcome),
     WindowResized(f32, f32),
     MentionMove(i32),
     MentionConfirm,
@@ -185,6 +188,7 @@ pub(crate) enum Message {
     PtyStart,
     PtyLine(String),
     PtyExited,
+    PtyStopped(Result<pty::PtyReceipt, pty::PtyShutdownFailure>, bool),
     PtyInputChanged(String),
     PtySend,
     PtyCtrlC,

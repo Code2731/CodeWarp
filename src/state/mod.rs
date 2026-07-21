@@ -1,10 +1,10 @@
 // state.rs — Core application state types (child module of main)
 use super::{
     AgentMode, Arc, AuthKeyData, Block, ChatMessage, HashSet, InferenceEngine, LlmProvider,
-    Message, ModelOption, OpenRouterModel, PathBuf, PendingToolCall, SIDEBAR_WIDTH, ScrollId,
-    SettingsTab, SortMode, TABBY_API_DEFAULT_PORT, Task, Theme, combo_box,
-    default_tabbyapi_runtime_dir, find_tabbyapi_launcher, keystore, kill_pid, mcp,
-    persisted_to_block, pty, session, task,
+    Message, ModelOption, OpenRouterModel, PathBuf, PendingToolCall, RuntimeStopHandle,
+    SIDEBAR_WIDTH, ScrollId, SettingsTab, SortMode, TABBY_API_DEFAULT_PORT, Task, Theme, combo_box,
+    default_tabbyapi_runtime_dir, find_tabbyapi_launcher, keystore, mcp, persisted_to_block, pty,
+    session, task,
 };
 use crate::util::file_tree;
 use iced::widget::text_editor;
@@ -36,6 +36,7 @@ pub(crate) struct App {
     pub(crate) inference_selected_model: String,
     pub(crate) inference_port_input: String,
     pub(crate) inference_pid: Option<u32>,
+    pub(crate) inference_stop: Option<RuntimeStopHandle>,
     pub(crate) inference_log: std::collections::VecDeque<String>,
     pub(crate) tabby_status: Option<Result<String, String>>,
     pub(crate) tabby_connect_retry_left: u8,
@@ -56,6 +57,7 @@ pub(crate) struct App {
     pub(crate) streaming_block_idx: Option<usize>,
     pub(crate) streaming_raw: String,
     pub(crate) abort_handle: Option<task::Handle>,
+    pub(crate) mcp_abort_handle: Option<task::Handle>,
     pub(crate) hf_abort_handle: Option<task::Handle>,
     pub(crate) ui: UiState,
     pub(crate) hf_token_input: String,
@@ -117,12 +119,31 @@ pub(crate) struct App {
     pub(crate) compare_old_text: Option<String>,
     pub(crate) compare_new_text: Option<String>,
     pub(crate) toast: Option<String>,
+    pub(crate) close_in_progress: bool,
+    #[cfg(test)]
+    pub(crate) close_lifecycle_events: Vec<CloseLifecycleEvent>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CloseLifecycleEvent {
+    CancelStreamAndMcp,
+    ReapInferenceAndPty,
+    Persist,
+    MarkClean,
+    CloseWindow,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CloseReapOutcome {
+    pub(crate) result: Result<(), String>,
+    pub(crate) inference: Option<crate::runtime_process::RuntimeStopHandle>,
+    pub(crate) pty: Option<crate::pty::PtySession>,
 }
 
 impl Drop for App {
     fn drop(&mut self) {
-        if let Some(pid) = self.inference_pid {
-            kill_pid(pid);
+        if let Some(handle) = &self.inference_stop {
+            let _requested = handle.request_stop();
         }
     }
 }

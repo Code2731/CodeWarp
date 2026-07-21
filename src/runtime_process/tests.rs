@@ -1,4 +1,4 @@
-use super::humanize_inference_spawn_error;
+use super::{RuntimeStopHandle, humanize_inference_spawn_error};
 
 #[test]
 fn humanize_inference_spawn_error_explains_missing_xllm_binary() {
@@ -79,4 +79,24 @@ fn humanize_inference_spawn_error_generic_fallback() {
     let err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "connection refused");
     let msg = humanize_inference_spawn_error("my-tool", &err);
     assert_eq!(msg, "my-tool: connection refused");
+}
+
+#[test]
+fn repeated_stop_requests_are_idempotent_and_bounded() {
+    // Given: a capacity-one termination handle for one owned runtime.
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+    let handle = RuntimeStopHandle { sender };
+
+    // When: stop is requested repeatedly before the lifecycle consumes it.
+    assert!(handle.request_stop());
+    assert!(handle.request_stop());
+
+    // Then: only one request is queued and closed ownership is observable.
+    assert_eq!(receiver.try_recv(), Ok(()));
+    assert!(matches!(
+        receiver.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
+    drop(receiver);
+    assert!(!handle.request_stop());
 }

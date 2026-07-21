@@ -2,11 +2,17 @@
 // Spawns a server process and communicates over JSON-RPC 2.0 via stdin/stdout.
 
 mod mcp_types;
+mod process;
+mod rpc;
 
 pub(crate) use mcp_types::*;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
+
+use process::PRODUCTION_DEADLINES;
+use rpc::rpc_call_command;
+#[cfg(test)]
+use rpc::send_json_bounded;
 
 /// Parse a command string into executable + args.
 /// Supports single/double quoted segments so paths with spaces survive parsing.
@@ -66,109 +72,12 @@ async fn rpc_call(
 ) -> Result<serde_json::Value, String> {
     let parts = parse_command(command).map_err(|e| format!("MCP {e}"))?;
     let (program, args) = parts.split_first().ok_or("빈 명령")?;
-
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| format!("MCP 서버 시작 실패: {e}"))?;
-
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or("MCP stdin pipe 열기 실패".to_string())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("MCP stdout pipe 열기 실패".to_string())?;
-    let mut lines = BufReader::new(stdout).lines();
-
-    // initialize
-    send_json(
-        &mut stdin,
-        &serde_json::json!({
-            "jsonrpc": "2.0", "id": 0,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "CodeWarp", "version": "0.2.0"}
-            }
-        }),
-    )
-    .await?;
-
-    // wait initialize response (id=0)
-    read_response(&mut lines, 0).await?;
-
-    // initialized notification
-    send_json(
-        &mut stdin,
-        &serde_json::json!({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}),
-    )
-    .await?;
-
-    // request (id=1)
-    send_json(
-        &mut stdin,
-        &serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}),
-    )
-    .await?;
-
-    let result = read_response(&mut lines, 1).await?;
-
-    // Close stdin and wait for child shutdown.
-    drop(stdin);
-    let _ = child.wait().await;
-
-    Ok(result)
-}
-
-async fn send_json(
-    stdin: &mut tokio::process::ChildStdin,
-    val: &serde_json::Value,
-) -> Result<(), String> {
-    let mut line = serde_json::to_string(val).map_err(|e| format!("JSON 직렬화 실패: {e}"))?;
-    line.push('\n');
-    stdin
-        .write_all(line.as_bytes())
+    let mut process_command = Command::new(program);
+    process_command.args(args);
+    rpc_call_command(process_command, method, params, PRODUCTION_DEADLINES)
         .await
-        .map_err(|e| format!("stdin 쓰기 실패: {e}"))
-}
-
-async fn read_response(
-    lines: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
-    expected_id: u64,
-) -> Result<serde_json::Value, String> {
-    // Read up to 50 lines while skipping notifications/log lines.
-    for _ in 0..50 {
-        let line = lines
-            .next_line()
-            .await
-            .map_err(|e| format!("stdout 읽기 실패: {e}"))?
-            .ok_or("서버가 응답 없이 종료됨")?;
-
-        let val: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(_) => continue, // Ignore non-JSON lines.
-        };
-
-        if val.get("id").and_then(serde_json::Value::as_u64) != Some(expected_id) {
-            continue;
-        }
-
-        if let Some(err) = val.get("error") {
-            return Err(format!("MCP 오류: {err}"));
-        }
-
-        return val
-            .get("result")
-            .cloned()
-            .ok_or("result 필드 없음".to_string());
-    }
-    Err("MCP 응답 타임아웃 (50줄 초과)".into())
+        .map(|(result, _receipt)| result)
+        .map_err(|failure| failure.message)
 }
 
 /// Spawn MCP server, call `tools/list`, return tool metadata.
@@ -219,5 +128,7 @@ pub(crate) async fn call_tool(
     Ok(extract_text_content(&result))
 }
 
+#[cfg(test)]
+mod mcp_lifecycle_tests;
 #[cfg(test)]
 mod mcp_tests;

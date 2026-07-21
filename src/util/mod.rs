@@ -130,22 +130,6 @@ pub(crate) async fn collect_mention_candidates(cwd: PathBuf) -> Vec<PathBuf> {
 
 // ── Process management ──────────────────────────────────────────────
 
-/// 윈도우는 taskkill /T /F (자식 트리 포함), 그 외는 kill SIGTERM.
-pub(crate) fn kill_pid(pid: u32) {
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/T", "/F", "/PID", &pid.to_string()])
-            .status();
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = std::process::Command::new("kill")
-            .arg(pid.to_string())
-            .status();
-    }
-}
-
 // ── Constants ───────────────────────────────────────────────────────
 
 /// 첨부 파일 크기 상한 (512 KB 초과 시 거부)

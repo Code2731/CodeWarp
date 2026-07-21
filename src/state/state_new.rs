@@ -35,6 +35,7 @@ impl App {
             inference_selected_model: String::new(),
             inference_port_input: "9000".into(),
             inference_pid: None,
+            inference_stop: None,
             inference_log: std::collections::VecDeque::new(),
             tabby_status: None,
             tabby_connect_retry_left: 0,
@@ -55,6 +56,7 @@ impl App {
             streaming_block_idx: None,
             streaming_raw: String::new(),
             abort_handle: None,
+            mcp_abort_handle: None,
             hf_abort_handle: None,
             ui: UiState::new(!has_key, !saved_tabby_token.trim().is_empty()),
             hf_token_input: keystore::read_hf_token().unwrap_or_default(),
@@ -128,6 +130,9 @@ impl App {
             mention_query: String::new(),
             mention_candidates: Vec::new(),
             mention_selected: 0,
+            close_in_progress: false,
+            #[cfg(test)]
+            close_lifecycle_events: Vec::new(),
         };
 
         app.auto_attach_tabbyapi();

@@ -17,6 +17,8 @@ mod runtime_process;
 mod session;
 mod state;
 mod tabby;
+#[cfg(test)]
+mod test_support;
 mod tools;
 mod update;
 mod update_chat;
@@ -73,7 +75,7 @@ pub(crate) use model::{
     resolve_tabbyapi_model_dir, resolve_tabbyapi_model_dir_for_folder,
 };
 pub(crate) use palette::{PALETTE_COMMANDS, PaletteAction, PaletteCommand};
-pub(crate) use runtime_process::spawn_inference_stream;
+pub(crate) use runtime_process::{InferenceLaunch, RuntimeStopHandle, spawn_inference_stream};
 pub(crate) use state::{App, HfDownload, InactiveSession};
 pub(crate) use tabby::tabby_connection_error_looks_unreachable;
 pub(crate) use update_helpers::{
@@ -81,13 +83,13 @@ pub(crate) use update_helpers::{
     resolve_binary_from_dir, runtime_command_exists,
 };
 pub(crate) use update_helpers_tabbyapi::{
-    TABBY_CONNECT_RETRIES_AFTER_START, TABBY_CONNECT_RETRY_DELAY_SECS,
-    default_tabbyapi_runtime_dir, find_tabbyapi_launcher, install_tabbyapi_runtime,
-    is_tabbyapi_launcher_path, validate_tabbyapi_launcher_path, write_tabbyapi_config_for_launcher,
+    TABBY_CONNECT_RETRY_DELAY_SECS, default_tabbyapi_runtime_dir, find_tabbyapi_launcher,
+    install_tabbyapi_runtime, is_tabbyapi_launcher_path, validate_tabbyapi_launcher_path,
+    write_tabbyapi_config_for_launcher,
 };
 pub(crate) use util::{
     MAX_ATTACH_BYTES, PTY_MAX_LINES, build_file_context, collect_mention_candidates,
-    extract_mention_query, fmt_bytes, fuzzy_match_paths, hscrollbar, kill_pid, resolve_user_path,
+    extract_mention_query, fmt_bytes, fuzzy_match_paths, hscrollbar, resolve_user_path,
     summarize_tool_result,
 };
 

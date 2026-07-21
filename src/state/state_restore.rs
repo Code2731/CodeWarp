@@ -26,10 +26,31 @@ impl App {
     }
 
     pub(super) fn restore_sessions(&mut self) -> Option<iced::widget::scrollable::AbsoluteOffset> {
-        let mut persisted = session::load_all();
-        if persisted.sessions.is_empty() {
-            persisted = session::load_all();
-        }
+        let loaded = session::load_all_with_notice();
+        let marker = session::was_clean_shutdown();
+        self.apply_restored_sessions(loaded, marker)
+    }
+
+    #[cfg(test)]
+    fn restore_sessions_at(
+        &mut self,
+        storage_dir: &std::path::Path,
+        marker_dir: &std::path::Path,
+    ) -> Option<iced::widget::scrollable::AbsoluteOffset> {
+        let loaded = session::load_all_with_notice_at(Some(storage_dir));
+        let marker = session::was_clean_shutdown_at(marker_dir);
+        self.apply_restored_sessions(loaded, marker)
+    }
+
+    fn apply_restored_sessions(
+        &mut self,
+        loaded: (
+            session::PersistedAllSessions,
+            Option<session::SessionLoadNotice>,
+        ),
+        marker: Result<bool, String>,
+    ) -> Option<iced::widget::scrollable::AbsoluteOffset> {
+        let (persisted, load_notice) = loaded;
         let active_idx = persisted
             .active_idx
             .min(persisted.sessions.len().saturating_sub(1));
@@ -61,8 +82,28 @@ impl App {
         self.current_scroll_y = active.scroll_y;
         self.inactive_sessions = inactive;
         self.next_session_id = persisted.sessions.iter().map(|s| s.id).max().unwrap_or(0) + 1;
-        if !session::was_clean_shutdown() && !self.blocks.is_empty() {
-            self.status = format!("[복구됨] {}", self.status);
+        let marker_applies = match load_notice {
+            Some(session::SessionLoadNotice::BackupFallback { primary, backup }) => {
+                self.status = format!(
+                    "[세션 복구] {}을(를) 읽을 수 없어 {}에서 복구했습니다",
+                    primary.display(),
+                    backup.display()
+                );
+                true
+            }
+            Some(session::SessionLoadNotice::LegacyMigration) => false,
+            None => true,
+        };
+        match marker {
+            Ok(true) => {}
+            Ok(false) => {
+                if marker_applies && !self.blocks.is_empty() {
+                    self.status = format!("[비정상 종료 복구] {}", self.status);
+                }
+            }
+            Err(error) => {
+                self.status = format!("{} | 복구 상태 확인 실패: {error}", self.status);
+            }
         }
 
         if self.current_scroll_y > 0.0 {
@@ -116,5 +157,75 @@ impl App {
         } else {
             Task::batch(tasks)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn persisted(title: &str) -> session::PersistedAllSessions {
+        session::PersistedAllSessions {
+            sessions: vec![session::PersistedSessionData {
+                id: 7,
+                title: title.into(),
+                conversation: Arc::new(Vec::new()),
+                blocks: Vec::new(),
+                next_block_id: 0,
+                scroll_y: 0.0,
+            }],
+            active_idx: 0,
+        }
+    }
+
+    #[test]
+    fn backup_fallback_is_exposed_in_app_status_with_injected_roots() {
+        // Given
+        let storage = TempDir::new().unwrap();
+        let marker = TempDir::new().unwrap();
+        std::fs::write(storage.path().join("sessions.json"), b"{corrupt").unwrap();
+        std::fs::write(
+            storage.path().join("sessions.json.bak"),
+            serde_json::to_vec(&persisted("backup session")).unwrap(),
+        )
+        .unwrap();
+        let (mut app, _) = App::new();
+
+        // When
+        let _ = app.restore_sessions_at(storage.path(), marker.path());
+
+        // Then
+        assert!(app.status.contains("[세션 복구]"), "status: {}", app.status);
+        assert!(
+            app.status.contains("sessions.json.bak"),
+            "status: {}",
+            app.status
+        );
+    }
+
+    #[test]
+    fn marker_read_failure_is_exposed_in_app_status_with_injected_roots() {
+        // Given
+        let storage = TempDir::new().unwrap();
+        let marker_root = TempDir::new().unwrap();
+        std::fs::create_dir(marker_root.path().join(".clean_shutdown")).unwrap();
+        let (mut app, _) = App::new();
+
+        // When
+        let _ = app.restore_sessions_at(storage.path(), marker_root.path());
+
+        // Then
+        assert!(
+            app.status.contains("복구 상태 확인 실패"),
+            "status: {}",
+            app.status
+        );
+        assert!(
+            app.status
+                .contains(&marker_root.path().display().to_string()),
+            "status: {}",
+            app.status
+        );
     }
 }

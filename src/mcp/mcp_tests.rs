@@ -68,3 +68,31 @@ fn parse_command_rejects_unclosed_quote() {
     let err = parse_command(r#"npx -y "server-filesystem"#).unwrap_err();
     assert!(err.contains("따옴표"));
 }
+
+#[tokio::test]
+async fn silent_server_reports_response_deadline_without_outer_watchdog() {
+    use crate::test_support::process_fixture::{ProcessFixtureMode, command_line};
+    use std::time::Duration;
+
+    // Given: a repository-owned MCP process that never sends an initialize response.
+    let server = McpServer {
+        name: "silent-fixture".into(),
+        command: command_line(ProcessFixtureMode::McpSilent),
+    };
+
+    // When: the production response deadline expires inside a larger safety watchdog.
+    let started = tokio::time::Instant::now();
+    let result = tokio::time::timeout(Duration::from_secs(12), list_tools(&server)).await;
+
+    // Then: the MCP client, not the outer watchdog, must report its response deadline.
+    let error = result
+        .expect("MCP response wait exceeded its 12-second safety bound")
+        .unwrap_err();
+    eprintln!(
+        "mode=mcp-silent production_elapsed_ms={} result={error}",
+        started.elapsed().as_millis()
+    );
+    assert!(error.contains("deadline"));
+    assert!(started.elapsed() >= Duration::from_secs(10));
+    assert!(started.elapsed() < Duration::from_secs(12));
+}

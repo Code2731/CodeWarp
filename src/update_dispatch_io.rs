@@ -22,6 +22,9 @@ impl App {
             Message::PtyStart => Some(self.pty_start()),
             Message::PtyLine(line) => Some(self.on_pty_line(line)),
             Message::PtyExited => Some(self.on_pty_exited()),
+            Message::PtyStopped(result, restart) => {
+                Some(self.on_pty_stopped(result.clone(), *restart))
+            }
             Message::PtyInputChanged(v) => Some(self.set_pty_input(v.clone())),
             Message::PtySend => Some(self.send_pty_input()),
             Message::PtyCtrlC => Some(self.pty_ctrl_c()),

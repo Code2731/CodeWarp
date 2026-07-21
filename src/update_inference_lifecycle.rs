@@ -1,15 +1,14 @@
 // update_inference_lifecycle.rs — Inference lifecycle management (main.rs child module)
 use super::{
-    App, InferenceEngine, Message, TABBY_API_DEFAULT_PORT, TABBY_CONNECT_RETRIES_AFTER_START,
-    expected_binary_name, keystore, mcp, resolve_tabbyapi_model_dir, resolve_user_path,
-    runtime_command_exists, spawn_inference_stream, validate_tabbyapi_launcher_path,
-    write_tabbyapi_config_for_launcher,
+    App, InferenceEngine, InferenceLaunch, Message, TABBY_API_DEFAULT_PORT, expected_binary_name,
+    keystore, mcp, resolve_tabbyapi_model_dir, resolve_user_path, runtime_command_exists,
+    spawn_inference_stream, validate_tabbyapi_launcher_path, write_tabbyapi_config_for_launcher,
 };
 use iced::Task;
 
 impl App {
     pub(crate) fn start_inference(&mut self) -> Task<Message> {
-        if self.inference_pid.is_some() {
+        if self.inference_stop.is_some() {
             self.status = "이미 실행 중".into();
             return Task::none();
         }
@@ -211,23 +210,17 @@ impl App {
             return Task::none();
         }
         self.inference_log.clear();
-        self.tabby_connect_retry_left = TABBY_CONNECT_RETRIES_AFTER_START;
+        self.tabby_connect_retry_left = 0;
         self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
         self.status = format!("실행 시작: {final_program} {}", args.join(" "));
-        Task::batch(vec![
-            Task::run(
-                spawn_inference_stream(final_program, args, work_dir),
-                |ev| ev,
-            ),
-            Task::perform(
-                async {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                },
-                {
-                    let generation = self.tabby_retry_generation;
-                    move |()| Message::FetchTabbyModelsRetry(generation)
-                },
-            ),
-        ])
+        let health_url = format!("{}/models", crate::tabby::chat_base(&self.tabby_url_input));
+        let (stream, stop_handle) = spawn_inference_stream(InferenceLaunch {
+            program: final_program,
+            args,
+            work_dir,
+            health_url,
+        });
+        self.inference_stop = Some(stop_handle);
+        Task::run(stream, |event| event)
     }
 }

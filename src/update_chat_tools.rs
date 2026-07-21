@@ -8,6 +8,9 @@ impl App {
         tool_call_id: &str,
         result: String,
     ) -> Task<Message> {
+        if self.close_in_progress {
+            return Task::none();
+        }
         Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(tool_call_id, result));
         self.tool_round += 1;
         self.kick_chat_stream()
@@ -104,7 +107,12 @@ impl App {
                 ));
             }
             self.status = "MCP tool 실행 중…".into();
-            return Task::batch(tasks);
+            if let Some(handle) = self.mcp_abort_handle.take() {
+                handle.abort();
+            }
+            let (task, handle) = Task::batch(tasks).abortable();
+            self.mcp_abort_handle = Some(handle);
+            return task;
         }
 
         let (read_calls, write_calls): (Vec<_>, Vec<_>) = local_calls
@@ -134,5 +142,24 @@ impl App {
             self.tool_round, MAX_TOOL_ROUNDS
         );
         self.kick_chat_stream()
+    }
+}
+
+#[cfg(test)]
+mod mcp_close_tests {
+    use super::*;
+
+    #[test]
+    fn late_mcp_result_is_ignored_after_close_starts() {
+        // Given
+        let (mut app, _) = App::new();
+        app.close_in_progress = true;
+        let conversation_len = app.conversation.len();
+
+        // When
+        let _task = app.on_mcp_tool_result("late-call", "late-result".to_string());
+
+        // Then
+        assert_eq!(app.conversation.len(), conversation_len);
     }
 }

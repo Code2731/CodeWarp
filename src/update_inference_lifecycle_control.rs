@@ -1,5 +1,5 @@
 // update_inference_lifecycle_control.rs — Inference lifecycle control (main.rs child module)
-use super::{App, LlmProvider, Message, keystore, kill_pid};
+use super::{App, LlmProvider, Message, keystore};
 use iced::Task;
 
 impl App {
@@ -18,10 +18,17 @@ impl App {
         Task::none()
     }
     pub(crate) fn stop_inference(&mut self) -> Task<Message> {
-        if let Some(pid) = self.inference_pid.take() {
-            kill_pid(pid);
-            self.status = format!("inference 서버 중지 (pid {pid})");
-            self.push_inference_log(format!("[stopped] pid {pid}"));
+        if let Some(handle) = &self.inference_stop {
+            let requested = handle.request_stop();
+            let process = self.inference_pid.map_or_else(
+                || "starting process".to_string(),
+                |pid| format!("pid {pid}"),
+            );
+            self.status = if requested {
+                format!("inference 서버 중지 중 ({process})")
+            } else {
+                format!("inference 서버 종료 요청 실패 ({process})")
+            };
         }
         self.tabby_connect_retry_left = 0;
         self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
@@ -40,6 +47,9 @@ impl App {
             self.status = detail.to_string();
             self.tabby_status = Some(Err(detail.to_string()));
         }
+        if let Some(endpoint) = line.strip_prefix("[ready] ") {
+            self.status = format!("inference 서버 시작됨: {endpoint}");
+        }
         self.push_inference_log(line);
         Task::none()
     }
@@ -52,6 +62,7 @@ impl App {
             .cloned();
         self.push_inference_log(format!("[exited] code {code}"));
         self.inference_pid = None;
+        self.inference_stop = None;
         self.tabby_connect_retry_left = 0;
         self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
         self.status = format!("inference 서버 종료 (exit {code})");
@@ -73,5 +84,42 @@ impl App {
             .retain(|o| o.provider != LlmProvider::OpenAICompat);
         self.refresh_model_combo();
         Task::none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn successful_health_line_reports_runtime_started() {
+        // Given: an application whose managed child is still starting.
+        let (mut app, _startup) = App::new();
+        app.status = "starting".to_string();
+
+        // When: the lifecycle reports its successful endpoint health response.
+        let _task =
+            app.on_inference_log_line("[ready] http://127.0.0.1:9000/v1/models".to_string());
+
+        // Then: user-visible state reports startup only after that response.
+        assert_eq!(
+            app.status,
+            "inference 서버 시작됨: http://127.0.0.1:9000/v1/models"
+        );
+    }
+
+    #[test]
+    fn unexpected_exit_clears_stale_runtime_state() {
+        // Given: application state that identifies an owned running child.
+        let (mut app, _startup) = App::new();
+        app.inference_pid = Some(42);
+
+        // When: the process owner reports an unexpected nonzero exit.
+        let _task = app.on_inference_exited(17);
+
+        // Then: stale child identity is cleared and the failure remains visible.
+        assert!(app.inference_pid.is_none());
+        assert!(app.status.contains("exit 17"));
+        assert!(app.tabby_status.as_ref().is_some_and(Result::is_err));
     }
 }

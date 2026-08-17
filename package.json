@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@warp-dot-dev/opencode-warp": "^0.1.7"
+  }
+}

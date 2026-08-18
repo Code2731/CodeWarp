@@ -1,4 +1,5 @@
 // openrouter/api_types.rs — API response types and helpers (openrouter child module)
+use futures_util::StreamExt;
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -7,6 +8,7 @@ use super::types::ChatMessage;
 pub(super) const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub(super) const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub(super) const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+pub(super) const MAX_PROVIDER_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct AuthKeyData {
@@ -63,6 +65,36 @@ pub(super) fn apply_compat_auth_headers(
     req
 }
 
+pub(super) async fn read_response_text_bounded(
+    response: reqwest::Response,
+) -> Result<String, String> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_PROVIDER_RESPONSE_BYTES as u64)
+    {
+        return Err(format!(
+            "provider response exceeds {} bytes",
+            MAX_PROVIDER_RESPONSE_BYTES
+        ));
+    }
+
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| format!("provider response read failed: {error}"))?;
+        if body.len().saturating_add(chunk.len()) > MAX_PROVIDER_RESPONSE_BYTES {
+            return Err(format!(
+                "provider response exceeds {} bytes",
+                MAX_PROVIDER_RESPONSE_BYTES
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    String::from_utf8(body)
+        .map_err(|error| format!("provider response is not valid UTF-8: {error}"))
+}
+
 pub(super) async fn fetch_non_stream_fallback(
     client: &reqwest::Client,
     endpoint: &str,
@@ -96,9 +128,11 @@ pub(super) async fn fetch_non_stream_fallback(
         .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
+        let text = read_response_text_bounded(resp)
+            .await
+            .unwrap_or_else(|error| format!("[{error}]"));
         return Err(format!("{} {status}: {text}", provider_label(base_url)));
     }
-    let raw = resp.text().await.unwrap_or_default();
+    let raw = read_response_text_bounded(resp).await?;
     Ok(extract_non_stream_content(raw.trim()))
 }

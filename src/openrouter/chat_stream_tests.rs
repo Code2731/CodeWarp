@@ -5,7 +5,7 @@ use futures_util::{StreamExt, stream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-use super::api_types::provider_label;
+use super::api_types::{MAX_PROVIDER_RESPONSE_BYTES, provider_label, read_response_text_bounded};
 use super::chat_stream::{chat_stream as openai_chat_stream, decode_utf8_chunk, next_stream_item};
 use super::{ChatEvent, ChatMessage};
 
@@ -60,6 +60,38 @@ async fn stream_wait_returns_timeout_for_silent_stream() {
         next_stream_item(&mut input, Duration::from_millis(5)).await,
         Err(())
     );
+}
+
+#[tokio::test]
+async fn provider_response_body_limit_rejects_oversized_content_length() {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind oversized response server");
+    let address = listener
+        .local_addr()
+        .expect("oversized response server address");
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept oversized request");
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            MAX_PROVIDER_RESPONSE_BYTES + 1
+        );
+        socket
+            .write_all(response.as_bytes())
+            .await
+            .expect("write oversized response headers");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    });
+
+    let response = reqwest::Client::new()
+        .get(format!("http://{address}/oversized"))
+        .send()
+        .await
+        .expect("receive oversized response headers");
+    let error = read_response_text_bounded(response).await.unwrap_err();
+
+    server.await.expect("oversized response server must finish");
+    assert!(error.contains("exceeds"));
 }
 
 #[tokio::test]

@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use futures_util::{Stream, StreamExt};
 
-use super::api_types::{HTTP_REQUEST_TIMEOUT, STREAM_IDLE_TIMEOUT, http_client, provider_label};
+use super::api_types::{
+    HTTP_REQUEST_TIMEOUT, MAX_PROVIDER_RESPONSE_BYTES, STREAM_IDLE_TIMEOUT, http_client,
+    provider_label, read_response_text_bounded,
+};
 use super::parse::{
     consume_sse_line, extract_non_stream_content, extract_plain_stream_token, extract_stream_text,
     parse_stream_chunks,
@@ -33,6 +36,23 @@ pub(super) fn decode_utf8_chunk(pending: &mut Vec<u8>, chunk: &[u8]) -> Result<O
         }
         Err(_) => Err(()),
     }
+}
+
+fn append_bounded_capture(target: &mut String, text: &str, max_bytes: usize) {
+    let remaining = max_bytes.saturating_sub(target.len());
+    if remaining == 0 {
+        return;
+    }
+    if text.len() <= remaining {
+        target.push_str(text);
+        return;
+    }
+
+    let mut end = remaining;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    target.push_str(&text[..end]);
 }
 
 pub(super) async fn next_stream_item<S>(
@@ -88,7 +108,9 @@ async fn send_chat_request_with_retry(
             Ok(Ok(r)) if r.status().is_success() => return Ok(r),
             Ok(Ok(r)) => {
                 let status = r.status();
-                let text = r.text().await.unwrap_or_default();
+                let text = read_response_text_bounded(r)
+                    .await
+                    .unwrap_or_else(|error| format!("[{error}]"));
                 if status.is_server_error() && attempt < MAX_RETRIES {
                     tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
                     attempt += 1;
@@ -260,7 +282,7 @@ pub(crate) fn chat_stream(
                 }
             };
             buffer.push_str(&text);
-            raw_capture.push_str(&text);
+            append_bounded_capture(&mut raw_capture, &text, MAX_PROVIDER_RESPONSE_BYTES);
 
             loop {
                 let Some(idx) = buffer.find('\n') else { break };
@@ -329,5 +351,28 @@ pub(crate) fn chat_stream(
                 yield e;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_bounded_capture;
+
+    #[test]
+    fn bounded_capture_preserves_utf8_boundaries() {
+        let mut capture = String::from("a");
+
+        append_bounded_capture(&mut capture, "한글", 4);
+
+        assert_eq!(capture, "a한");
+    }
+
+    #[test]
+    fn bounded_capture_does_not_grow_after_reaching_limit() {
+        let mut capture = String::from("abcd");
+
+        append_bounded_capture(&mut capture, "more", 4);
+
+        assert_eq!(capture, "abcd");
     }
 }

@@ -97,10 +97,14 @@ async fn chat_stream_round_trips_through_openai_compatible_sse_server() {
             "data: {\"id\":\"mock-1\",\"choices\":[{\"delta\":{\"content\":\" CodeWarp\"},\"finish_reason\":\"stop\"}]}\n\n",
             "data: [DONE]\n\n",
         ] {
-            socket
-                .write_all(frame.as_bytes())
-                .await
-                .expect("write mock SSE frame");
+            // Deliberately split transport chunks, including inside UTF-8 code points.
+            for chunk in frame.as_bytes().chunks(2) {
+                socket
+                    .write_all(chunk)
+                    .await
+                    .expect("write mock SSE frame chunk");
+                tokio::task::yield_now().await;
+            }
         }
     });
 

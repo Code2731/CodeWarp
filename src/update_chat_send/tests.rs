@@ -25,6 +25,37 @@ fn input_action_edits_external_value_without_reversing_text() {
 }
 
 #[test]
+fn paste_and_newline_actions_preserve_unicode_order() {
+    let (mut app, _) = App::new();
+    let pasted = "첫 줄 😊\n두 번째 줄";
+
+    let _ = app.update(Message::InputAction(Action::Edit(Edit::Paste(Arc::new(
+        pasted.into(),
+    )))));
+    let _ = app.update(Message::InputAction(Action::Edit(Edit::Enter)));
+    let _ = app.update(Message::InputAction(Action::Edit(Edit::Insert('끝'))));
+
+    assert_eq!(app.input, "첫 줄 😊\n두 번째 줄\n끝");
+    assert_eq!(app.editor_content.text(), app.input);
+}
+
+#[test]
+fn cursor_edit_does_not_reset_to_the_end_or_reverse_text() {
+    let (mut app, _) = App::new();
+
+    let _ = app.update(Message::InputAction(Action::Edit(Edit::Paste(Arc::new(
+        "ab".into(),
+    )))));
+    let _ = app.update(Message::InputAction(Action::Move(
+        iced::widget::text_editor::Motion::Left,
+    )));
+    let _ = app.update(Message::InputAction(Action::Edit(Edit::Insert('X'))));
+
+    assert_eq!(app.input, "aXb");
+    assert_eq!(app.editor_content.text(), "aXb");
+}
+
+#[test]
 fn edit_last_user_places_cursor_at_end() {
     let (mut app, _) = App::new();
     app.blocks.push(Block {

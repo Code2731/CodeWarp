@@ -32,7 +32,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Run verified platform harness (fmt + check + test)
+      - name: Run verified Windows harness (fmt + check + test)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: .\scripts\harness.ps1 -SkipClippy
+
+      - name: Run verified Unix harness (fmt + check + test)
+        if: matrix.os != 'windows-latest'
         shell: bash
         run: bash scripts/harness.sh --skip-clippy
 

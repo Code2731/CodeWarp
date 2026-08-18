@@ -3,7 +3,7 @@
 ## Project
 - Rust MSRV 1.90.0, Edition 2024, Iced 0.14, serde 1.0.228 (derive + rc)
 - `cargo clippy` before any commit; pre-commit `cargo fmt --check`; pre-push `cargo fmt --check && cargo check && cargo test --all-targets -- --test-threads=1`
-- Test baseline: run `cargo test --all-targets -- --test-threads=1`; the 2026-08-19 verification passed 647 unit tests, ignored 11 (including the Windows/Linux PTY Ctrl+C manual-QA cases), plus 1 external integration smoke test. Zero clippy warnings (strict).
+- Test baseline: run `cargo test --all-targets -- --test-threads=1`; the 2026-08-19 verification passed 653 unit tests, ignored 11 (including the Linux PTY Ctrl+C manual-QA case), plus 1 external integration smoke test. Zero clippy warnings (strict).
 
 ## Key Conventions
 - `Message` derives `Clone` (required for `key_binding` Fn closure)

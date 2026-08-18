@@ -28,6 +28,7 @@ fn compare_completion_releases_abort_handle() {
     app.compare_block_ids = Some((1, 2));
 
     let _ = app.on_compare_responses_loaded(
+        app.compare_generation,
         1,
         2,
         Ok("OpenRouter response".into()),
@@ -68,6 +69,7 @@ fn compare_completion_fills_response_blocks_by_id() {
     app.compare_block_ids = Some((10, 11));
 
     let _ = app.on_compare_responses_loaded(
+        app.compare_generation,
         10,
         11,
         Ok("OpenRouter response".into()),
@@ -85,6 +87,7 @@ fn stale_compare_completion_is_ignored_for_new_request() {
     app.compare_block_ids = Some((10, 11));
 
     let _ = app.on_compare_responses_loaded(
+        app.compare_generation,
         1,
         2,
         Ok("stale OpenRouter response".into()),
@@ -93,5 +96,25 @@ fn stale_compare_completion_is_ignored_for_new_request() {
 
     assert!(app.ui.compare_pending);
     assert_eq!(app.compare_block_ids, Some((10, 11)));
+    assert!(app.conversation.is_empty());
+}
+
+#[test]
+fn stale_compare_completion_is_ignored_when_block_ids_are_reused() {
+    let (mut app, _) = App::new();
+    app.ui.compare_pending = true;
+    app.compare_generation = 2;
+    app.compare_block_ids = Some((1, 2));
+
+    let _ = app.on_compare_responses_loaded(
+        1,
+        1,
+        2,
+        Ok("stale OpenRouter response".into()),
+        Ok("stale local response".into()),
+    );
+
+    assert!(app.ui.compare_pending);
+    assert_eq!(app.compare_block_ids, Some((1, 2)));
     assert!(app.conversation.is_empty());
 }

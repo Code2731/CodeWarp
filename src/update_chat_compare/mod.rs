@@ -16,12 +16,14 @@ use collect::collect_chat_text;
 impl App {
     pub(crate) fn on_compare_responses_loaded(
         &mut self,
+        generation: u64,
         openrouter_block_id: u64,
         tabby_block_id: u64,
         openrouter_result: Result<String, String>,
         tabby_result: Result<String, String>,
     ) -> Task<Message> {
         if !self.ui.compare_pending
+            || self.compare_generation != generation
             || self.compare_block_ids != Some((openrouter_block_id, tabby_block_id))
         {
             return Task::none();
@@ -110,6 +112,8 @@ impl App {
             apply_candidates: Vec::new(),
         });
         self.compare_block_ids = Some((openrouter_block_id, tabby_block_id));
+        self.compare_generation = self.compare_generation.saturating_add(1);
+        let generation = self.compare_generation;
 
         self.input.clear();
         self.editor_content = text_editor::Content::new();
@@ -136,6 +140,7 @@ impl App {
                 tokio::join!(openrouter, tabby)
             },
             move |(openrouter_result, tabby_result)| Message::CompareResponsesLoaded {
+                generation,
                 openrouter_block_id,
                 tabby_block_id,
                 openrouter_result,

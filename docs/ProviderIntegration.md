@@ -71,6 +71,10 @@ Chat retry and MCP tool results use separate request generations. A late event f
 retry, stopped stream, session switch, or canceled MCP round is ignored before it can mutate
 the active conversation.
 
+Managed local inference runtimes use a separate `inference_generation`. Logs, exit events, and
+the automatic `/v1/models` fetch are accepted only for the currently owned runtime, preventing
+an old Tabby/Ollama-compatible process from overwriting a restarted endpoint's state.
+
 ## Error Humanization
 
 각 프로바이더는 에러를 한국어로 변환하는 humanize 함수를 제공:

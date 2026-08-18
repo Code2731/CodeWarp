@@ -39,6 +39,7 @@ pub(crate) struct InferenceLaunch {
 
 pub(crate) fn spawn_inference_stream(
     launch: InferenceLaunch,
+    generation: u64,
 ) -> (impl futures_util::Stream<Item = Message>, RuntimeStopHandle) {
     use tokio::io::BufReader;
     use tokio::process::Command;
@@ -62,16 +63,22 @@ pub(crate) fn spawn_inference_stream(
         let (mut process, stdout, stderr) = match RuntimeProcess::spawn(cmd, PRODUCTION_DEADLINES) {
             Ok(parts) => parts,
             Err(e) => {
-                yield Message::InferenceLogLine(format!(
-                    "[spawn 실패] {}",
-                    humanize_inference_spawn_error(&program, &e)
-                ));
-                yield Message::InferenceExited(-1);
+                yield Message::InferenceLogLine {
+                    generation,
+                    line: format!(
+                        "[spawn 실패] {}",
+                        humanize_inference_spawn_error(&program, &e)
+                    ),
+                };
+                yield Message::InferenceExited { generation, code: -1 };
                 return;
             }
         };
         if let Some(pid) = process.pid() {
-            yield Message::InferenceLogLine(format!("[pid:{pid}] {program} {}", args.join(" ")));
+            yield Message::InferenceLogLine {
+                generation,
+                line: format!("[pid:{pid}] {program} {}", args.join(" ")),
+            };
         }
         let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(128);
         let stdout_tx = tx.clone();
@@ -102,23 +109,29 @@ pub(crate) fn spawn_inference_stream(
             }
         };
         if let Err(failure) = startup {
-            yield Message::InferenceLogLine(format!("[startup 실패] {}", failure.message));
+            yield Message::InferenceLogLine {
+                generation,
+                line: format!("[startup 실패] {}", failure.message),
+            };
             let code = failure
                 .receipt
                 .as_ref()
                 .map_or(-1, exit_code);
-            yield Message::InferenceExited(code);
+            yield Message::InferenceExited { generation, code };
             return;
         }
-        yield Message::InferenceLogLine(format!("[ready] {health_url}"));
-        yield Message::FetchTabbyModels;
+        yield Message::InferenceLogLine {
+            generation,
+            line: format!("[ready] {health_url}"),
+        };
+        yield Message::FetchTabbyModelsForInference(generation);
 
         let mut output_open = true;
         loop {
             tokio::select! {
                 line = rx.recv(), if output_open => {
                     match line {
-                        Some(l) => yield Message::InferenceLogLine(l),
+                        Some(l) => yield Message::InferenceLogLine { generation, line: l },
                         None => output_open = false,
                     }
                 }
@@ -126,26 +139,41 @@ pub(crate) fn spawn_inference_stream(
                     let receipt = process.shutdown().await;
                     match receipt {
                         Ok(receipt) => {
-                            yield Message::InferenceLogLine(format!(
-                                "[stopped] pid={} forced={}",
-                                receipt.pid.map_or_else(|| "unknown".to_string(), |pid| pid.to_string()),
-                                receipt.forced,
-                            ));
-                            yield Message::InferenceExited(exit_code(&receipt));
+                            yield Message::InferenceLogLine {
+                                generation,
+                                line: format!(
+                                    "[stopped] pid={} forced={}",
+                                    receipt.pid.map_or_else(|| "unknown".to_string(), |pid| pid.to_string()),
+                                    receipt.forced,
+                                ),
+                            };
+                            yield Message::InferenceExited {
+                                generation,
+                                code: exit_code(&receipt),
+                            };
                         }
                         Err(error) => {
-                            yield Message::InferenceLogLine(format!("[cleanup 실패] {error}"));
-                            yield Message::InferenceExited(-1);
+                            yield Message::InferenceLogLine {
+                                generation,
+                                line: format!("[cleanup 실패] {error}"),
+                            };
+                            yield Message::InferenceExited { generation, code: -1 };
                         }
                     }
                     return;
                 }
                 receipt = process.wait_for_exit() => {
                     match receipt {
-                        Ok(receipt) => yield Message::InferenceExited(exit_code(&receipt)),
+                        Ok(receipt) => yield Message::InferenceExited {
+                            generation,
+                            code: exit_code(&receipt),
+                        },
                         Err(error) => {
-                            yield Message::InferenceLogLine(format!("[cleanup 실패] {error}"));
-                            yield Message::InferenceExited(-1);
+                            yield Message::InferenceLogLine {
+                                generation,
+                                line: format!("[cleanup 실패] {error}"),
+                            };
+                            yield Message::InferenceExited { generation, code: -1 };
                         }
                     }
                     return;

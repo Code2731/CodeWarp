@@ -88,6 +88,7 @@ pub(crate) enum Message {
         event: ChatEvent,
     },
     CompareResponsesLoaded {
+        generation: u64,
         openrouter_block_id: u64,
         tabby_block_id: u64,
         openrouter_result: Result<String, String>,
@@ -144,12 +145,19 @@ pub(crate) enum Message {
     TabbyApiRuntimeInstalled(Result<std::path::PathBuf, String>),
     StartInference,
     StopInference,
-    InferenceLogLine(String),
-    InferenceExited(i32),
+    InferenceLogLine {
+        generation: u64,
+        line: String,
+    },
+    InferenceExited {
+        generation: u64,
+        code: i32,
+    },
     SaveTabby,
     TabbySaved(Result<(), String>),
     ClearTabby,
     FetchTabbyModels,
+    FetchTabbyModelsForInference(u64),
     FetchTabbyModelsRetry(u64),
     TabbyModelsLoaded {
         generation: u64,
@@ -200,9 +208,14 @@ pub(crate) enum Message {
     },
     PtyToggle,
     PtyStart,
-    PtyLine(String),
-    PtyExited,
-    PtyStopped(Result<pty::PtyReceipt, pty::PtyShutdownFailure>, bool),
+    PtyLine {
+        generation: u64,
+        line: String,
+    },
+    PtyExited {
+        generation: u64,
+    },
+    PtyStopped(Result<pty::PtyReceipt, pty::PtyShutdownFailure>, bool, u64),
     PtyInputChanged(String),
     PtySend,
     PtyCtrlC,

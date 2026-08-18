@@ -21,6 +21,7 @@ impl App {
         }
         self.mcp_request_generation = self.mcp_request_generation.saturating_add(1);
         self.mcp_pending_results = 0;
+        self.compare_generation = self.compare_generation.saturating_add(1);
         if self.ui.compare_pending {
             self.discard_compare_blocks();
         }

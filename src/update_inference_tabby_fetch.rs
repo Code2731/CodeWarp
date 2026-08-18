@@ -24,6 +24,16 @@ impl App {
             Message::TabbyModelsLoaded { generation, result }
         })
     }
+    pub(crate) fn fetch_tabby_models_for_inference(&mut self, generation: u64) -> Task<Message> {
+        if generation != self.inference_generation
+            || self.inference_stop.is_none()
+            || self.inference_stopping
+            || self.close_in_progress
+        {
+            return Task::none();
+        }
+        self.fetch_tabby_models()
+    }
     pub(crate) fn retry_fetch_tabby_models(&mut self, generation: u64) -> Task<Message> {
         if generation != self.tabby_retry_generation {
             return Task::none();

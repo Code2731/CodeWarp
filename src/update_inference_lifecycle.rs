@@ -212,14 +212,20 @@ impl App {
         self.inference_log.clear();
         self.tabby_connect_retry_left = 0;
         self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
+        self.inference_generation = self.inference_generation.saturating_add(1);
+        self.inference_stopping = false;
+        let generation = self.inference_generation;
         self.status = format!("실행 시작: {final_program} {}", args.join(" "));
         let health_url = format!("{}/models", crate::tabby::chat_base(&self.tabby_url_input));
-        let (stream, stop_handle) = spawn_inference_stream(InferenceLaunch {
-            program: final_program,
-            args,
-            work_dir,
-            health_url,
-        });
+        let (stream, stop_handle) = spawn_inference_stream(
+            InferenceLaunch {
+                program: final_program,
+                args,
+                work_dir,
+                health_url,
+            },
+            generation,
+        );
         self.inference_stop = Some(stop_handle);
         Task::run(stream, |event| event)
     }

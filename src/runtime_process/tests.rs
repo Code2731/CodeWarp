@@ -1,4 +1,6 @@
 use super::{RuntimeStopHandle, humanize_inference_spawn_error};
+use crate::{InferenceLaunch, Message, spawn_inference_stream};
+use futures_util::{StreamExt, pin_mut};
 
 #[test]
 fn humanize_inference_spawn_error_explains_missing_xllm_binary() {
@@ -99,4 +101,36 @@ fn repeated_stop_requests_are_idempotent_and_bounded() {
     ));
     drop(receiver);
     assert!(!handle.request_stop());
+}
+
+#[tokio::test]
+async fn spawn_failure_events_keep_the_runtime_generation() {
+    // Given: a runtime launch that cannot spawn its executable.
+    let (stream, _stop) = spawn_inference_stream(
+        InferenceLaunch {
+            program: "__codewarp_missing_runtime__".into(),
+            args: Vec::new(),
+            work_dir: None,
+            health_url: "http://127.0.0.1:9/v1/models".into(),
+        },
+        7,
+    );
+    pin_mut!(stream);
+
+    // When: the lifecycle reports the failed startup.
+    let log = stream.next().await.expect("spawn failure log");
+    let exit = stream.next().await.expect("spawn failure exit");
+
+    // Then: both events remain scoped to the runtime that produced them.
+    assert!(matches!(
+        log,
+        Message::InferenceLogLine { generation: 7, .. }
+    ));
+    assert!(matches!(
+        exit,
+        Message::InferenceExited {
+            generation: 7,
+            code: -1
+        }
+    ));
 }

@@ -184,3 +184,26 @@ fn openrouter_models_loaded_waits_for_tabby_when_saved_selection_not_loaded_yet(
 
     assert_eq!(app.selected_model.as_deref(), Some("tabby-a"));
 }
+
+#[test]
+fn stale_managed_runtime_model_fetch_is_ignored() {
+    let (mut app, _) = App::new();
+    app.inference_generation = 2;
+    app.tabby_retry_generation = 9;
+
+    let _ = app.update(Message::FetchTabbyModelsForInference(1));
+
+    assert_eq!(app.tabby_retry_generation, 9);
+}
+
+#[test]
+fn stopping_managed_runtime_cannot_start_another_model_fetch() {
+    let (mut app, _) = App::new();
+    app.inference_generation = 2;
+    app.inference_stopping = true;
+    app.tabby_retry_generation = 9;
+
+    let _ = app.update(Message::FetchTabbyModelsForInference(2));
+
+    assert_eq!(app.tabby_retry_generation, 9);
+}

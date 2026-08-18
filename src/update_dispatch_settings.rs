@@ -27,13 +27,20 @@ impl App {
             }
             Message::StartInference => Some(self.start_inference()),
             Message::StopInference => Some(self.stop_inference()),
-            Message::InferenceLogLine(line) => Some(self.on_inference_log_line(line.clone())),
-            Message::InferenceExited(code) => Some(self.on_inference_exited(*code)),
+            Message::InferenceLogLine { generation, line } => {
+                Some(self.on_inference_log_line(*generation, line.clone()))
+            }
+            Message::InferenceExited { generation, code } => {
+                Some(self.on_inference_exited(*generation, *code))
+            }
             Message::OpenAICompatLabelChanged(v) => Some(self.set_openai_compat_label(v.clone())),
             Message::SaveTabby => Some(self.save_tabby_settings()),
             Message::TabbySaved(r) => Some(self.on_tabby_saved(r.clone())),
             Message::ClearTabby => Some(self.clear_tabby_settings()),
             Message::FetchTabbyModels => Some(self.fetch_tabby_models()),
+            Message::FetchTabbyModelsForInference(generation) => {
+                Some(self.fetch_tabby_models_for_inference(*generation))
+            }
             Message::FetchTabbyModelsRetry(generation) => Some(self.retry_fetch_tabby_models(*generation)),
             Message::TabbyModelsLoaded { generation, result } => {
                 Some(self.on_tabby_models_loaded(*generation, result.clone()))

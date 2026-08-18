@@ -157,16 +157,20 @@ Runtime orchestration is handled in `src/update.rs` with `InferenceEngine::Tabby
    - `StartInference` composes command (`Start.bat --config config.yml` / `./start.sh --config config.yml`).
    - `runtime_process::resolve_runtime_spawn_command` adapts to script type (`cmd.exe /C ...`, python runner, etc.).
    - `runtime_process::spawn_inference_stream` starts child process and streams stdout/stderr lines.
+   - Each stream carries an `inference_generation` so events from a previous runtime cannot
+     mutate a restarted runtime.
 
 5. **PID + logs + process state**
    - First log line includes `[pid:<n>]`, captured to `inference_pid`.
    - Log buffer kept as FIFO.
-   - Exit is handled by `Message::InferenceExited` (status update + model option cleanup).
+   - Exit is handled by generation-scoped `Message::InferenceExited` (status update + model option cleanup).
 
 6. **Ping/model discovery**
-   - After spawn start, CodeWarp schedules automatic connection attempts.
+   - After spawn start, CodeWarp schedules automatic connection attempts through
+     `FetchTabbyModelsForInference(generation)`.
    - It calls `tabby::list_models` against configured URL.
    - If temporarily unreachable, retry loop runs (generation-safe retries with delay/count guard).
+   - A stale runtime generation cannot start a new model fetch after stop/restart.
 
 7. **Endpoint ready**
    - On a current-generation `TabbyModelsLoaded { result: Ok(ids), .. }`, OpenAICompat model options are populated and selector is refreshed; stale responses are ignored after URL/token changes.

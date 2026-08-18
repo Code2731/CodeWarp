@@ -29,11 +29,13 @@ impl App {
             Message::CopyBlock(id) => Some(self.copy_block(*id)),
             Message::CopyText(text) => Some(iced::clipboard::write(text.clone())),
             Message::CompareResponsesLoaded {
+                generation,
                 openrouter_block_id,
                 tabby_block_id,
                 openrouter_result,
                 tabby_result,
             } => Some(self.on_compare_responses_loaded(
+                *generation,
                 *openrouter_block_id,
                 *tabby_block_id,
                 openrouter_result.clone(),

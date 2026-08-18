@@ -19,6 +19,7 @@ impl App {
     }
     pub(crate) fn stop_inference(&mut self) -> Task<Message> {
         if let Some(handle) = &self.inference_stop {
+            self.inference_stopping = true;
             let requested = handle.request_stop();
             let process = self.inference_pid.map_or_else(
                 || "starting process".to_string(),
@@ -34,7 +35,10 @@ impl App {
         self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
         Task::none()
     }
-    pub(crate) fn on_inference_log_line(&mut self, line: String) -> Task<Message> {
+    pub(crate) fn on_inference_log_line(&mut self, generation: u64, line: String) -> Task<Message> {
+        if generation != self.inference_generation {
+            return Task::none();
+        }
         if line.starts_with("[pid:")
             && let Some(pid) = line
                 .strip_prefix("[pid:")
@@ -53,7 +57,10 @@ impl App {
         self.push_inference_log(line);
         Task::none()
     }
-    pub(crate) fn on_inference_exited(&mut self, code: i32) -> Task<Message> {
+    pub(crate) fn on_inference_exited(&mut self, generation: u64, code: i32) -> Task<Message> {
+        if generation != self.inference_generation {
+            return Task::none();
+        }
         let last_error = self
             .inference_log
             .iter()
@@ -63,6 +70,7 @@ impl App {
         self.push_inference_log(format!("[exited] code {code}"));
         self.inference_pid = None;
         self.inference_stop = None;
+        self.inference_stopping = false;
         self.tabby_connect_retry_left = 0;
         self.tabby_retry_generation = self.tabby_retry_generation.saturating_add(1);
         self.status = format!("inference 서버 종료 (exit {code})");
@@ -98,8 +106,10 @@ mod tests {
         app.status = "starting".to_string();
 
         // When: the lifecycle reports its successful endpoint health response.
-        let _task =
-            app.on_inference_log_line("[ready] http://127.0.0.1:9000/v1/models".to_string());
+        let _task = app.on_inference_log_line(
+            app.inference_generation,
+            "[ready] http://127.0.0.1:9000/v1/models".to_string(),
+        );
 
         // Then: user-visible state reports startup only after that response.
         assert_eq!(
@@ -115,11 +125,28 @@ mod tests {
         app.inference_pid = Some(42);
 
         // When: the process owner reports an unexpected nonzero exit.
-        let _task = app.on_inference_exited(17);
+        let _task = app.on_inference_exited(app.inference_generation, 17);
 
         // Then: stale child identity is cleared and the failure remains visible.
         assert!(app.inference_pid.is_none());
         assert!(app.status.contains("exit 17"));
         assert!(app.tabby_status.as_ref().is_some_and(Result::is_err));
+    }
+
+    #[test]
+    fn stale_runtime_events_do_not_mutate_current_runtime_state() {
+        // Given: a newer managed runtime is the current owner of lifecycle state.
+        let (mut app, _startup) = App::new();
+        app.inference_generation = 2;
+        app.inference_pid = Some(42);
+        app.status = "current runtime".into();
+
+        // When: the previous runtime delivers late log and exit events.
+        let _ = app.on_inference_log_line(1, "[ready] stale".into());
+        let _ = app.on_inference_exited(1, 17);
+
+        // Then: neither event can clear or overwrite the current runtime state.
+        assert_eq!(app.inference_pid, Some(42));
+        assert_eq!(app.status, "current runtime");
     }
 }

@@ -129,6 +129,7 @@ Run the packaged Windows binary and record the result for each item before calli
 - Start an MCP/PTY-backed action, cancel it, restart it, and close the window; verify owned processes are reaped and the next run can start cleanly.
 - After an unclean close, relaunch and verify session recovery status, backup fallback behavior, and the persisted conversation.
 - On Linux, test interactive PTY Ctrl+C separately and record it as manual QA until the POSIX runner is reliable; on Windows, confirm the packaged GUI `^C` button once as release acceptance for the full UI path.
+- On an interactive Windows desktop, run `powershell -ExecutionPolicy Bypass -File scripts/gui-smoke.ps1` against the release executable to verify the real text editor preserves Korean, emoji, multiline paste, and input order.
 
 ## Git Hooks (Recommended)
 

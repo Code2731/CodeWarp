@@ -79,6 +79,42 @@ mod tests {
     }
 
     #[test]
+    fn chat_chunk_tokens_preserve_unicode_order_until_done() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        for token in ["첫 ", "응답 ", "😊\n", "완료"] {
+            let _ = app.update(Message::ChatChunk(ChatEvent::Token(token.into())));
+        }
+
+        assert_eq!(app.streaming_raw, "첫 응답 😊\n완료");
+
+        let _ = app.update(Message::ChatChunk(ChatEvent::Done {
+            finish_reason: Some("stop".into()),
+            generation_id: None,
+        }));
+
+        assert_eq!(app.blocks[0].body.to_text(), "첫 응답 😊\n완료");
+        assert_eq!(
+            app.conversation
+                .last()
+                .and_then(|message| message.content.as_deref()),
+            Some("첫 응답 😊\n완료")
+        );
+    }
+
+    #[test]
     fn chat_chunk_does_not_reparse_markdown_during_streaming() {
         let (mut app, _) = App::new();
         Arc::make_mut(&mut app.conversation).clear();

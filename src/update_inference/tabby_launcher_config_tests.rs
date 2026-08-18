@@ -92,6 +92,7 @@ fn tabby_models_loaded_error_without_retry_budget_reports_failure() {
     app.inference_pid = None;
 }
 
+#[cfg(windows)]
 #[test]
 fn tabbyapi_bat_launcher_runs_via_cmd_in_script_dir() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -117,6 +118,27 @@ fn tabbyapi_bat_launcher_runs_via_cmd_in_script_dir() {
             "config.yml".to_string()
         ]
     );
+    assert_eq!(work_dir.as_deref(), Some(tmp.path()));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn tabbyapi_sh_launcher_runs_from_script_dir() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let script = tmp.path().join("start.sh");
+    std::fs::write(&script, "#!/bin/sh").unwrap();
+
+    let (mut app, _) = App::new();
+    app.inference_engine = InferenceEngine::TabbyApi;
+    app.inference_binary_path = script.display().to_string();
+
+    let (program, args, work_dir) = app.resolve_runtime_spawn_command(
+        "start.sh".into(),
+        vec!["--config".into(), "config.yml".into()],
+    );
+
+    assert_eq!(program, "./start.sh");
+    assert_eq!(args, vec!["--config".to_string(), "config.yml".to_string()]);
     assert_eq!(work_dir.as_deref(), Some(tmp.path()));
 }
 

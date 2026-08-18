@@ -27,7 +27,10 @@ fn tabbyapi_start_rejects_tabbyml_binary_with_specific_guidance() {
     let (mut app, _) = App::new();
     app.inference_engine = InferenceEngine::TabbyApi;
     app.inference_selected_model = r"C:\models\Local-EXL2".into();
-    app.inference_binary_path = r"C:\tools\tabby.exe".into();
+    app.inference_binary_path = std::path::Path::new("tools")
+        .join("tabby.exe")
+        .display()
+        .to_string();
 
     let _ = app.update(Message::StartInference);
 
@@ -136,7 +139,10 @@ fn tabbyapi_start_rejects_tabbyml_cli_without_extension() {
     let (mut app, _) = App::new();
     app.inference_engine = InferenceEngine::TabbyApi;
     app.inference_selected_model = r"C:\models\Local-EXL2".into();
-    app.inference_binary_path = r"C:\tools\tabby".into();
+    app.inference_binary_path = std::path::Path::new("tools")
+        .join("tabby")
+        .display()
+        .to_string();
 
     let _ = app.update(Message::StartInference);
 
@@ -151,7 +157,10 @@ fn tabbyapi_start_rejects_tabbyml_cli_cmd_launcher() {
     let (mut app, _) = App::new();
     app.inference_engine = InferenceEngine::TabbyApi;
     app.inference_selected_model = r"C:\models\Local-EXL2".into();
-    app.inference_binary_path = r"C:\tools\tabby.cmd".into();
+    app.inference_binary_path = std::path::Path::new("tools")
+        .join("tabby.cmd")
+        .display()
+        .to_string();
 
     let _ = app.update(Message::StartInference);
 
@@ -166,7 +175,10 @@ fn tabbyapi_start_rejects_tabbyml_cli_bat_launcher() {
     let (mut app, _) = App::new();
     app.inference_engine = InferenceEngine::TabbyApi;
     app.inference_selected_model = r"C:\models\Local-EXL2".into();
-    app.inference_binary_path = r"C:\tools\tabby.bat".into();
+    app.inference_binary_path = std::path::Path::new("tools")
+        .join("tabby.bat")
+        .display()
+        .to_string();
 
     let _ = app.update(Message::StartInference);
 

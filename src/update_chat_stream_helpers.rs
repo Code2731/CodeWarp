@@ -12,6 +12,7 @@ impl App {
         Task::none()
     }
     pub(crate) fn abort_active_chat_stream(&mut self, keep_partial_assistant: bool) {
+        let streaming_block_id = self.streaming_block_id;
         if let Some(h) = self.abort_handle.take() {
             h.abort();
         }
@@ -19,7 +20,7 @@ impl App {
             self.discard_compare_blocks();
         }
         self.ui.compare_pending = false;
-        if keep_partial_assistant && let Some(ai_id) = self.streaming_block_id {
+        if let Some(ai_id) = streaming_block_id {
             let txt = if !self.streaming_raw.is_empty() {
                 std::mem::take(&mut self.streaming_raw)
             } else if let Some(idx) = self.streaming_block_idx {
@@ -31,8 +32,11 @@ impl App {
             } else {
                 String::new()
             };
-            if !txt.is_empty() {
+            if keep_partial_assistant && !txt.is_empty() {
+                self.fill_assistant_block(ai_id, &txt);
                 Arc::make_mut(&mut self.conversation).push(ChatMessage::assistant(txt));
+            } else {
+                self.blocks.retain(|block| block.id != ai_id);
             }
         }
         self.streaming_block_id = None;
@@ -115,6 +119,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::{Block, PendingToolCall, ViewMode};
+    use tempfile::TempDir;
 
     fn assistant_block_with_text(id: u64, text: &str) -> Block {
         Block {
@@ -150,11 +155,19 @@ mod tests {
         assert!(app.pending_tool_calls.is_empty());
         assert_eq!(app.tool_round, 0);
         assert_eq!(app.conversation.len(), 1);
+        assert_eq!(app.blocks.len(), 1);
+        assert_eq!(app.blocks[0].body.to_text(), "partial response");
         assert_eq!(app.conversation[0].role, "assistant");
         assert_eq!(
             app.conversation[0].content.as_deref(),
             Some("partial response")
         );
+
+        let storage = TempDir::new().unwrap();
+        assert!(app.save_session_at(storage.path()));
+        let persisted = crate::session::load_all_at(Some(storage.path()));
+        assert_eq!(persisted.sessions[0].blocks.len(), 1);
+        assert_eq!(persisted.sessions[0].blocks[0].content, "partial response");
     }
 
     #[test]
@@ -179,6 +192,32 @@ mod tests {
         assert!(app.streaming_block_idx.is_none());
         assert!(app.pending_tool_calls.is_empty());
         assert_eq!(app.tool_round, 0);
+        assert!(app.conversation.is_empty());
+        assert!(app.blocks.is_empty());
+    }
+
+    #[test]
+    fn abort_stream_removes_empty_assistant_placeholder() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks = vec![
+            Block {
+                id: 1,
+                body: BlockBody::User("question".into()),
+                view_mode: ViewMode::Rendered,
+                md_items: Vec::new(),
+                model: None,
+                apply_candidates: Vec::new(),
+            },
+            assistant_block_with_text(2, ""),
+        ];
+        app.streaming_block_id = Some(2);
+        app.streaming_block_idx = Some(1);
+
+        app.abort_active_chat_stream(true);
+
+        assert_eq!(app.blocks.len(), 1);
+        assert_eq!(app.blocks[0].id, 1);
         assert!(app.conversation.is_empty());
     }
 

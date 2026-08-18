@@ -224,3 +224,38 @@ impl App {
         self.view_toast(base)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Block, BlockBody, ViewMode};
+    use iced::widget::text_editor::{Action, Edit};
+    use std::sync::Arc;
+
+    #[test]
+    fn full_view_composes_unicode_input_and_streaming_state() {
+        let (mut app, _) = App::new();
+        let input = "한글 😊\n두 번째 줄";
+
+        let _ = app.update(Message::InputAction(Action::Edit(Edit::Paste(Arc::new(
+            input.into(),
+        )))));
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.streaming_raw = "첫 응답 😊\n완료".into();
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _view = app.view();
+
+        assert_eq!(app.input, input);
+        assert_eq!(app.editor_content.text(), input);
+        assert_eq!(app.streaming_raw, "첫 응답 😊\n완료");
+    }
+}

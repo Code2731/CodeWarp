@@ -11,6 +11,12 @@ mod send;
 #[cfg(test)]
 mod tests;
 
+fn editor_content_with_cursor_at_end(value: &str) -> text_editor::Content {
+    let mut content = text_editor::Content::with_text(value);
+    content.perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
+    content
+}
+
 impl App {
     pub(crate) fn sync_input_value(
         &mut self,
@@ -19,7 +25,7 @@ impl App {
     ) -> Task<Message> {
         self.input.clone_from(&value);
         if sync_editor_content {
-            self.editor_content = text_editor::Content::with_text(&value);
+            self.editor_content = editor_content_with_cursor_at_end(&value);
         }
         match extract_mention_query(&self.input) {
             Some(q) => {
@@ -82,7 +88,7 @@ impl App {
         self.tool_round = 0;
         self.pending_tool_calls.clear();
         self.input.clone_from(&user_text);
-        self.editor_content = text_editor::Content::with_text(&user_text);
+        self.editor_content = editor_content_with_cursor_at_end(&user_text);
         self.status = "편집 모드 — 수정 후 Enter".into();
         Task::none()
     }

@@ -139,7 +139,7 @@ Examples:
   - Examples: `src/session/mod.rs`, `src/update.rs`, and other modules compiled into `src/main.rs`.
 - **Integration test** exists under `tests/`:
   - `tests/test.rs`
-- Run `cargo test --all-targets` for the current executable test count. The dated 2026-07-17 verification reported 569 unit tests and 1 external integration smoke test.
+- Run `cargo test --all-targets -- --test-threads=1` for the current executable test count. The test process is single-threaded because Windows ConPTY and external-process fixtures are not safe to run concurrently. The dated 2026-08-18 verification reported 634 passing unit tests, 12 ignored tests (including the Windows ConPTY Ctrl+C manual-QA case), and 1 external integration smoke test.
 
 ## 10) Git commit message style
 
@@ -157,7 +157,7 @@ Examples:
 - Default ordered flow includes:
   1. `cargo fmt -- --check`
   2. `cargo check`
-  3. `cargo test --all-targets`
+  3. `cargo test --all-targets -- --test-threads=1`
   4. `cargo clippy --all-targets` (warning-tolerant unless strict mode is enabled)
 
 For day-to-day verification baseline in this repo, the core sequence is **fmt -> check -> test**, with clippy as an additional harness step.

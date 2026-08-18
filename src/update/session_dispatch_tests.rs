@@ -204,6 +204,7 @@ fn repeated_close_request_does_not_duplicate_cancel_or_reap_stages() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reap_failure_restores_pty_ownership_for_retry() {
+    let _lifecycle_guard = crate::pty::test_lifecycle_lock().await;
     // Given
     let root = TempDir::new().unwrap();
     let command = pty_command_with_pid(

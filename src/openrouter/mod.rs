@@ -5,6 +5,8 @@
 mod api;
 mod api_types;
 mod chat_stream;
+#[cfg(test)]
+mod chat_stream_tests;
 mod humanize;
 #[cfg(test)]
 mod humanize_tests;

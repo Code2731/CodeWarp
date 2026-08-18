@@ -1,7 +1,12 @@
 // openrouter/api_types.rs — API response types and helpers (openrouter child module)
 use serde::Deserialize;
+use std::time::Duration;
 
 use super::types::ChatMessage;
+
+pub(super) const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+pub(super) const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct AuthKeyData {
@@ -30,8 +35,17 @@ pub(super) struct GenerationResponse {
 pub(super) fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(concat!("CodeWarp/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(HTTP_CONNECT_TIMEOUT)
         .build()
         .map_err(|e| format!("HTTP client 생성 실패: {e}"))
+}
+
+pub(super) fn provider_label(base_url: &str) -> &'static str {
+    if base_url.to_ascii_lowercase().contains("openrouter.ai") {
+        "OpenRouter"
+    } else {
+        "OpenAI-compatible provider"
+    }
 }
 
 pub(super) fn apply_compat_auth_headers(
@@ -75,11 +89,15 @@ pub(super) async fn fetch_non_stream_fallback(
             .header("X-Title", "CodeWarp");
     }
     req = apply_compat_auth_headers(req, base_url, api_key);
-    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let resp = req
+        .timeout(HTTP_REQUEST_TIMEOUT)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("OpenRouter {status}: {text}"));
+        return Err(format!("{} {status}: {text}", provider_label(base_url)));
     }
     let raw = resp.text().await.unwrap_or_default();
     Ok(extract_non_stream_content(raw.trim()))

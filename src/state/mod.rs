@@ -118,6 +118,7 @@ pub(crate) struct App {
     pub(crate) hovered_mcp_idx: Option<usize>,
     pub(crate) compare_old_text: Option<String>,
     pub(crate) compare_new_text: Option<String>,
+    pub(crate) compare_block_ids: Option<(u64, u64)>,
     pub(crate) toast: Option<String>,
     pub(crate) close_in_progress: bool,
     #[cfg(test)]

@@ -26,6 +26,8 @@ jobs:
           sudo apt-get install -y libxkbcommon-dev libwayland-dev pkg-config
 
       - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          components: rustfmt
 
       - uses: Swatinem/rust-cache@v2
 
@@ -49,3 +51,63 @@ jobs:
       - name: Run harness clippy
         shell: bash
         run: bash scripts/harness.sh --skip-fmt --skip-check --skip-tests --strict-clippy
+
+  release:
+    name: release smoke (${{ matrix.os }})
+    needs: [harness, clippy]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+          - os: windows-latest
+            platform: windows-x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system deps (iced/winit)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Smoke test Windows release binary
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "target/release/codewarp.exe" -PassThru -WindowStyle Hidden
+          try {
+            Start-Sleep -Seconds 5
+            if ($process.HasExited) {
+              throw "codewarp.exe exited with code $($process.ExitCode)"
+            }
+            Write-Host "Windows release startup smoke passed (PID $($process.Id))"
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }
+
+      - name: Validate portable release inputs
+        run: python scripts/validate-release-manifest.py
+
+      - name: Package portable release archive
+        run: python scripts/package-release.py --platform "${{ matrix.platform }}" --output-dir dist
+
+      - name: Upload portable release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: codewarp-${{ matrix.platform }}
+          path: dist/*.zip
+          if-no-files-found: error

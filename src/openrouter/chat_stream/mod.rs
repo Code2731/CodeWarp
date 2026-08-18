@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use futures_util::{Stream, StreamExt};
 
-use super::api_types::http_client;
+use super::api_types::{HTTP_REQUEST_TIMEOUT, STREAM_IDLE_TIMEOUT, http_client, provider_label};
 use super::parse::{
     consume_sse_line, extract_non_stream_content, extract_plain_stream_token, extract_stream_text,
     parse_stream_chunks,
@@ -11,6 +11,41 @@ use super::parse::{
 use super::types::{ChatEvent, ChatMessage, ChatRequest};
 
 mod helpers;
+
+pub(super) fn decode_utf8_chunk(pending: &mut Vec<u8>, chunk: &[u8]) -> Result<Option<String>, ()> {
+    pending.extend_from_slice(chunk);
+    match std::str::from_utf8(pending) {
+        Ok(text) => {
+            let decoded = text.to_owned();
+            pending.clear();
+            Ok(Some(decoded))
+        }
+        Err(error) if error.error_len().is_none() => {
+            let valid_up_to = error.valid_up_to();
+            if valid_up_to == 0 {
+                return Ok(None);
+            }
+            let bytes = std::mem::take(pending);
+            let (valid, incomplete) = bytes.split_at(valid_up_to);
+            let decoded = std::str::from_utf8(valid).map_err(|_| ())?.to_owned();
+            pending.extend_from_slice(incomplete);
+            Ok(Some(decoded))
+        }
+        Err(_) => Err(()),
+    }
+}
+
+pub(super) async fn next_stream_item<S>(
+    stream: &mut S,
+    deadline: std::time::Duration,
+) -> Result<Option<S::Item>, ()>
+where
+    S: Stream + Unpin,
+{
+    tokio::time::timeout(deadline, stream.next())
+        .await
+        .map_err(|_| ())
+}
 
 async fn send_chat_request_with_retry(
     client: &reqwest::Client,
@@ -38,9 +73,20 @@ async fn send_chat_request_with_retry(
                 .header("X-Title", "CodeWarp");
         }
         req = super::api_types::apply_compat_auth_headers(req, base_url, api_key);
-        match req.send().await {
-            Ok(r) if r.status().is_success() => return Ok(r),
-            Ok(r) => {
+        match tokio::time::timeout(HTTP_REQUEST_TIMEOUT, req.send()).await {
+            Err(_) => {
+                if attempt < MAX_RETRIES {
+                    tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
+                    attempt += 1;
+                    continue;
+                }
+                return Err(ChatEvent::Error(format!(
+                    "요청 초기 응답 시간 초과 — {}초 이내에 서버 응답이 없습니다",
+                    HTTP_REQUEST_TIMEOUT.as_secs()
+                )));
+            }
+            Ok(Ok(r)) if r.status().is_success() => return Ok(r),
+            Ok(Ok(r)) => {
                 let status = r.status();
                 let text = r.text().await.unwrap_or_default();
                 if status.is_server_error() && attempt < MAX_RETRIES {
@@ -48,9 +94,12 @@ async fn send_chat_request_with_retry(
                     attempt += 1;
                     continue;
                 }
-                return Err(ChatEvent::Error(format!("OpenRouter {status}: {text}")));
+                return Err(ChatEvent::Error(format!(
+                    "{} {status}: {text}",
+                    provider_label(base_url)
+                )));
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 if attempt < MAX_RETRIES {
                     tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
                     attempt += 1;
@@ -181,8 +230,20 @@ pub(crate) fn chat_stream(
         let mut generation_id: Option<String> = None;
         let mut emitted_any_token = false;
         let mut pending_sse_data = String::new();
+        let mut pending_utf8 = Vec::new();
 
-        while let Some(item) = stream.next().await {
+        loop {
+            let item = match next_stream_item(&mut stream, STREAM_IDLE_TIMEOUT).await {
+                Ok(Some(item)) => item,
+                Ok(None) => break,
+                Err(_) => {
+                    yield ChatEvent::Error(format!(
+                        "스트리밍 응답이 {}초 동안 도착하지 않았습니다",
+                        STREAM_IDLE_TIMEOUT.as_secs()
+                    ));
+                    return;
+                }
+            };
             let chunk = match item {
                 Ok(b) => b,
                 Err(e) => {
@@ -190,9 +251,16 @@ pub(crate) fn chat_stream(
                     return;
                 }
             };
-            let Ok(text) = std::str::from_utf8(&chunk) else { continue };
-            buffer.push_str(text);
-            raw_capture.push_str(text);
+            let text = match decode_utf8_chunk(&mut pending_utf8, &chunk) {
+                Ok(Some(text)) => text,
+                Ok(None) => continue,
+                Err(()) => {
+                    yield ChatEvent::Error("스트리밍 응답이 올바른 UTF-8이 아닙니다".into());
+                    return;
+                }
+            };
+            buffer.push_str(&text);
+            raw_capture.push_str(&text);
 
             loop {
                 let Some(idx) = buffer.find('\n') else { break };
@@ -229,6 +297,11 @@ pub(crate) fn chat_stream(
                     yield event;
                 }
             }
+        }
+
+        if !pending_utf8.is_empty() {
+            yield ChatEvent::Error("스트리밍 응답의 UTF-8 데이터가 완전하지 않습니다".into());
+            return;
         }
 
         for event in helpers::process_leftover_buffer(

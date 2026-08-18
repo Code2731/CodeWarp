@@ -54,9 +54,6 @@ impl PtySession {
     }
 
     pub(crate) fn ctrl_c(&self) {
-        #[cfg(windows)]
-        self.write_bytes(b"\x1b[67;46;3;1;8;1_");
-        #[cfg(not(windows))]
         self.write_bytes(&[0x03]);
     }
 

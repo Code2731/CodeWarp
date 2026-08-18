@@ -6,6 +6,12 @@ Warp 스타일의 AI 코딩 데스크톱. **Iced (Rust 네이티브 GUI)** 기�
 
 ---
 
+## 프로젝트 목표 — Windows 안정화 릴리스
+
+CodeWarp를 Windows에서 안정적으로 사용할 수 있는 Rust 기반 AI 코딩 데스크톱 앱으로 완성합니다. 텍스트 입력과 스트리밍 출력은 끊김·역순·깨진 UTF-8 없이 동작하고, OpenRouter와 Ollama·Tabby 등 OpenAI 호환 provider는 명확한 인증·연결 오류와 bounded retry를 제공해야 합니다. MCP·PTY 도구 실행과 세션 저장/복구는 취소·강제 종료·재시작 이후에도 프로세스와 상태를 안전하게 정리해야 합니다.
+
+완료 기준은 단위·통합 테스트와 strict clippy, Windows/Linux CI, 릴리스 startup smoke, 검증된 portable archive를 모두 유지하는 것입니다. Windows ConPTY Ctrl+C는 현재 `portable-pty` 런타임의 수동 QA 항목으로 별도 추적합니다.
+
 ## 현재 상태 — Phase 3-C (2026-06)
 
 - [x] **Phase 0** — Tauri 2.0 + React 19로 OpenRouter 단일턴 채팅까지 (커밋 이력에 보존)
@@ -33,9 +39,9 @@ Warp 스타일의 AI 코딩 데스크톱. **Iced (Rust 네이티브 GUI)** 기�
 - [x] **Phase 3-A** — 모듈 분리: `block`, `model`, `util`, `palette`, `bootstrap`, `input`, `runtime_process` 등으로 `main.rs` 책임 축소
 - [x] **Phase 3-B** — OpenCode/oh-my-openagent/MiMo 운영 문서와 검증 스크립트 추가 (`docs/OPENCODE_ROUTING.md`, `docs/OPENCODE_MIMO_RUNBOOK.md`)
 - [x] **Phase 3-C** — 안정화/성능: autosave crash recovery, streaming block lookup O(1), markdown streaming 재파싱 최소화, chat_stream retry, mid-stream error auto-retry
-- [x] **Tests (Phase 3-C 당시 기록)** — 회고적 + TDD 누적: 391 unit tests + 1 integration smoke test (`cargo test --all-targets`)
+- [x] **Tests (Phase 3-C 당시 기록)** — 회고적 + TDD 누적: 391 unit tests + 1 integration smoke test (`cargo test --all-targets -- --test-threads=1`)
 
-현재 검증 기준은 `cargo test --all-targets`입니다. 2026-07-17 검증에서 unit test 569개와 external integration smoke test 1개가 통과했습니다.
+현재 검증 기준은 `cargo test --all-targets -- --test-threads=1`입니다. Windows ConPTY 및 외부 프로세스 fixture의 재현성을 위해 테스트 프로세스는 단일 스레드로 실행합니다. 2026-08-18 검증에서 unit test 634개가 통과하고 12개가 무시되었으며(Windows ConPTY Ctrl+C 수동 QA 항목 포함), external integration smoke test 1개가 통과했습니다.
 
 ## 왜 Iced로 바꿨나
 
@@ -78,7 +84,7 @@ Tauri/webview/JS 의존성 일체 없음. 단일 Cargo 프로젝트.
 
 - Rust 1.90+ (`rustup`); Rust 1.90 is the project MSRV
 - **Verified platforms:** Windows and Linux. Each platform runs `cargo fmt -- --check`,
-  `cargo check`, and `cargo test --all-targets` in CI.
+  `cargo check`, and `cargo test --all-targets -- --test-threads=1` in CI.
 - **Experimental platform:** macOS. Local use is supported as an experiment, but macOS is
   not a verified CI target until equivalent automation exists.
 - OpenRouter API 키 — <https://openrouter.ai/keys> (선택)
@@ -154,6 +160,7 @@ Quality harness is now part of the default workflow.
 
 - Local checks: `scripts/harness.ps1` (Windows), `scripts/harness.sh` (Linux/macOS)
 - Verified CI platforms: Windows and Linux; both run the harness' fmt, check, and test gates
+- Release smoke CI: Windows and Linux build, validate, package, and upload portable archives; Windows also runs a 5-second startup smoke
 - macOS remains experimental and has no CI verification until equivalent automation exists
 - Recommended hooks:
   - `pre-commit`: `cargo fmt -- --check` (only when Rust-related files are staged)

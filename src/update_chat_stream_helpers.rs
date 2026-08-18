@@ -15,6 +15,9 @@ impl App {
         if let Some(h) = self.abort_handle.take() {
             h.abort();
         }
+        if self.ui.compare_pending {
+            self.discard_compare_blocks();
+        }
         self.ui.compare_pending = false;
         if keep_partial_assistant && let Some(ai_id) = self.streaming_block_id {
             let txt = if !self.streaming_raw.is_empty() {
@@ -39,10 +42,22 @@ impl App {
         self.tool_round = 0;
         self.mid_stream_retries = 0;
     }
+    fn discard_compare_blocks(&mut self) {
+        if let Some((openrouter_block_id, tabby_block_id)) = self.compare_block_ids.take() {
+            self.blocks
+                .retain(|block| block.id != openrouter_block_id && block.id != tabby_block_id);
+        }
+        self.clear_compare_result();
+    }
+    pub(crate) fn clear_compare_result(&mut self) {
+        self.compare_old_text = None;
+        self.compare_new_text = None;
+        self.compare_block_ids = None;
+    }
     pub(crate) fn fill_assistant_block(&mut self, block_id: u64, text: &str) {
-        if let Some(idx) = self.streaming_block_idx
-            && idx < self.blocks.len()
-            && self.blocks[idx].id == block_id
+        // Compare responses do not use the single-stream index, so resolve by
+        // the request-owned block ID instead of relying on streaming state.
+        if let Some(idx) = self.blocks.iter().position(|block| block.id == block_id)
             && let BlockBody::Assistant(content) = &mut self.blocks[idx].body
         {
             *content = iced::widget::text_editor::Content::with_text(text);
@@ -186,5 +201,50 @@ mod tests {
         assert!(app.pending_tool_calls.is_empty());
         assert_eq!(app.tool_round, 0);
         assert!(app.conversation.is_empty());
+    }
+
+    #[test]
+    fn abort_compare_removes_pending_blocks_without_persisting_placeholders() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks = vec![
+            Block {
+                id: 1,
+                body: BlockBody::User("compare this".into()),
+                view_mode: ViewMode::Rendered,
+                md_items: Vec::new(),
+                model: None,
+                apply_candidates: Vec::new(),
+            },
+            assistant_block_with_text(2, "OpenRouter 응답 대기 중…"),
+            assistant_block_with_text(3, "Tabby 응답 대기 중…"),
+        ];
+        app.ui.compare_pending = true;
+        app.compare_block_ids = Some((2, 3));
+        let (_task, handle) = iced::Task::<Message>::none().abortable();
+        app.abort_handle = Some(handle);
+
+        app.abort_active_chat_stream(true);
+
+        assert_eq!(app.blocks.len(), 1);
+        assert_eq!(app.blocks[0].id, 1);
+        assert!(!app.ui.compare_pending);
+        assert!(app.compare_block_ids.is_none());
+        assert!(app.abort_handle.is_none());
+        assert!(app.conversation.is_empty());
+    }
+
+    #[test]
+    fn clear_compare_result_drops_diff_state() {
+        let (mut app, _) = App::new();
+        app.compare_old_text = Some("old".into());
+        app.compare_new_text = Some("new".into());
+        app.compare_block_ids = Some((1, 2));
+
+        app.clear_compare_result();
+
+        assert!(app.compare_old_text.is_none());
+        assert!(app.compare_new_text.is_none());
+        assert!(app.compare_block_ids.is_none());
     }
 }

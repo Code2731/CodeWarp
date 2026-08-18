@@ -1,4 +1,6 @@
 use super::*;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 #[test]
 fn normalize_base_default() {
@@ -139,6 +141,15 @@ fn humanize_matches_list_models_format() {
 }
 
 #[test]
+fn humanize_matches_generic_openai_compat_status_format() {
+    let msg = humanize_error("OpenAI-compatible provider 401: token missing");
+    assert!(msg.contains("인증 실패"), "got: {}", msg);
+
+    let msg = humanize_error("OpenAI-compatible provider 404: not found");
+    assert!(msg.contains("base URL"), "got: {}", msg);
+}
+
+#[test]
 fn parse_model_ids_supports_openai_shape() {
     let body = r#"{"object":"list","data":[{"id":"a"},{"id":"b"}]}"#;
     let ids = parse_model_ids(body).unwrap();
@@ -157,4 +168,47 @@ fn parse_model_ids_supports_root_array() {
     let body = r#"[{"id":"x"},"y",{"model":"z"}]"#;
     let ids = parse_model_ids(body).unwrap();
     assert_eq!(ids, vec!["x".to_string(), "y".to_string(), "z".to_string()]);
+}
+
+#[tokio::test]
+async fn list_models_round_trips_to_openai_compatible_endpoint() {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind loopback model server");
+    let address = listener.local_addr().expect("model server address");
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept model request");
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 1024];
+        loop {
+            let read = socket.read(&mut buffer).await.expect("read model request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buffer[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let request = String::from_utf8_lossy(&request).to_ascii_lowercase();
+        assert!(request.contains("get /v1/models"));
+        assert!(request.contains("authorization: bearer local-token"));
+        assert!(request.contains("x-api-key: local-token"));
+
+        let body = r#"{"object":"list","data":[{"id":"local-a"},{"id":"local-b"}]}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        socket
+            .write_all(response.as_bytes())
+            .await
+            .expect("write model response");
+    });
+
+    let result = list_models(format!("http://{address}"), Some("local-token".into())).await;
+    server.await.expect("model server must finish");
+
+    assert_eq!(result.unwrap(), vec!["local-a", "local-b"]);
 }

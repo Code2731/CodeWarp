@@ -23,7 +23,7 @@ Options:
   --strict-clippy      Fail when clippy reports issues
   --target-dir DIR     Set CARGO_TARGET_DIR for this harness run
   --endpoint URL       Run endpoint check against URL (/v1/models)
-  --token TOKEN        Bearer token for endpoint check
+  --token TOKEN        Bearer/x-api-key token for endpoint check
   --timeout-sec N      Endpoint timeout in seconds (default: 5)
   -h, --help           Show this help
 EOF
@@ -101,13 +101,18 @@ if [[ $skip_check -eq 0 ]]; then
 fi
 
 if [[ $skip_tests -eq 0 ]]; then
-  run_step "cargo test --all-targets" cargo test --all-targets
+  run_step "cargo test --all-targets -- --test-threads=1" cargo test --all-targets -- --test-threads=1
 fi
 
 if [[ $skip_clippy -eq 0 ]]; then
-  echo "==> cargo clippy --all-targets"
   set +e
-  cargo clippy --all-targets
+  if [[ $strict_clippy -eq 1 ]]; then
+    echo "==> cargo clippy --all-targets --all-features -- -D warnings"
+    cargo clippy --all-targets --all-features -- -D warnings
+  else
+    echo "==> cargo clippy --all-targets"
+    cargo clippy --all-targets
+  fi
   clippy_exit=$?
   set -e
 
@@ -129,7 +134,7 @@ if [[ -n "${endpoint// }" ]]; then
   tmp="$(mktemp)"
   trap 'rm -f "$tmp"' EXIT
   if [[ -n "${token// }" ]]; then
-    code="$(curl -sS -m "$timeout_sec" -H "Authorization: Bearer $token" -o "$tmp" -w "%{http_code}" "$url")"
+    code="$(curl -sS -m "$timeout_sec" -H "Authorization: Bearer $token" -H "x-api-key: $token" -o "$tmp" -w "%{http_code}" "$url")"
   else
     code="$(curl -sS -m "$timeout_sec" -o "$tmp" -w "%{http_code}" "$url")"
   fi

@@ -55,13 +55,18 @@ pub(crate) fn humanize_error(raw: &str) -> String {
         return "연결 시간 초과 — 서버가 응답하지 않습니다. 로컬 서버가 실행 중인지, 포트가 맞는지 확인해 주세요."
             .into();
     }
-    if raw.contains("Tabby 401") || raw.contains("Tabby 403") {
+    if contains_http_status(&lower, 401) || contains_http_status(&lower, 403) {
         return "인증 실패 — token이 필요/잘못됨".into();
     }
-    if raw.contains("Tabby 404") {
+    if contains_http_status(&lower, 404) {
         return "404 — base URL이 맞나요? `/v1/models` 경로 확인".into();
     }
     raw.to_string()
+}
+
+fn contains_http_status(raw: &str, status: u16) -> bool {
+    raw.split(|ch: char| !ch.is_ascii_digit())
+        .any(|token| token == status.to_string())
 }
 
 #[derive(Deserialize)]

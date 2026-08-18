@@ -123,6 +123,7 @@ impl App {
             hovered_mcp_idx: None,
             compare_old_text: None,
             compare_new_text: None,
+            compare_block_ids: None,
             toast: None,
             mcp_servers: mcp::load_servers(),
             mcp_tools: Vec::new(),

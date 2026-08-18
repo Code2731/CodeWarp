@@ -1,5 +1,6 @@
 # Rust / Cargo
 /target/
+/dist/
 
 # IDE
 .vscode/
@@ -19,3 +20,4 @@ Thumbs.db
 # Serena local state
 .serena/
 node_modules/
+__pycache__/

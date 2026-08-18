@@ -6,6 +6,39 @@ use super::PtySignal;
 #[cfg(windows)]
 const CURSOR_QUERY: &[u8] = b"\x1b[6n";
 
+#[cfg(windows)]
+fn forward_utf8_chunk(
+    pending: &mut Vec<u8>,
+    chunk: &[u8],
+    sender: &tokio::sync::mpsc::Sender<PtySignal>,
+) -> bool {
+    pending.extend_from_slice(chunk);
+    match std::str::from_utf8(pending) {
+        Ok(text) => {
+            let text = text.to_owned();
+            pending.clear();
+            text.is_empty() || sender.blocking_send(PtySignal::Line(text)).is_ok()
+        }
+        Err(error) if error.error_len().is_none() => {
+            let valid_up_to = error.valid_up_to();
+            if valid_up_to == 0 {
+                return true;
+            }
+            let text = match std::str::from_utf8(&pending[..valid_up_to]) {
+                Ok(text) => text.to_owned(),
+                Err(_) => return false,
+            };
+            pending.drain(..valid_up_to);
+            text.is_empty() || sender.blocking_send(PtySignal::Line(text)).is_ok()
+        }
+        Err(_) => {
+            let text = String::from_utf8_lossy(pending).into_owned();
+            pending.clear();
+            text.is_empty() || sender.blocking_send(PtySignal::Line(text)).is_ok()
+        }
+    }
+}
+
 pub(super) fn forward(
     mut reader: Box<dyn Read + Send>,
     writer: Arc<Mutex<Option<Box<dyn Write + Send>>>>,
@@ -17,6 +50,8 @@ pub(super) fn forward(
     let mut buffer = [0_u8; 4096];
     #[cfg(windows)]
     let mut cursor_ready = false;
+    #[cfg(windows)]
+    let mut pending_utf8 = Vec::new();
     loop {
         match reader.read(&mut buffer) {
             Ok(0) | Err(_) => break,
@@ -34,11 +69,7 @@ pub(super) fn forward(
                             .unwrap_or(0);
                         let safe_len = pending.len() - retained;
                         if safe_len > 0 {
-                            if sender
-                                .blocking_send(PtySignal::Line(
-                                    String::from_utf8_lossy(&pending[..safe_len]).into_owned(),
-                                ))
-                                .is_err()
+                            if !forward_utf8_chunk(&mut pending_utf8, &pending[..safe_len], sender)
                             {
                                 return;
                             }
@@ -49,12 +80,7 @@ pub(super) fn forward(
                 }
                 #[cfg(windows)]
                 if !pending.is_empty() {
-                    if sender
-                        .blocking_send(PtySignal::Line(
-                            String::from_utf8_lossy(&pending).into_owned(),
-                        ))
-                        .is_err()
-                    {
+                    if !forward_utf8_chunk(&mut pending_utf8, &pending, sender) {
                         return;
                     }
                     pending.clear();
@@ -78,6 +104,19 @@ pub(super) fn forward(
             }
         }
     }
+    #[cfg(windows)]
+    {
+        if !pending.is_empty() && !forward_utf8_chunk(&mut pending_utf8, &pending, sender) {
+            return;
+        }
+        if !pending_utf8.is_empty() {
+            let text = String::from_utf8_lossy(&pending_utf8).into_owned();
+            if sender.blocking_send(PtySignal::Line(text)).is_err() {
+                return;
+            }
+        }
+    }
+    #[cfg(not(windows))]
     if !pending.is_empty() {
         let _ = sender.blocking_send(PtySignal::Line(
             String::from_utf8_lossy(&pending).into_owned(),
@@ -149,6 +188,22 @@ mod tests {
 
     struct RecordingWriter(Arc<Mutex<Vec<u8>>>);
 
+    struct ChunkReader {
+        chunks: Vec<Vec<u8>>,
+        read_index: usize,
+    }
+
+    impl Read for ChunkReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let Some(chunk) = self.chunks.get(self.read_index) else {
+                return Ok(0);
+            };
+            self.read_index += 1;
+            buffer[..chunk.len()].copy_from_slice(chunk);
+            Ok(chunk.len())
+        }
+    }
+
     impl Write for RecordingWriter {
         fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
             self.0
@@ -212,5 +267,33 @@ mod tests {
         }
         assert!(matches!(remaining.next(), Some(PtySignal::OutputDrained)));
         assert!(remaining.next().is_none());
+    }
+
+    #[test]
+    fn forward_preserves_utf8_split_across_reads() {
+        let bytes = "한글".as_bytes();
+        let reader = ChunkReader {
+            chunks: vec![
+                bytes[..1].to_vec(),
+                bytes[1..4].to_vec(),
+                bytes[4..].to_vec(),
+            ],
+            read_index: 0,
+        };
+        let writer: Arc<Mutex<Option<Box<dyn Write + Send>>>> = Arc::new(Mutex::new(None));
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+        let worker = thread::spawn(move || forward(Box::new(reader), writer, &sender));
+
+        worker.join().expect("forward worker must finish");
+        let mut output = String::new();
+        while let Some(signal) = receiver.blocking_recv() {
+            match signal {
+                PtySignal::Line(line) => output.push_str(&line),
+                PtySignal::OutputDrained => break,
+                PtySignal::ChildExited => panic!("child exit is not part of forwarding"),
+            }
+        }
+
+        assert_eq!(output, "한글");
     }
 }

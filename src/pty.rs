@@ -154,6 +154,15 @@ pub(crate) fn strip_ansi(raw: &str) -> String {
     strip_ansi_escapes::strip_str(raw)
 }
 
+#[cfg(test)]
+pub(crate) async fn test_lifecycle_lock() -> tokio::sync::OwnedMutexGuard<()> {
+    static LOCK: std::sync::OnceLock<Arc<tokio::sync::Mutex<()>>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
+        .lock_owned()
+        .await
+}
+
 fn default_shell() -> CommandBuilder {
     #[cfg(windows)]
     {

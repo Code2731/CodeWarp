@@ -21,7 +21,9 @@ impl App {
         openrouter_result: Result<String, String>,
         tabby_result: Result<String, String>,
     ) -> Task<Message> {
-        if !self.ui.compare_pending {
+        if !self.ui.compare_pending
+            || self.compare_block_ids != Some((openrouter_block_id, tabby_block_id))
+        {
             return Task::none();
         }
         let openrouter_text = match openrouter_result {
@@ -42,6 +44,8 @@ impl App {
         self.compare_old_text = Some(openrouter_text);
         self.compare_new_text = Some(tabby_text);
         self.ui.compare_pending = false;
+        self.abort_handle = None;
+        self.compare_block_ids = None;
         self.status = "Compare 응답 완료".into();
         self.maybe_update_title();
         self.save_session();
@@ -105,6 +109,7 @@ impl App {
             model: Some(format!("{}: {}", tabby_route.label, tabby_route.model)),
             apply_candidates: Vec::new(),
         });
+        self.compare_block_ids = Some((openrouter_block_id, tabby_block_id));
 
         self.input.clear();
         self.editor_content = text_editor::Content::new();
@@ -114,7 +119,7 @@ impl App {
 
         let openrouter_messages = messages.clone();
         let tabby_messages = messages;
-        let task = Task::perform(
+        let (task, handle) = Task::perform(
             async move {
                 let openrouter = collect_chat_text(
                     openrouter_route.base_url,
@@ -136,7 +141,9 @@ impl App {
                 openrouter_result,
                 tabby_result,
             },
-        );
+        )
+        .abortable();
+        self.abort_handle = Some(handle);
         Task::batch(vec![snap_to_end(self.stream_id.clone()), task])
     }
 }

@@ -160,14 +160,23 @@ fn run(mode: ProcessFixtureMode) {
 pub(crate) fn process_is_running(pid: u32) -> bool {
     #[cfg(target_os = "windows")]
     {
-        let output = Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
-            .output()
-            .expect("query Windows process list");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        stdout
-            .lines()
-            .any(|line| line.contains(&format!("\"{pid}\"")))
+        use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+        use windows_sys::Win32::System::Threading::{
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        // `tasklist` can be denied in constrained Windows runners. Query the
+        // owned process handle instead so lifecycle assertions remain stable.
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if handle.is_null() {
+            return false;
+        }
+        let mut exit_code = 0;
+        let result = unsafe { GetExitCodeProcess(handle, &mut exit_code) } != 0;
+        unsafe {
+            CloseHandle(handle);
+        }
+        result && exit_code == STILL_ACTIVE as u32
     }
     #[cfg(target_os = "linux")]
     {

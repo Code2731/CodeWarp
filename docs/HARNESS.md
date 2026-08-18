@@ -7,6 +7,7 @@ This project now includes a shared harness for repeatable local verification and
 - Keep one standard command flow for local checks and CI.
 - Catch regressions early with a predictable step order.
 - Optionally verify OpenAI-compatible endpoint health (`/v1/models`) from the same tool.
+- When `--token`/`-Token` is supplied, the endpoint check sends both `Authorization: Bearer` and `x-api-key`, matching the app's local-provider client.
 
 ## Entry Points
 
@@ -19,7 +20,7 @@ When no skip flags are provided, the harness runs:
 
 1. `cargo fmt -- --check`
 2. `cargo check`
-3. `cargo test --all-targets`
+3. `cargo test --all-targets -- --test-threads=1`
 4. `cargo clippy --all-targets`
 
 `clippy` is warning-tolerant by default. Use strict mode when needed.
@@ -80,6 +81,25 @@ Run endpoint health check:
 bash scripts/harness.sh --skip-clippy --endpoint http://localhost:8080
 ```
 
+### Provider streaming smoke
+
+When a local OpenAI-compatible daemon is already running, verify the same model-list and
+streaming-chat paths used by CodeWarp:
+
+```powershell
+python scripts/provider-smoke.py --endpoint http://127.0.0.1:11434 --model llama3:latest
+```
+
+Use the Tabby endpoint and token when applicable:
+
+```powershell
+python scripts/provider-smoke.py --endpoint http://localhost:8080 --model <model-id> --token <token>
+```
+
+The smoke tool does not start or stop a provider and never prints the token. It requires a
+non-empty streamed text response and the `[DONE]` marker, so it is stronger than a `/v1/models`
+health check alone.
+
 ## Skip Flags
 
 - `fmt`: `-SkipFmt` / `--skip-fmt`
@@ -93,8 +113,22 @@ The GitHub Actions workflow now uses this harness:
 
 - Matrix harness job (`ubuntu`, `windows`) for `fmt + check + test`
 - Separate strict clippy job on `ubuntu`
+- Release smoke matrix (`ubuntu`, `windows`) for release build, Windows startup smoke, manifest validation, archive packaging, and artifact upload
 
-This keeps local and CI behavior aligned through a shared execution path.
+The test process is intentionally single-threaded because the Windows ConPTY and external-process fixtures are not safe to run concurrently. This keeps local and CI behavior aligned through a shared execution path.
+
+The Windows ConPTY Ctrl+C end-to-end case is intentionally ignored in automated runs because `portable-pty` does not reliably deliver the signal on the current runtime. Graceful force-reap and PTY restart remain automated; interactive Ctrl+C delivery is a manual QA item until the runtime behavior is stable.
+
+### Manual release acceptance
+
+Run the packaged Windows binary and record the result for each item before calling a release candidate ready:
+
+- Enter Korean, emoji, mixed-width text, and multiline input; verify cursor placement, editing, send, and regenerate never reverse or duplicate characters.
+- Send a streaming request through OpenRouter and a local OpenAI-compatible endpoint; verify model loading, incremental output order, non-ASCII text, stop, retry, and actionable authentication errors.
+- Start a compare request, switch sessions, create a new chat, delete the current session, and stop the request; verify no stale placeholder or diff remains.
+- Start an MCP/PTY-backed action, cancel it, restart it, and close the window; verify owned processes are reaped and the next run can start cleanly.
+- After an unclean close, relaunch and verify session recovery status, backup fallback behavior, and the persisted conversation.
+- On the current Windows runtime, test interactive PTY Ctrl+C separately and record it as manual QA until `portable-pty` delivers the signal reliably.
 
 ## Git Hooks (Recommended)
 

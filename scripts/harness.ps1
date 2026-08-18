@@ -66,14 +66,18 @@ if (-not $SkipCheck) {
 }
 
 if (-not $SkipTests) {
-    Invoke-Step -Name "cargo test --all-targets" -Action {
-        Invoke-Cargo -Subcommand "test" -Args @("--all-targets")
+    Invoke-Step -Name "cargo test --all-targets -- --test-threads=1" -Action {
+        Invoke-Cargo -Subcommand "test" -Args @("--all-targets", "--", "--test-threads=1")
     }
 }
 
 if (-not $SkipClippy) {
-    Write-Host "==> cargo clippy --all-targets"
-    & cargo clippy --all-targets
+    $clippyArgs = @("--all-targets")
+    if ($StrictClippy) {
+        $clippyArgs += @("--all-features", "--", "-D", "warnings")
+    }
+    Write-Host ("==> cargo clippy " + ($clippyArgs -join " "))
+    & cargo clippy @clippyArgs
     $clippyExit = $LASTEXITCODE
     if ($clippyExit -ne 0) {
         if ($StrictClippy) {
@@ -90,7 +94,9 @@ if (-not [string]::IsNullOrWhiteSpace($Endpoint)) {
     Invoke-Step -Name "endpoint health check ($modelsUrl)" -Action {
         $headers = @{}
         if (-not [string]::IsNullOrWhiteSpace($Token)) {
-            $headers["Authorization"] = "Bearer $($Token.Trim())"
+            $trimmedToken = $Token.Trim()
+            $headers["Authorization"] = "Bearer $trimmedToken"
+            $headers["x-api-key"] = $trimmedToken
         }
 
         try {

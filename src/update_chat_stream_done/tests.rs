@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Block, ChatEvent, ViewMode};
+use crate::{Block, ChatEvent, LlmProvider, ModelOption, ViewMode};
 
 #[test]
 fn chat_chunk_done_builds_content_from_streaming_raw() {
@@ -197,4 +197,52 @@ fn mid_stream_error_401_not_retried() {
 
     assert!(app.blocks[0].body.to_text().contains("[ERROR]"));
     assert_eq!(app.mid_stream_retries, 0);
+}
+
+#[test]
+fn local_provider_auth_error_is_not_retried_or_labeled_openrouter() {
+    let (mut app, _) = App::new();
+    Arc::make_mut(&mut app.conversation).clear();
+    app.blocks.clear();
+    app.streaming_block_id = Some(42);
+    app.streaming_block_idx = Some(0);
+    app.blocks.push(Block {
+        id: 42,
+        body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+        view_mode: ViewMode::Raw,
+        md_items: Vec::new(),
+        model: Some("local-model".into()),
+        apply_candidates: Vec::new(),
+    });
+    app.model_options = vec![ModelOption {
+        id: "local-model".into(),
+        provider: LlmProvider::OpenAICompat,
+        provider_label: "Ollama".into(),
+        ko_friendly: false,
+        favorite: false,
+        context_length: None,
+        prompt_per_million: Some(0.0),
+        completion_per_million: Some(0.0),
+    }];
+    app.selected_model = Some("local-model".into());
+    app.selected_model_provider = Some(LlmProvider::OpenAICompat);
+    app.streaming_raw = "partial text".into();
+    app.mid_stream_retries = 0;
+
+    let _ = app.update(Message::ChatChunk(ChatEvent::Error(
+        "OpenAI-compatible provider 401 Unauthorized: token missing".into(),
+    )));
+
+    assert_eq!(app.mid_stream_retries, 0);
+    assert!(app.status.contains("인증 실패"), "status: {}", app.status);
+    assert!(
+        app.status.contains("local endpoint/token"),
+        "status: {}",
+        app.status
+    );
+    assert!(
+        !app.status.contains("Open Settings"),
+        "status: {}",
+        app.status
+    );
 }

@@ -1,6 +1,7 @@
 // openrouter/api.rs — REST API functions (openrouter child module)
 use super::api_types::{
-    AuthKeyData, AuthKeyResponse, GenerationData, GenerationResponse, http_client,
+    AuthKeyData, AuthKeyResponse, GenerationData, GenerationResponse, HTTP_REQUEST_TIMEOUT,
+    http_client,
 };
 use super::types::{ModelsResponse, OpenRouterModel};
 
@@ -12,6 +13,7 @@ pub(crate) async fn get_generation(api_key: String, id: String) -> Result<Genera
         .bearer_auth(&api_key)
         .header("HTTP-Referer", "https://codewarp.app")
         .header("X-Title", "CodeWarp")
+        .timeout(HTTP_REQUEST_TIMEOUT)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -31,6 +33,7 @@ pub(crate) async fn get_account_info(api_key: String) -> Result<AuthKeyData, Str
         .bearer_auth(&api_key)
         .header("HTTP-Referer", "https://codewarp.app")
         .header("X-Title", "CodeWarp")
+        .timeout(HTTP_REQUEST_TIMEOUT)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -50,6 +53,7 @@ pub(crate) async fn list_models(api_key: String) -> Result<Vec<OpenRouterModel>,
         .bearer_auth(&api_key)
         .header("HTTP-Referer", "https://codewarp.app")
         .header("X-Title", "CodeWarp")
+        .timeout(HTTP_REQUEST_TIMEOUT)
         .send()
         .await
         .map_err(|e| e.to_string())?;

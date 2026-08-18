@@ -1,7 +1,7 @@
 // update_chat_stream_done.rs — Chat stream Done/Error handlers (main.rs child module)
 use super::{
-    App, Arc, BlockBody, ChatMessage, MAX_MID_STREAM_RETRIES, MAX_TOOL_ROUNDS, Message, keystore,
-    markdown, openrouter, parse_apply_candidates,
+    App, Arc, BlockBody, ChatMessage, LlmProvider, MAX_MID_STREAM_RETRIES, MAX_TOOL_ROUNDS,
+    Message, keystore, markdown, openrouter, parse_apply_candidates, tabby,
 };
 use iced::Task;
 use iced::widget::text_editor;
@@ -75,7 +75,8 @@ impl App {
         self.pending_tool_calls.clear();
         self.maybe_update_title();
         self.save_session();
-        if let Some(id) = generation_id
+        if self.selected_provider() == Some(LlmProvider::OpenRouter)
+            && let Some(id) = generation_id
             && let Ok(api_key) = keystore::read_api_key()
         {
             return Task::perform(
@@ -89,8 +90,9 @@ impl App {
     pub(crate) fn handle_chat_error(&mut self, ai_id: u64, error: &str) -> Task<Message> {
         if !self.streaming_raw.is_empty()
             && self.mid_stream_retries < MAX_MID_STREAM_RETRIES
-            && !error.contains("OpenRouter 401")
-            && !error.contains("OpenRouter 402")
+            && !contains_http_status(error, 401)
+            && !contains_http_status(error, 402)
+            && !contains_http_status(error, 403)
         {
             self.mid_stream_retries += 1;
             self.streaming_raw.clear();
@@ -132,15 +134,32 @@ impl App {
         self.abort_handle = None;
         self.pending_tool_calls.clear();
         self.response_started_at = None;
-        let humanized = openrouter::humanize_error(error);
-        if error.contains("OpenRouter 401") || error.contains("OpenRouter 402") {
-            self.status = format!("[WARN] {humanized} | Open Settings and check API key / credits");
+        let is_local_provider = self.selected_provider() == Some(LlmProvider::OpenAICompat);
+        let humanized = if is_local_provider {
+            tabby::humanize_error(error)
+        } else {
+            openrouter::humanize_error(error)
+        };
+        let credentials_warning = contains_http_status(error, 401)
+            || contains_http_status(error, 403)
+            || (!is_local_provider && contains_http_status(error, 402));
+        if credentials_warning {
+            self.status = if is_local_provider {
+                format!("[WARN] {humanized} | Settings에서 local endpoint/token 확인")
+            } else {
+                format!("[WARN] {humanized} | Open Settings and check API key / credits")
+            };
         } else {
             self.status = format!("[ERROR] {humanized}");
         }
         self.toast = Some(self.status.clone());
         Task::none()
     }
+}
+
+fn contains_http_status(raw: &str, status: u16) -> bool {
+    raw.split(|ch: char| !ch.is_ascii_digit())
+        .any(|token| token == status.to_string())
 }
 
 #[cfg(test)]

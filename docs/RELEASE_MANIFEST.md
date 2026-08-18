@@ -11,6 +11,10 @@ Each portable archive is rooted at `codewarp-<Cargo package version>/` and conta
 | `assets/fonts/LICENSE.txt` | Pretendard and bundled-font SIL OFL text |
 | `assets/fonts/LICENSE-JetBrainsMono.txt` | JetBrains Mono SIL OFL text |
 
-Run `python scripts/validate-release-manifest.py --binary <release binary>` before archiving.
+Run `python scripts/package-release.py --platform <platform> --binary <release binary>` to create
+the archive after building. The command validates the release inputs first and writes
+`dist/codewarp-<Cargo version>-<platform>.zip`.
+
 The validator reads the package version and license expression from `Cargo.toml`; it also rejects
-hard-coded CodeWarp versions in the app/MCP identity sources.
+hard-coded CodeWarp versions in the app/MCP identity sources. The packager additionally verifies
+that the archive contains exactly the manifest inputs.

@@ -6,6 +6,7 @@ use std::sync::Arc;
 impl App {
     pub(crate) fn new_chat(&mut self) -> Task<Message> {
         self.abort_active_chat_stream(true);
+        self.clear_compare_result();
         self.snapshot_current_to_inactive();
         self.blocks.clear();
         Arc::make_mut(&mut self.conversation).clear();
@@ -27,6 +28,8 @@ impl App {
     pub(crate) fn delete_session(&mut self, target_id: u64) -> Task<Message> {
         self.ui.pending_delete_session = None;
         if target_id == self.current_session_id {
+            self.abort_active_chat_stream(false);
+            self.clear_compare_result();
             self.blocks.clear();
             Arc::make_mut(&mut self.conversation).clear();
             self.next_block_id = 0;
@@ -50,6 +53,7 @@ impl App {
             return Task::none();
         };
         self.abort_active_chat_stream(true);
+        self.clear_compare_result();
         self.snapshot_current_to_inactive();
         let target = self.inactive_sessions.remove(idx);
         self.current_session_id = target.id;

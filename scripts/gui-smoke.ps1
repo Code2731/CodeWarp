@@ -42,16 +42,16 @@ public static class CodeWarpGuiSmokeNative {
     public static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
-    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
-
-    [DllImport("kernel32.dll")]
-    public static extern uint GetCurrentThreadId();
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     [DllImport("user32.dll")]
     public static extern bool AttachThreadInput(uint attach, uint attachTo, bool attachState);
 
     [DllImport("user32.dll")]
     public static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetActiveWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int command);
@@ -84,17 +84,20 @@ public static class CodeWarpGuiSmokeNative {
     }
 
     public static bool FocusWindow(IntPtr hWnd) {
-        var currentThread = GetCurrentThreadId();
         var foreground = GetForegroundWindow();
-        var foregroundThread = GetWindowThreadProcessId(foreground, IntPtr.Zero);
-        var attached = foregroundThread != 0 && foregroundThread != currentThread
-            && AttachThreadInput(currentThread, foregroundThread, true);
+        uint ignoredProcessId;
+        var foregroundThread = GetWindowThreadProcessId(foreground, out ignoredProcessId);
+        var targetThread = GetWindowThreadProcessId(hWnd, out ignoredProcessId);
+        var attached = foregroundThread != 0 && targetThread != 0
+            && foregroundThread != targetThread
+            && AttachThreadInput(targetThread, foregroundThread, true);
         ShowWindow(hWnd, 9);
         BringWindowToTop(hWnd);
         SetForegroundWindow(hWnd);
+        SetActiveWindow(hWnd);
         SetFocus(hWnd);
         if (attached) {
-            AttachThreadInput(currentThread, foregroundThread, false);
+            AttachThreadInput(targetThread, foregroundThread, false);
         }
         return GetForegroundWindow() == hWnd;
     }

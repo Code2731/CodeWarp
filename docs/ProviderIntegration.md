@@ -40,8 +40,8 @@ User sends message
     → determine provider from selected_model_provider
     → if OpenRouter: openrouter::chat_stream(conversation, model, key)
     → if OpenAI-compat: tabby::chat_stream(conversation, model, url, token)
-    → Task::run(stream, |event| Message::ChatChunk { block_id, event })
-    → discard event when block_id is no longer active
+    → Task::run(stream, |event| Message::ChatChunk { block_id, stream_generation, event })
+    → discard event when block_id or stream_generation is no longer active
     → on each token: append to assistant block, update view
     → on done: finalize block, save session
 ```
@@ -66,6 +66,10 @@ User sends message
 - **Tabby status**: `tabby_status: Option<Result<(), String>>` — 엔드포인트 연결 상태
 - **Retry logic**: `tabby_connect_retry_left`, `tabby_retry_generation` — 자동 재연결 시도
 - **Visual indicator**: UI에서 연결됨/끊김/미시도 상태 표시 (● 아이콘)
+
+Chat retry and MCP tool results use separate request generations. A late event from a prior
+retry, stopped stream, session switch, or canceled MCP round is ignored before it can mutate
+the active conversation.
 
 ## Error Humanization
 

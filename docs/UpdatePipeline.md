@@ -90,12 +90,14 @@ Message::Send => {
     // ... setup conversation, blocks ...
     Task::run(
         provider.chat_stream(conversation, model, tools),
-        move |event| Message::ChatChunk { block_id, event },
+        move |event| Message::ChatChunk { block_id, stream_generation, event },
     )
 }
 
-Message::ChatChunk { block_id, event } => {
-    if self.streaming_block_id != Some(block_id) {
+Message::ChatChunk { block_id, stream_generation, event } => {
+    if self.streaming_block_id != Some(block_id)
+        || self.stream_generation != stream_generation
+    {
         return Task::none();
     }
     match event {
@@ -106,6 +108,10 @@ Message::ChatChunk { block_id, event } => {
     Task::none()
 }
 ```
+
+MCP tool results carry `mcp_request_generation`. Results from a canceled or replaced round are
+ignored, and the next chat stream starts only after every MCP call in the current round has
+returned.
 
 ## Helper Organization
 

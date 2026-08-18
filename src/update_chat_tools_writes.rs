@@ -75,6 +75,10 @@ impl App {
             self.status = "사용자가 파일 쓰기를 거부했습니다".into();
         }
 
+        if self.mcp_pending_results > 0 {
+            self.status = "MCP tool 실행 중…".into();
+            return Task::none();
+        }
         self.tool_round += 1;
         self.status = format!(
             "응답 생성 중… (도구 라운드 {}/{})",

@@ -84,6 +84,7 @@ pub(crate) enum Message {
     StopStream,
     ChatChunk {
         block_id: u64,
+        stream_generation: u64,
         event: ChatEvent,
     },
     CompareResponsesLoaded {
@@ -192,7 +193,11 @@ pub(crate) enum Message {
     RemoveMcpServer(usize),
     McpToolsLoaded(String, Vec<mcp::McpTool>),
     McpToolsFailed(String),
-    McpToolResult(String, String),
+    McpToolResult {
+        generation: u64,
+        tool_call_id: String,
+        result: String,
+    },
     PtyToggle,
     PtyStart,
     PtyLine(String),

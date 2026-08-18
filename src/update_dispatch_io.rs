@@ -15,9 +15,11 @@ impl App {
                 Some(self.on_mcp_tools_loaded(server_name, tools.clone()))
             }
             Message::McpToolsFailed(msg) => Some(self.on_mcp_tools_failed(msg)),
-            Message::McpToolResult(tool_call_id, result) => {
-                Some(self.on_mcp_tool_result(tool_call_id, result.clone()))
-            }
+            Message::McpToolResult {
+                generation,
+                tool_call_id,
+                result,
+            } => Some(self.on_mcp_tool_result(*generation, tool_call_id, result.clone())),
             Message::PtyToggle => Some(self.toggle_pty()),
             Message::PtyStart => Some(self.pty_start()),
             Message::PtyLine(line) => Some(self.on_pty_line(line)),

@@ -16,6 +16,11 @@ impl App {
         if let Some(h) = self.abort_handle.take() {
             h.abort();
         }
+        if let Some(h) = self.mcp_abort_handle.take() {
+            h.abort();
+        }
+        self.mcp_request_generation = self.mcp_request_generation.saturating_add(1);
+        self.mcp_pending_results = 0;
         if self.ui.compare_pending {
             self.discard_compare_blocks();
         }
@@ -45,6 +50,10 @@ impl App {
         self.pending_tool_calls.clear();
         self.tool_round = 0;
         self.mid_stream_retries = 0;
+    }
+    pub(crate) fn next_stream_generation(&mut self) -> u64 {
+        self.stream_generation = self.stream_generation.saturating_add(1);
+        self.stream_generation
     }
     fn discard_compare_blocks(&mut self) {
         if let Some((openrouter_block_id, tabby_block_id)) = self.compare_block_ids.take() {
@@ -87,6 +96,9 @@ impl App {
         let Some(block_id) = self.streaming_block_id else {
             return Task::none();
         };
+        if let Some(handle) = self.abort_handle.take() {
+            handle.abort();
+        }
         let (base_url, api_key) = match self.resolve_provider() {
             Ok(v) => v,
             Err(e) => {
@@ -99,6 +111,7 @@ impl App {
         };
         let model = self.selected_model.clone().unwrap_or_default();
         let messages = self.conversation.clone();
+        let stream_generation = self.next_stream_generation();
         // 기본 tool + MCP tool 합산
         let mut tool_defs = self.tool_definitions_for_selected_model();
         if !self.mcp_tools.is_empty()
@@ -110,7 +123,11 @@ impl App {
         }
         let (task, handle) = Task::run(
             openrouter::chat_stream(base_url, api_key, model, messages, tool_defs),
-            move |event| Message::ChatChunk { block_id, event },
+            move |event| Message::ChatChunk {
+                block_id,
+                stream_generation,
+                event,
+            },
         )
         .abortable();
         self.abort_handle = Some(handle);

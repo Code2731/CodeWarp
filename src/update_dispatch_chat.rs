@@ -9,8 +9,12 @@ impl App {
             Message::RegenerateLast => Some(self.regenerate_last()),
             Message::ApplyChange(block_id, idx) => Some(self.apply_change(*block_id, *idx)),
             Message::EditLastUser => Some(self.edit_last_user()),
-            Message::ChatChunk { block_id, event } => {
-                Some(self.on_chat_chunk(*block_id, event.clone()))
+            Message::ChatChunk {
+                block_id,
+                stream_generation,
+                event,
+            } => {
+                Some(self.on_chat_chunk(*block_id, *stream_generation, event.clone()))
             }
             Message::StreamScrolled(viewport) => Some(self.on_stream_scrolled(viewport)),
             Message::EditorAction(id, action) => Some(self.on_editor_action(*id, action.clone())),

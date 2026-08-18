@@ -52,7 +52,8 @@ src/
 - **MCP Input**: `mcp_input: McpInputState` (MCP 서버 이름/명령 입력)
 - **Provider State**: `tabby_url_input`, `tabby_token_input`, `openai_compat_label`, `hf_token_input`
 - **Inference State**: `inference_engine`, `inference_selected_model`, `inference_port_input`, `inference_binary_path`
-- **Chat State**: `conversation`, `blocks`, `pending_tool_calls`, `pending_write_calls`, `streaming_block_id`
+- **Chat State**: `conversation`, `blocks`, `pending_tool_calls`, `pending_write_calls`, `streaming_block_id`, `stream_generation`
+- **MCP Lifecycle State**: `mcp_abort_handle`, `mcp_request_generation`, `mcp_pending_results`
 - **Session State**: `current_session_id`, `current_session_title`, `inactive_sessions`
 - **Model State**: `model_options`, `selected_model`, `selected_model_provider`, `usage`
 
@@ -65,9 +66,14 @@ CodeWarp는 Tokio 런타임을 사용하며, Iced의 `Task` 추상화와 통합�
 - `Task::perform(async_fn, msg_fn)` — 비동기 함수 실행 후 결과를 Message로 변환
 - `Task::run(stream, msg_fn)` — 스트림에서 이벤트를 수신하여 Message로 변환
 
-채팅 스트림은 `Task::run`으로 SSE 이벤트를 수신하고, 소유 assistant block ID를 포함한
-`Message::ChatChunk`로 토큰을 전달합니다. 중지·세션 전환 뒤 늦게 도착한 이전 스트림
-이벤트는 현재 block ID와 일치하지 않으면 폐기합니다.
+채팅 스트림은 `Task::run`으로 SSE 이벤트를 수신하고, 소유 assistant block ID와
+stream generation을 포함한 `Message::ChatChunk`로 토큰을 전달합니다. retry가 같은
+assistant block을 재사용하더라도 generation이 달라지므로, 중지·세션 전환·retry 뒤 늦게
+도착한 이전 스트림 이벤트는 block ID 또는 generation이 현재 상태와 다르면 폐기합니다.
+
+MCP tool call도 요청 generation을 함께 전달하며, 한 라운드의 모든 MCP 결과를 받은 뒤에만
+다음 chat stream을 시작합니다. 중지·새 세션·창 닫기에서는 generation을 무효화하고
+abort handle을 취소해 늦은 결과가 새 대화를 재개하지 못하게 합니다.
 
 ## Update Pipeline
 

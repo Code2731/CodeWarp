@@ -44,6 +44,7 @@ impl App {
         });
         self.streaming_block_id = Some(ai_id);
         self.streaming_block_idx = Some(self.blocks.len() - 1);
+        let stream_generation = self.next_stream_generation();
         self.status = "응답 다시 생성 중…".into();
         self.ui.follow_bottom = true;
         self.response_started_at = Some(std::time::Instant::now());
@@ -58,6 +59,7 @@ impl App {
             ),
             move |event| Message::ChatChunk {
                 block_id: ai_id,
+                stream_generation,
                 event,
             },
         )
@@ -145,6 +147,7 @@ impl App {
         });
         self.streaming_block_id = Some(ai_id);
         self.streaming_block_idx = Some(self.blocks.len() - 1);
+        let stream_generation = self.next_stream_generation();
         self.input.clear();
         self.editor_content = text_editor::Content::new();
         self.status = "응답 생성 중…".into();
@@ -161,6 +164,7 @@ impl App {
             ),
             move |event| Message::ChatChunk {
                 block_id: ai_id,
+                stream_generation,
                 event,
             },
         )

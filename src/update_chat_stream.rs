@@ -3,8 +3,14 @@ use super::{App, ChatEvent, Message, PendingToolCall, snap_to_end};
 use iced::Task;
 
 impl App {
-    pub(crate) fn on_chat_chunk(&mut self, block_id: u64, event: ChatEvent) -> Task<Message> {
-        if self.streaming_block_id != Some(block_id) {
+    pub(crate) fn on_chat_chunk(
+        &mut self,
+        block_id: u64,
+        stream_generation: u64,
+        event: ChatEvent,
+    ) -> Task<Message> {
+        if self.stream_generation != stream_generation || self.streaming_block_id != Some(block_id)
+        {
             return Task::none();
         }
         let ai_id = block_id;
@@ -75,10 +81,12 @@ mod tests {
 
         let _ = app.update(Message::ChatChunk {
             block_id: 42,
+            stream_generation: 0,
             event: ChatEvent::Token("hel".into()),
         });
         let _ = app.update(Message::ChatChunk {
             block_id: 42,
+            stream_generation: 0,
             event: ChatEvent::Token("lo".into()),
         });
 
@@ -104,6 +112,7 @@ mod tests {
         for token in ["첫 ", "응답 ", "😊\n", "완료"] {
             let _ = app.update(Message::ChatChunk {
                 block_id: 42,
+                stream_generation: 0,
                 event: ChatEvent::Token(token.into()),
             });
         }
@@ -112,6 +121,7 @@ mod tests {
 
         let _ = app.update(Message::ChatChunk {
             block_id: 42,
+            stream_generation: 0,
             event: ChatEvent::Done {
                 finish_reason: Some("stop".into()),
                 generation_id: None,
@@ -145,6 +155,7 @@ mod tests {
 
         let _ = app.update(Message::ChatChunk {
             block_id: 42,
+            stream_generation: 0,
             event: ChatEvent::Token("**hello**".into()),
         });
         assert!(
@@ -172,10 +183,12 @@ mod tests {
 
         let _ = app.update(Message::ChatChunk {
             block_id: 42,
+            stream_generation: 0,
             event: ChatEvent::Token("늦은 이전 응답".into()),
         });
         let _ = app.update(Message::ChatChunk {
             block_id: 42,
+            stream_generation: 0,
             event: ChatEvent::Done {
                 finish_reason: Some("stop".into()),
                 generation_id: None,
@@ -185,5 +198,41 @@ mod tests {
         assert!(app.streaming_raw.is_empty());
         assert_eq!(app.blocks[0].body.to_text(), "");
         assert_eq!(app.streaming_block_id, Some(99));
+    }
+
+    #[test]
+    fn stale_retry_chunk_is_ignored_for_the_same_assistant_block() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.stream_generation = 2;
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ChatChunk {
+            block_id: 42,
+            stream_generation: 1,
+            event: ChatEvent::Token("늦은 retry 토큰".into()),
+        });
+        let _ = app.update(Message::ChatChunk {
+            block_id: 42,
+            stream_generation: 1,
+            event: ChatEvent::Done {
+                finish_reason: Some("stop".into()),
+                generation_id: None,
+            },
+        });
+
+        assert!(app.streaming_raw.is_empty());
+        assert_eq!(app.streaming_block_id, Some(42));
+        assert_eq!(app.blocks[0].body.to_text(), "");
     }
 }

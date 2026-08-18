@@ -20,6 +20,7 @@ fn chat_chunk_done_builds_content_from_streaming_raw() {
 
     let _ = app.update(Message::ChatChunk {
         block_id: 42,
+        stream_generation: 0,
         event: ChatEvent::Done {
             finish_reason: Some("stop".into()),
             generation_id: None,
@@ -53,6 +54,7 @@ fn chat_chunk_done_empty_streaming_raw_shows_warning() {
 
     let _ = app.update(Message::ChatChunk {
         block_id: 42,
+        stream_generation: 0,
         event: ChatEvent::Done {
             finish_reason: Some("stop".into()),
             generation_id: None,
@@ -83,6 +85,7 @@ fn chat_chunk_error_appends_to_streaming_raw() {
 
     let _ = app.update(Message::ChatChunk {
         block_id: 42,
+        stream_generation: 0,
         event: ChatEvent::Error("server error".into()),
     });
 
@@ -114,6 +117,7 @@ fn chat_chunk_error_empty_streaming_raw() {
 
     let _ = app.update(Message::ChatChunk {
         block_id: 42,
+        stream_generation: 0,
         event: ChatEvent::Error("server error".into()),
     });
 
@@ -146,6 +150,7 @@ fn mid_stream_error_triggers_retry() {
 
     let _ = app.update(Message::ChatChunk {
         block_id: 42,
+        stream_generation: 0,
         event: ChatEvent::Error("connection dropped".into()),
     });
 
@@ -174,6 +179,7 @@ fn mid_stream_error_retries_exhausted() {
 
     let _ = app.update(Message::ChatChunk {
         block_id: 42,
+        stream_generation: 0,
         event: ChatEvent::Error("connection dropped".into()),
     });
 
@@ -207,6 +213,7 @@ fn mid_stream_error_401_not_retried() {
 
     let _ = app.update(Message::ChatChunk {
         block_id: 42,
+        stream_generation: 0,
         event: ChatEvent::Error("OpenRouter 401 unauthorized".into()),
     });
 
@@ -246,6 +253,7 @@ fn local_provider_auth_error_is_not_retried_or_labeled_openrouter() {
 
     let _ = app.update(Message::ChatChunk {
         block_id: 42,
+        stream_generation: 0,
         event: ChatEvent::Error(
             "OpenAI-compatible provider 401 Unauthorized: token missing".into(),
         ),

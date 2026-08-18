@@ -5,13 +5,25 @@ use iced::Task;
 impl App {
     pub(crate) fn on_mcp_tool_result(
         &mut self,
+        generation: u64,
         tool_call_id: &str,
         result: String,
     ) -> Task<Message> {
-        if self.close_in_progress {
+        if self.close_in_progress
+            || generation != self.mcp_request_generation
+            || self.mcp_pending_results == 0
+        {
             return Task::none();
         }
         Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(tool_call_id, result));
+        self.mcp_pending_results = self.mcp_pending_results.saturating_sub(1);
+        if self.mcp_pending_results > 0 {
+            return Task::none();
+        }
+        self.mcp_abort_handle.take();
+        if !self.pending_write_calls.is_empty() {
+            return Task::none();
+        }
         self.tool_round += 1;
         self.kick_chat_stream()
     }
@@ -69,6 +81,9 @@ impl App {
             .partition(|tc| mcp_tool_names.contains(tc.name.as_str()));
 
         if !mcp_calls.is_empty() {
+            self.mcp_request_generation = self.mcp_request_generation.saturating_add(1);
+            let generation = self.mcp_request_generation;
+            self.mcp_pending_results = mcp_calls.len();
             let (local_read, local_write): (Vec<_>, Vec<_>) = local_calls
                 .into_iter()
                 .partition(|tc| tools::tool_kind(&tc.name) == tools::ToolKind::ReadOnly);
@@ -103,7 +118,11 @@ impl App {
                             None => "[MCP 오류] 서버 찾을 수 없음".into(),
                         }
                     },
-                    move |result| Message::McpToolResult(call_id, result),
+                    move |result| Message::McpToolResult {
+                        generation,
+                        tool_call_id: call_id,
+                        result,
+                    },
                 ));
             }
             self.status = "MCP tool 실행 중…".into();
@@ -157,9 +176,41 @@ mod mcp_close_tests {
         let conversation_len = app.conversation.len();
 
         // When
-        let _task = app.on_mcp_tool_result("late-call", "late-result".to_string());
+        let _task = app.on_mcp_tool_result(0, "late-call", "late-result".to_string());
 
         // Then
         assert_eq!(app.conversation.len(), conversation_len);
+    }
+
+    #[test]
+    fn stale_mcp_result_is_ignored_after_stream_stop() {
+        let (mut app, _) = App::new();
+        app.mcp_request_generation = 2;
+        app.streaming_block_id = Some(42);
+        let conversation_len = app.conversation.len();
+
+        let _task = app.on_mcp_tool_result(1, "late-call", "late-result".to_string());
+
+        assert_eq!(app.conversation.len(), conversation_len);
+        assert!(app.streaming_block_id.is_some());
+    }
+
+    #[test]
+    fn mcp_results_wait_for_all_calls_before_starting_next_stream() {
+        let (mut app, _) = App::new();
+        app.mcp_request_generation = 1;
+        app.mcp_pending_results = 2;
+
+        let _ = app.on_mcp_tool_result(1, "first", "one".into());
+
+        assert_eq!(app.mcp_pending_results, 1);
+        assert_eq!(app.tool_round, 0);
+        assert_eq!(app.conversation.len(), 1);
+
+        let _ = app.on_mcp_tool_result(1, "second", "two".into());
+
+        assert_eq!(app.mcp_pending_results, 0);
+        assert_eq!(app.tool_round, 1);
+        assert_eq!(app.conversation.len(), 2);
     }
 }

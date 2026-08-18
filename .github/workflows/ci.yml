@@ -32,6 +32,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Run verified Windows harness (fmt + check + test)
         if: matrix.os == 'windows-latest'
         shell: pwsh
@@ -41,6 +45,10 @@ jobs:
         if: matrix.os != 'windows-latest'
         shell: bash
         run: bash scripts/harness.sh --skip-clippy
+
+      - name: Run provider compatibility smoke fixture
+        shell: bash
+        run: python scripts/provider-smoke-fixture.py
 
   clippy:
     name: harness clippy

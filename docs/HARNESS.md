@@ -100,6 +100,13 @@ The smoke tool does not start or stop a provider and never prints the token. It 
 non-empty streamed text response and the `[DONE]` marker, so it is stronger than a `/v1/models`
 health check alone.
 
+Run the deterministic local fixture in CI or before a release to verify the smoke tool without
+credentials or an installed provider:
+
+```powershell
+python scripts/provider-smoke-fixture.py
+```
+
 ## Skip Flags
 
 - `fmt`: `-SkipFmt` / `--skip-fmt`

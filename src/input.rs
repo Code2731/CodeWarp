@@ -29,9 +29,19 @@ pub(crate) fn handle_key(key: &Key, modifiers: Modifiers) -> Option<Message> {
 /// `iced::event::listen_with`, so this remains a small stateless adapter.
 pub(crate) fn on_event(
     event: iced::Event,
-    _status: iced::event::Status,
+    status: iced::event::Status,
     _window: iced::window::Id,
 ) -> Option<Message> {
+    // A focused text editor owns vertical cursor movement; mention navigation is bound in the view.
+    let captured_navigation = matches!(status, iced::event::Status::Captured)
+        && matches!(
+            &event,
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. })
+                if matches!(key.as_ref(), Key::Named(Named::ArrowUp | Named::ArrowDown))
+        );
+    if captured_navigation {
+        return None;
+    }
     match event {
         iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
             match key.as_ref() {
@@ -137,6 +147,17 @@ mod tests {
         );
 
         assert!(matches!(result, Some(Message::PaletteMove(1))));
+    }
+
+    #[test]
+    fn input_captured_arrow_event_is_left_to_text_editor() {
+        let result = on_event(
+            arrow_key_event(Named::ArrowUp),
+            iced::event::Status::Captured,
+            iced::window::Id::unique(),
+        );
+
+        assert!(result.is_none());
     }
 
     #[test]

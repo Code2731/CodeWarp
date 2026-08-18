@@ -41,7 +41,7 @@ CodeWarp를 Windows에서 안정적으로 사용할 수 있는 Rust 기반 AI �
 - [x] **Phase 3-C** — 안정화/성능: autosave crash recovery, streaming block lookup O(1), markdown streaming 재파싱 최소화, chat_stream retry, mid-stream error auto-retry
 - [x] **Tests (Phase 3-C 당시 기록)** — 회고적 + TDD 누적: 391 unit tests + 1 integration smoke test (`cargo test --all-targets -- --test-threads=1`)
 
-현재 검증 기준은 `cargo test --all-targets -- --test-threads=1`입니다. Windows ConPTY 및 외부 프로세스 fixture의 재현성을 위해 테스트 프로세스는 단일 스레드로 실행합니다. 2026-08-19 검증에서 unit test 665개가 통과하고 11개가 무시되었으며(Linux POSIX PTY Ctrl+C 수동 QA 항목 포함), external integration smoke test 1개가 통과했습니다.
+현재 검증 기준은 `cargo test --all-targets -- --test-threads=1`입니다. Windows ConPTY 및 외부 프로세스 fixture의 재현성을 위해 테스트 프로세스는 단일 스레드로 실행합니다. 2026-08-19 검증에서 unit test 666개가 통과하고 11개가 무시되었으며(Linux POSIX PTY Ctrl+C 수동 QA 항목 포함), external integration smoke test 1개가 통과했습니다.
 
 ## 왜 Iced로 바꿨나
 

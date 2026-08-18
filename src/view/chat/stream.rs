@@ -86,6 +86,7 @@ impl App {
         } else {
             Message::Send
         };
+        let mention_visible = self.ui.show_mention;
         text_editor(&self.editor_content)
             .placeholder("질문을 입력하세요…  (@파일 첨부, /plan, /build)")
             .size(FS_BODY)
@@ -98,6 +99,12 @@ impl App {
                 } = press;
                 let is_enter = matches!(key.as_ref(), Key::Named(Named::Enter));
                 let is_shift = modifiers.shift();
+                if mention_visible && matches!(key.as_ref(), Key::Named(Named::ArrowUp)) {
+                    return Some(Binding::Custom(Message::MentionMove(-1)));
+                }
+                if mention_visible && matches!(key.as_ref(), Key::Named(Named::ArrowDown)) {
+                    return Some(Binding::Custom(Message::MentionMove(1)));
+                }
                 if is_enter && !is_shift {
                     return Some(Binding::Custom(submit_msg.clone()));
                 }

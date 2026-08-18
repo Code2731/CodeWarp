@@ -67,6 +67,10 @@ where
         .map_err(|_| ())
 }
 
+fn provider_response_limit_exceeded(current: usize, additional: usize) -> bool {
+    current.saturating_add(additional) > MAX_PROVIDER_RESPONSE_BYTES
+}
+
 async fn send_chat_request_with_retry(
     client: &reqwest::Client,
     endpoint: &str,
@@ -253,6 +257,7 @@ pub(crate) fn chat_stream(
         let mut emitted_any_token = false;
         let mut pending_sse_data = String::new();
         let mut pending_utf8 = Vec::new();
+        let mut response_bytes = 0usize;
 
         loop {
             let item = match next_stream_item(&mut stream, STREAM_IDLE_TIMEOUT).await {
@@ -281,6 +286,14 @@ pub(crate) fn chat_stream(
                     return;
                 }
             };
+            if provider_response_limit_exceeded(response_bytes, text.len()) {
+                yield ChatEvent::Error(format!(
+                    "provider response exceeds {} bytes",
+                    MAX_PROVIDER_RESPONSE_BYTES
+                ));
+                return;
+            }
+            response_bytes = response_bytes.saturating_add(text.len());
             buffer.push_str(&text);
             append_bounded_capture(&mut raw_capture, &text, MAX_PROVIDER_RESPONSE_BYTES);
 

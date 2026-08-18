@@ -58,9 +58,9 @@ mod util;
 mod view;
 
 pub(crate) use block::{
-    Block, BlockBody, MAX_MID_STREAM_RETRIES, MAX_TOOL_ROUNDS, PendingToolCall, ViewMode,
-    last_assistant_block_idx, last_user_block_idx, parse_apply_candidates, persisted_to_block,
-    truncate_after_last_user,
+    Block, BlockBody, MAX_MID_STREAM_RETRIES, MAX_TOOL_CALLS_PER_RESPONSE, MAX_TOOL_ROUNDS,
+    PendingToolCall, ViewMode, last_assistant_block_idx, last_user_block_idx,
+    parse_apply_candidates, persisted_to_block, truncate_after_last_user,
 };
 use bootstrap::{
     JETBRAINS_MONO_BOLD, JETBRAINS_MONO_REGULAR, PRETENDARD_BOLD, PRETENDARD_REGULAR,

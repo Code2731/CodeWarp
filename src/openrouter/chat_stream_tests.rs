@@ -95,6 +95,59 @@ async fn provider_response_body_limit_rejects_oversized_content_length() {
 }
 
 #[tokio::test]
+async fn chat_stream_rejects_oversized_sse_response() {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind oversized SSE server");
+    let address = listener.local_addr().expect("oversized SSE server address");
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener
+            .accept()
+            .await
+            .expect("accept oversized SSE request");
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 1024];
+        loop {
+            let read = socket
+                .read(&mut buffer)
+                .await
+                .expect("read oversized SSE request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buffer[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        socket
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .expect("write oversized SSE headers");
+        let oversized = vec![b'x'; MAX_PROVIDER_RESPONSE_BYTES + 1];
+        let _ = socket.write_all(&oversized).await;
+    });
+
+    let messages = Arc::new(vec![ChatMessage::user("oversized")]);
+    let mut events = Box::pin(openai_chat_stream(
+        format!("http://{address}/v1"),
+        Some("local-token".into()),
+        "oversized-model".into(),
+        messages,
+        None,
+    ));
+    let event = events.next().await.expect("oversized SSE error event");
+
+    match event {
+        ChatEvent::Error(error) => assert!(error.contains("exceeds"), "error: {error}"),
+        other => panic!("expected oversized SSE error, got {other:?}"),
+    }
+    server.await.expect("oversized SSE server must finish");
+}
+
+#[tokio::test]
 async fn chat_stream_round_trips_through_openai_compatible_sse_server() {
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await

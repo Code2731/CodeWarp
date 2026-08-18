@@ -1,5 +1,8 @@
 // update_chat_stream.rs — Chat stream event dispatcher (main.rs child module)
-use super::{App, ChatEvent, Message, PendingToolCall, snap_to_end};
+use super::{
+    App, ChatEvent, MAX_MID_STREAM_RETRIES, MAX_TOOL_CALLS_PER_RESPONSE, Message, PendingToolCall,
+    snap_to_end,
+};
 use iced::Task;
 
 impl App {
@@ -25,6 +28,16 @@ impl App {
                 arguments,
             } => {
                 let i = index as usize;
+                if i >= MAX_TOOL_CALLS_PER_RESPONSE {
+                    // Do not allocate sparse tool-call slots for an invalid provider index.
+                    self.mid_stream_retries = MAX_MID_STREAM_RETRIES;
+                    return self.handle_chat_error(
+                        ai_id,
+                        &format!(
+                            "provider returned too many tool calls (maximum {MAX_TOOL_CALLS_PER_RESPONSE})"
+                        ),
+                    );
+                }
                 while self.pending_tool_calls.len() <= i {
                     self.pending_tool_calls.push(PendingToolCall::default());
                 }
@@ -234,5 +247,37 @@ mod tests {
         assert!(app.streaming_raw.is_empty());
         assert_eq!(app.streaming_block_id, Some(42));
         assert_eq!(app.blocks[0].body.to_text(), "");
+    }
+
+    #[test]
+    fn chat_chunk_rejects_unbounded_tool_call_index() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ChatChunk {
+            block_id: 42,
+            stream_generation: 0,
+            event: ChatEvent::ToolCallDelta {
+                index: u32::MAX,
+                id: Some("invalid".into()),
+                name: Some("read_file".into()),
+                arguments: Some("{}".into()),
+            },
+        });
+
+        assert!(app.pending_tool_calls.is_empty());
+        assert!(app.streaming_block_id.is_none());
+        assert!(app.blocks[0].body.to_text().contains("[ERROR]"));
     }
 }

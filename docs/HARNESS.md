@@ -137,6 +137,7 @@ Run the packaged Windows binary and record the result for each item before calli
 - After an unclean close, relaunch and verify session recovery status, backup fallback behavior, and the persisted conversation.
 - On Linux, test interactive PTY Ctrl+C separately and record it as manual QA until the POSIX runner is reliable; on Windows, confirm the packaged GUI `^C` button once as release acceptance for the full UI path.
 - On an interactive Windows desktop, run `powershell -ExecutionPolicy Bypass -File scripts/gui-smoke.ps1` against the release executable to verify the real text editor preserves Korean, emoji, multiline paste, and input order.
+- The GitHub Actions `CI` workflow exposes the same check as a manual `workflow_dispatch` input named `run_gui_smoke`; enable it only when the selected Windows runner provides an interactive desktop.
 
 ## Git Hooks (Recommended)
 

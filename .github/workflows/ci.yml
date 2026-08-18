@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_gui_smoke:
+        description: Run the interactive Windows GUI input smoke test
+        required: true
+        default: false
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -128,3 +135,22 @@ jobs:
           name: codewarp-${{ matrix.platform }}
           path: dist/*.zip
           if-no-files-found: error
+
+  gui-smoke:
+    name: Windows GUI input smoke
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_gui_smoke }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.90.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Run cursor and Unicode input smoke
+        shell: pwsh
+        run: .\scripts\gui-smoke.ps1 -ExecutablePath .\target\release\codewarp.exe

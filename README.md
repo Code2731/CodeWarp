@@ -161,6 +161,7 @@ Quality harness is now part of the default workflow.
 - Local checks: `scripts/harness.ps1` (Windows), `scripts/harness.sh` (Linux/macOS)
 - Verified CI platforms: Windows and Linux; both run the harness' fmt, check, and test gates
 - Release smoke CI: Windows and Linux build, validate, package, and upload portable archives; Windows also runs a 5-second startup smoke
+- Interactive GUI smoke: dispatch the `CI` workflow manually with `run_gui_smoke` enabled on a Windows desktop runner to verify cursor editing, Korean/emoji paste, multiline input, and text order
 - macOS remains experimental and has no CI verification until equivalent automation exists
 - Recommended hooks:
   - `pre-commit`: `cargo fmt -- --check` (only when Rust-related files are staged)

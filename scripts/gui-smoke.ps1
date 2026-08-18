@@ -36,6 +36,9 @@ public static class CodeWarpGuiSmokeNative {
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int command);
 
     [DllImport("user32.dll")]
@@ -90,6 +93,9 @@ try {
     [CodeWarpGuiSmokeNative]::ShowWindow($handle, 9) | Out-Null
     [CodeWarpGuiSmokeNative]::SetForegroundWindow($handle) | Out-Null
     Start-Sleep -Milliseconds 300
+    if ([CodeWarpGuiSmokeNative]::GetForegroundWindow() -ne $handle) {
+        throw "CodeWarp window is not foreground; run this smoke test on an interactive Windows desktop"
+    }
     [CodeWarpGuiSmokeNative]::Key(0x1B)
     Start-Sleep -Milliseconds 250
     [CodeWarpGuiSmokeNative]::Click(
@@ -107,6 +113,7 @@ try {
     Set-Clipboard -Value $probe
     [CodeWarpGuiSmokeNative]::CtrlKey(0x56)
     Start-Sleep -Milliseconds 500
+    Set-Clipboard -Value "codewarp-gui-smoke-sentinel"
     [CodeWarpGuiSmokeNative]::CtrlKey(0x41)
     [CodeWarpGuiSmokeNative]::CtrlKey(0x43)
     Start-Sleep -Milliseconds 250

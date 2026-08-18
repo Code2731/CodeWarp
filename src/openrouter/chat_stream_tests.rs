@@ -136,6 +136,92 @@ async fn chat_stream_round_trips_through_openai_compatible_sse_server() {
 }
 
 #[tokio::test]
+async fn chat_stream_retries_server_error_with_auth_and_bounded_attempts() {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind retry mock server");
+    let address = listener.local_addr().expect("retry mock server address");
+    let server = tokio::spawn(async move {
+        let mut attempts = 0;
+        loop {
+            let (mut socket, _) = listener.accept().await.expect("accept retry request");
+            attempts += 1;
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            loop {
+                let read = socket.read(&mut buffer).await.expect("read retry request");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let request = String::from_utf8_lossy(&request).to_ascii_lowercase();
+            assert!(request.contains("authorization: bearer retry-token"));
+            assert!(request.contains("x-api-key: retry-token"));
+
+            if attempts == 1 {
+                socket
+                    .write_all(
+                        b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    )
+                    .await
+                    .expect("write retry failure");
+                continue;
+            }
+
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .expect("write retry response headers");
+            for frame in [
+                "data: {\"id\":\"retry-1\",\"choices\":[{\"delta\":{\"content\":\"재시도 성공\"},\"finish_reason\":\"stop\"}]}\n\n",
+                "data: [DONE]\n\n",
+            ] {
+                socket
+                    .write_all(frame.as_bytes())
+                    .await
+                    .expect("write retry response frame");
+            }
+            break;
+        }
+        attempts
+    });
+
+    let messages = Arc::new(vec![ChatMessage::user("retry")]);
+    let mut events = Box::pin(openai_chat_stream(
+        format!("http://{address}/v1"),
+        Some("retry-token".into()),
+        "retry-model".into(),
+        messages,
+        None,
+    ));
+    let mut output = String::new();
+    let mut done = false;
+    while let Some(event) = events.next().await {
+        match event {
+            ChatEvent::Token(token) => output.push_str(&token),
+            ChatEvent::Done { .. } => {
+                done = true;
+                break;
+            }
+            ChatEvent::ToolCallDelta { .. } => {
+                panic!("retry mock response should not contain tools")
+            }
+            ChatEvent::Error(error) => panic!("unexpected retry error: {error}"),
+        }
+    }
+
+    assert_eq!(server.await.expect("retry server must finish"), 2);
+    assert_eq!(output, "재시도 성공");
+    assert!(done, "retry stream must emit Done after [DONE]");
+}
+
+#[tokio::test]
 async fn chat_stream_labels_local_http_errors_as_openai_compatible() {
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await

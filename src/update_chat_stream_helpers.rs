@@ -21,6 +21,8 @@ impl App {
         }
         self.mcp_request_generation = self.mcp_request_generation.saturating_add(1);
         self.mcp_pending_results = 0;
+        self.mcp_pending_call_ids.clear();
+        self.generation_lookup_generation = self.generation_lookup_generation.saturating_add(1);
         self.compare_generation = self.compare_generation.saturating_add(1);
         if self.ui.compare_pending {
             self.discard_compare_blocks();
@@ -49,6 +51,9 @@ impl App {
         self.streaming_block_idx = None;
         self.streaming_raw.clear();
         self.pending_tool_calls.clear();
+        self.pending_write_calls.clear();
+        self.ui.show_write_confirm = false;
+        self.ui.expanded_confirm_idx = None;
         self.tool_round = 0;
         self.mid_stream_retries = 0;
     }
@@ -261,6 +266,25 @@ mod tests {
         assert!(app.pending_tool_calls.is_empty());
         assert_eq!(app.tool_round, 0);
         assert!(app.conversation.is_empty());
+    }
+
+    #[test]
+    fn abort_stream_cancels_pending_write_approval() {
+        let (mut app, _) = App::new();
+        app.streaming_block_id = Some(42);
+        app.pending_write_calls = vec![PendingToolCall {
+            id: "write-1".into(),
+            name: "write_file".into(),
+            arguments: "{}".into(),
+        }];
+        app.ui.show_write_confirm = true;
+        app.ui.expanded_confirm_idx = Some(0);
+
+        app.abort_active_chat_stream(true);
+
+        assert!(app.pending_write_calls.is_empty());
+        assert!(!app.ui.show_write_confirm);
+        assert!(app.ui.expanded_confirm_idx.is_none());
     }
 
     #[test]

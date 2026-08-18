@@ -71,6 +71,11 @@ Chat retry and MCP tool results use separate request generations. A late event f
 retry, stopped stream, session switch, or canceled MCP round is ignored before it can mutate
 the active conversation.
 
+Generation metadata also protects OpenRouter account/usage lookups. API key changes and new
+chat lifecycles invalidate older lookups, while MCP tool-list responses are accepted only when
+their server still exists and their server-specific load generation is current. Prompt content is
+kept byte-for-byte, including intentional leading/trailing whitespace and newlines.
+
 Managed local inference runtimes use a separate `inference_generation`. Logs, exit events, and
 the automatic `/v1/models` fetch are accepted only for the currently owned runtime, preventing
 an old Tabby/Ollama-compatible process from overwriting a restarted endpoint's state.

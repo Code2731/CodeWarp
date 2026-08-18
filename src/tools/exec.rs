@@ -5,6 +5,17 @@ use std::path::{Path, PathBuf};
 const MAX_READ_BYTES: u64 = 1_000_000;
 const MAX_CMD_OUTPUT: usize = 100_000;
 
+fn bounded_prefix(value: &str, max_bytes: usize) -> (&str, usize) {
+    if value.len() <= max_bytes {
+        return (value, 0);
+    }
+    let mut end = max_bytes;
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    (&value[..end], value.len() - end)
+}
+
 pub(super) fn glob_files(
     cwd: &Path,
     pattern: &str,
@@ -97,15 +108,10 @@ pub(super) fn run_command(cwd: &Path, command: &str) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.trim().is_empty() {
         result.push_str("--- stdout ---\n");
-        if stdout.len() > MAX_CMD_OUTPUT {
-            result.push_str(&stdout[..MAX_CMD_OUTPUT]);
-            let _ = write!(
-                result,
-                "\n…(stdout {} bytes 잘림)\n",
-                stdout.len() - MAX_CMD_OUTPUT
-            );
-        } else {
-            result.push_str(&stdout);
+        let (prefix, omitted) = bounded_prefix(&stdout, MAX_CMD_OUTPUT);
+        result.push_str(prefix);
+        if omitted > 0 {
+            let _ = write!(result, "\n…(stdout {omitted} bytes 잘림)\n");
         }
         if !result.ends_with('\n') {
             result.push('\n');
@@ -114,15 +120,10 @@ pub(super) fn run_command(cwd: &Path, command: &str) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr);
     if !stderr.trim().is_empty() {
         result.push_str("--- stderr ---\n");
-        if stderr.len() > MAX_CMD_OUTPUT {
-            result.push_str(&stderr[..MAX_CMD_OUTPUT]);
-            let _ = write!(
-                result,
-                "\n…(stderr {} bytes 잘림)",
-                stderr.len() - MAX_CMD_OUTPUT
-            );
-        } else {
-            result.push_str(&stderr);
+        let (prefix, omitted) = bounded_prefix(&stderr, MAX_CMD_OUTPUT);
+        result.push_str(prefix);
+        if omitted > 0 {
+            let _ = write!(result, "\n…(stderr {omitted} bytes 잘림)");
         }
     }
     result
@@ -147,6 +148,26 @@ pub(super) fn write_file(cwd: &Path, rel_path: &str, content: &str) -> Result<()
             "작업 디렉토리 밖 경로: {}",
             parent_canonical.display()
         ));
+    }
+    match fs::symlink_metadata(&joined) {
+        Ok(_) => {
+            let existing_canonical = joined
+                .canonicalize()
+                .map_err(|e| format!("기존 대상 경로 해석 실패 ({}): {e}", joined.display()))?;
+            if !existing_canonical.starts_with(&cwd_canonical) {
+                return Err(format!(
+                    "작업 디렉토리 밖 대상 덮어쓰기 차단: {}",
+                    existing_canonical.display()
+                ));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "기존 대상 경로 검사 실패 ({}): {error}",
+                joined.display()
+            ));
+        }
     }
     fs::write(&joined, content).map_err(|e| e.to_string())
 }
@@ -181,4 +202,20 @@ pub(super) fn read_file(cwd: &Path, rel_path: &str) -> Result<String, String> {
         ));
     }
     fs::read_to_string(&canonical).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bounded_prefix;
+
+    #[test]
+    fn bounded_prefix_never_splits_utf8() {
+        let value = "😊한글".repeat(40_000);
+
+        let (prefix, omitted) = bounded_prefix(&value, 100_000);
+
+        assert!(prefix.len() <= 100_000);
+        assert!(prefix.is_char_boundary(prefix.len()));
+        assert_eq!(prefix.len() + omitted, value.len());
+    }
 }

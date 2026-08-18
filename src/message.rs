@@ -76,7 +76,10 @@ pub(crate) enum Message {
         result: Result<Vec<OpenRouterModel>, String>,
     },
     SelectModel(ModelOption),
-    AccountLoaded(Result<AuthKeyData, String>),
+    AccountLoaded {
+        generation: u64,
+        result: Result<AuthKeyData, String>,
+    },
     FetchAccount,
     InputChanged(String),
     InputAction(text_editor::Action),
@@ -122,7 +125,10 @@ pub(crate) enum Message {
     AskDeleteSession(u64),
     DeleteSession(u64),
     CancelDeleteSession,
-    GenerationLoaded(Result<GenerationData, String>),
+    GenerationLoaded {
+        generation: u64,
+        result: Result<GenerationData, String>,
+    },
     OpenCommandPalette,
     CloseCommandPalette,
     CloseAllOverlays,
@@ -199,8 +205,16 @@ pub(crate) enum Message {
     McpCommandChanged(String),
     AddMcpServer,
     RemoveMcpServer(usize),
-    McpToolsLoaded(String, Vec<mcp::McpTool>),
-    McpToolsFailed(String),
+    McpToolsLoaded {
+        generation: u64,
+        server_name: String,
+        tools: Vec<mcp::McpTool>,
+    },
+    McpToolsFailed {
+        generation: u64,
+        server_name: String,
+        message: String,
+    },
     McpToolResult {
         generation: u64,
         tool_call_id: String,

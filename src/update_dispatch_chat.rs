@@ -41,14 +41,18 @@ impl App {
                 openrouter_result.clone(),
                 tabby_result.clone(),
             )),
-            Message::GenerationLoaded(r) => Some(self.on_generation_loaded(r.clone())),
+            Message::GenerationLoaded { generation, result } => {
+                Some(self.on_generation_loaded(*generation, result.clone()))
+            }
             Message::FetchModels => Some(self.fetch_models_cmd()),
             Message::ModelsLoaded { generation, result } => {
                 Some(self.on_models_loaded(*generation, result.clone()))
             }
             Message::SelectModel(opt) => Some(self.select_model(opt.clone())),
-            Message::FetchAccount => Some(App::fetch_account_cmd()),
-            Message::AccountLoaded(r) => Some(self.on_account_loaded(r.clone())),
+            Message::FetchAccount => Some(self.fetch_account_cmd()),
+            Message::AccountLoaded { generation, result } => {
+                Some(self.on_account_loaded(*generation, result.clone()))
+            }
             _ => None,
         }
     }

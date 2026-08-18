@@ -52,8 +52,8 @@ src/
 - **MCP Input**: `mcp_input: McpInputState` (MCP 서버 이름/명령 입력)
 - **Provider State**: `tabby_url_input`, `tabby_token_input`, `openai_compat_label`, `hf_token_input`
 - **Inference State**: `inference_engine`, `inference_selected_model`, `inference_port_input`, `inference_binary_path`, `inference_generation`
-- **Chat State**: `conversation`, `blocks`, `pending_tool_calls`, `pending_write_calls`, `streaming_block_id`, `stream_generation`, `compare_generation`
-- **MCP Lifecycle State**: `mcp_abort_handle`, `mcp_request_generation`, `mcp_pending_results`
+- **Chat State**: `conversation`, `blocks`, `pending_tool_calls`, `pending_write_calls`, `streaming_block_id`, `stream_generation`, `compare_generation`, `generation_lookup_generation`
+- **MCP Lifecycle State**: `mcp_abort_handle`, `mcp_request_generation`, `mcp_pending_results`, `mcp_pending_call_ids`, `mcp_tool_load_generations`
 - **PTY Lifecycle State**: `pty_session`, `pty_generation`
 - **Session State**: `current_session_id`, `current_session_title`, `inactive_sessions`
 - **Model State**: `model_options`, `selected_model`, `selected_model_provider`, `usage`
@@ -74,7 +74,12 @@ assistant block을 재사용하더라도 generation이 달라지므로, 중지·
 
 MCP tool call도 요청 generation을 함께 전달하며, 한 라운드의 모든 MCP 결과를 받은 뒤에만
 다음 chat stream을 시작합니다. 중지·새 세션·창 닫기에서는 generation을 무효화하고
-abort handle을 취소해 늦은 결과가 새 대화를 재개하지 못하게 합니다.
+abort handle을 취소해 늦은 결과가 새 대화를 재개하지 못하게 합니다. 각 라운드의 tool-call ID는
+비어 있거나 중복된 provider 값을 로컬 고유 ID로 정규화하고, 등록된 pending ID와 일치하는
+결과만 소비합니다. 서버의 tools/list 응답도 서버별 generation과 존재 여부를 확인합니다.
+
+OpenRouter 계정·사용량 조회도 각각 request generation을 포함합니다. API 키 변경, 새 메시지,
+regenerate, compare, 중지 또는 세션 전환 뒤 도착한 이전 응답은 현재 상태를 덮어쓰지 않습니다.
 
 Managed inference runtime 이벤트도 프로세스 generation을 포함합니다. 재시작 뒤 이전
 프로세스의 로그·종료·자동 모델 페치 이벤트가 도착하면 현재 generation과 비교해 폐기하므로,

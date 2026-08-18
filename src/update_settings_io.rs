@@ -82,6 +82,8 @@ impl App {
         match result {
             Ok(()) => {
                 self.has_key = true;
+                self.account_request_generation = self.account_request_generation.saturating_add(1);
+                self.account = None;
                 self.key_input.clear();
                 self.ui.show_settings = false;
                 self.status = "키 저장됨".into();
@@ -102,6 +104,8 @@ impl App {
         match result {
             Ok(()) => {
                 self.has_key = false;
+                self.account_request_generation = self.account_request_generation.saturating_add(1);
+                self.account = None;
                 self.models_request_generation = self.models_request_generation.saturating_add(1);
                 self.models.clear();
                 self.model_ids.clear();

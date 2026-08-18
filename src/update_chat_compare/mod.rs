@@ -58,6 +58,7 @@ impl App {
         }
     }
     pub(crate) fn compare_send_message(&mut self, text: String) -> Task<Message> {
+        self.generation_lookup_generation = self.generation_lookup_generation.saturating_add(1);
         let (openrouter_route, tabby_route) = match self.compare_routes() {
             Ok(v) => v,
             Err(e) => {

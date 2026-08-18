@@ -1,4 +1,5 @@
 use super::*;
+use crate::{LlmProvider, ModelOption};
 use iced::widget::text_editor::{Action, Edit};
 use std::sync::Arc;
 
@@ -126,4 +127,33 @@ fn regenerate_last_returns_early_when_no_user_message() {
     let _ = app.update(Message::RegenerateLast);
 
     assert_eq!(app.status, before_status);
+}
+
+#[test]
+fn send_message_preserves_prompt_whitespace_and_newlines() {
+    let (mut app, _) = App::new();
+    app.model_options = vec![ModelOption {
+        id: "local-model".into(),
+        provider: LlmProvider::OpenAICompat,
+        provider_label: "Ollama".into(),
+        ko_friendly: false,
+        favorite: false,
+        context_length: None,
+        prompt_per_million: Some(0.0),
+        completion_per_million: Some(0.0),
+    }];
+    app.selected_model = Some("local-model".into());
+    app.selected_model_provider = Some(LlmProvider::OpenAICompat);
+    app.tabby_url_input = "http://127.0.0.1:11434".into();
+    app.input = "  code block  \n".into();
+
+    let _ = app.send_message();
+
+    assert_eq!(
+        app.conversation
+            .last()
+            .and_then(|message| message.content.as_deref()),
+        Some("  code block  \n")
+    );
+    assert_eq!(app.blocks[0].body.to_text(), "  code block  \n");
 }

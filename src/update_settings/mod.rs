@@ -51,8 +51,12 @@ impl App {
     }
     pub(crate) fn on_account_loaded(
         &mut self,
+        generation: u64,
         result: Result<openrouter::AuthKeyData, String>,
     ) -> Task<Message> {
+        if generation != self.account_request_generation {
+            return Task::none();
+        }
         if let Ok(data) = result {
             self.account = Some(data);
         }
@@ -127,11 +131,16 @@ impl App {
         }
         Task::none()
     }
-    pub(crate) fn fetch_account_cmd() -> Task<Message> {
+    pub(crate) fn fetch_account_cmd(&mut self) -> Task<Message> {
+        self.account_request_generation = self.account_request_generation.saturating_add(1);
+        let generation = self.account_request_generation;
         let Ok(key) = keystore::read_api_key() else {
+            self.account = None;
             return Task::none();
         };
-        Task::perform(openrouter::get_account_info(key), Message::AccountLoaded)
+        Task::perform(openrouter::get_account_info(key), move |result| {
+            Message::AccountLoaded { generation, result }
+        })
     }
     pub(crate) fn pick_cwd() -> Task<Message> {
         Task::perform(

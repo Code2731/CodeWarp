@@ -117,7 +117,7 @@ impl App {
     }
 
     pub(super) fn build_startup_tasks(
-        &self,
+        &mut self,
         scroll_restore: Option<iced::widget::scrollable::AbsoluteOffset>,
     ) -> Task<Message> {
         let mut tasks: Vec<Task<Message>> = Vec::new();
@@ -133,16 +133,25 @@ impl App {
         }
         for server in self.mcp_servers.clone() {
             let name = server.name.clone();
+            let generation = self.next_mcp_tool_load_generation(&name);
             tasks.push(Task::perform(
                 async move {
                     mcp::list_tools(&server)
                         .await
-                        .map(|tools| (name.clone(), tools))
-                        .map_err(|e| format!("[{name}] {e}"))
+                        .map(|tools| (generation, name.clone(), tools))
+                        .map_err(|e| (generation, name.clone(), format!("[{name}] {e}")))
                 },
                 |r| match r {
-                    Ok((name, tools)) => Message::McpToolsLoaded(name, tools),
-                    Err(msg) => Message::McpToolsFailed(msg),
+                    Ok((generation, server_name, tools)) => Message::McpToolsLoaded {
+                        generation,
+                        server_name,
+                        tools,
+                    },
+                    Err((generation, server_name, message)) => Message::McpToolsFailed {
+                        generation,
+                        server_name,
+                        message,
+                    },
                 },
             ));
         }

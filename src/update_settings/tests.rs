@@ -100,3 +100,41 @@ fn stale_openrouter_models_response_is_ignored_after_new_fetch() {
     assert!(app.models.is_empty());
     assert!(app.model_options.is_empty());
 }
+
+#[test]
+fn stale_account_response_is_ignored_after_key_change() {
+    let (mut app, _) = App::new();
+    app.account_request_generation = 2;
+    app.account = Some(AuthKeyData {
+        usage: Some(1.0),
+        limit: Some(10.0),
+    });
+
+    let _ = app.update(Message::AccountLoaded {
+        generation: 1,
+        result: Ok(AuthKeyData {
+            usage: Some(99.0),
+            limit: Some(100.0),
+        }),
+    });
+
+    assert_eq!(app.account.as_ref().and_then(|data| data.usage), Some(1.0));
+    assert_eq!(app.account_request_generation, 2);
+}
+
+#[test]
+fn current_account_response_updates_account_state() {
+    let (mut app, _) = App::new();
+    app.account_request_generation = 3;
+
+    let _ = app.update(Message::AccountLoaded {
+        generation: 3,
+        result: Ok(AuthKeyData {
+            usage: Some(2.0),
+            limit: Some(20.0),
+        }),
+    });
+
+    assert_eq!(app.account.as_ref().and_then(|data| data.usage), Some(2.0));
+    assert_eq!(app.account.as_ref().and_then(|data| data.limit), Some(20.0));
+}

@@ -130,6 +130,30 @@ fn write_file_overwrites_existing() {
     assert_eq!(fs::read_to_string(tmp.path().join("a.txt")).unwrap(), "new");
 }
 
+#[cfg(unix)]
+#[test]
+fn write_file_rejects_symlink_target_outside_workspace() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let outside_file = outside.path().join("secret.txt");
+    fs::write(&outside_file, "keep").unwrap();
+    symlink(&outside_file, tmp.path().join("link.txt")).unwrap();
+
+    let result = dispatch(
+        "write_file",
+        r#"{"path":"link.txt","content":"overwrite"}"#,
+        tmp.path(),
+    );
+
+    assert!(
+        result.contains("작업 디렉토리 밖 대상 덮어쓰기 차단"),
+        "got: {result}"
+    );
+    assert_eq!(fs::read_to_string(outside_file).unwrap(), "keep");
+}
+
 #[test]
 fn glob_finds_files() {
     let tmp = TempDir::new().unwrap();

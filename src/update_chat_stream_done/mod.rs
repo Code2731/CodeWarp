@@ -79,10 +79,14 @@ impl App {
             && let Some(id) = generation_id
             && let Ok(api_key) = keystore::read_api_key()
         {
-            return Task::perform(
-                openrouter::get_generation(api_key, id),
-                Message::GenerationLoaded,
-            );
+            self.generation_lookup_generation = self.generation_lookup_generation.saturating_add(1);
+            let lookup_generation = self.generation_lookup_generation;
+            return Task::perform(openrouter::get_generation(api_key, id), move |result| {
+                Message::GenerationLoaded {
+                    generation: lookup_generation,
+                    result,
+                }
+            });
         }
         Task::none()
     }

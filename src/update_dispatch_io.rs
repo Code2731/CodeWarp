@@ -11,10 +11,16 @@ impl App {
             Message::McpCommandChanged(v) => Some(self.update_mcp_command_input(v.clone())),
             Message::AddMcpServer => Some(self.add_mcp_server()),
             Message::RemoveMcpServer(idx) => Some(self.remove_mcp_server(*idx)),
-            Message::McpToolsLoaded(server_name, tools) => {
-                Some(self.on_mcp_tools_loaded(server_name, tools.clone()))
-            }
-            Message::McpToolsFailed(msg) => Some(self.on_mcp_tools_failed(msg)),
+            Message::McpToolsLoaded {
+                generation,
+                server_name,
+                tools,
+            } => Some(self.on_mcp_tools_loaded(*generation, server_name, tools.clone())),
+            Message::McpToolsFailed {
+                generation,
+                server_name,
+                message,
+            } => Some(self.on_mcp_tools_failed(*generation, server_name, message)),
             Message::McpToolResult {
                 generation,
                 tool_call_id,

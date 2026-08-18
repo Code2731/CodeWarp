@@ -13,6 +13,7 @@ impl App {
         if !self.conversation.iter().any(|m| m.role == "user") {
             return Task::none();
         }
+        self.generation_lookup_generation = self.generation_lookup_generation.saturating_add(1);
         truncate_after_last_user(std::sync::Arc::make_mut(&mut self.conversation));
         let Some(idx) = last_user_block_idx(&self.blocks) else {
             return Task::none();
@@ -68,11 +69,12 @@ impl App {
         Task::batch(vec![snap_to_end(self.stream_id.clone()), chat_task])
     }
     pub(crate) fn send_message(&mut self) -> Task<Message> {
-        let text = self.input.trim().to_string();
-        if text.is_empty() {
+        let text = self.input.clone();
+        let command = text.trim();
+        if command.is_empty() {
             return Task::none();
         }
-        match text.as_str() {
+        match command {
             "/plan" => {
                 self.agent_mode = AgentMode::Plan;
                 self.input.clear();
@@ -99,6 +101,7 @@ impl App {
         if self.ui.compare_both {
             return self.compare_send_message(text);
         }
+        self.generation_lookup_generation = self.generation_lookup_generation.saturating_add(1);
         let (base_url, api_key) = match self.resolve_provider() {
             Ok(v) => v,
             Err(e) => {

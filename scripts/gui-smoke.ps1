@@ -137,6 +137,23 @@ try {
     )
     Start-Sleep -Milliseconds 250
 
+    Set-Clipboard -Value "ab"
+    [CodeWarpGuiSmokeNative]::CtrlKey(0x56)
+    [CodeWarpGuiSmokeNative]::Key(0x25)
+    Set-Clipboard -Value "X"
+    [CodeWarpGuiSmokeNative]::CtrlKey(0x56)
+    Start-Sleep -Milliseconds 400
+    [CodeWarpGuiSmokeNative]::CtrlKey(0x41)
+    [CodeWarpGuiSmokeNative]::CtrlKey(0x43)
+    Start-Sleep -Milliseconds 200
+
+    $cursorRoundTrip = Get-Clipboard -Raw
+    if ($cursorRoundTrip -cne "aXb") {
+        throw ("GUI cursor edit mismatch: expected [aXb], got [" + $cursorRoundTrip + "]")
+    }
+    [CodeWarpGuiSmokeNative]::Key(0x08)
+    Start-Sleep -Milliseconds 200
+
     $probe = [string]::Concat(
         [char]0xD55C, [char]0xAE00, " ",
         [char]0xC785, [char]0xB825, " ",
@@ -156,7 +173,7 @@ try {
         throw ("GUI text round-trip mismatch: expected [" + $probe + "], got [" + $roundTrip + "]")
     }
 
-    Write-Host "GUI smoke passed: Unicode paste, newline, and text order preserved."
+    Write-Host "GUI smoke passed: cursor editing, Unicode paste, newline, and text order preserved."
 }
 finally {
     if ($null -ne $process) {

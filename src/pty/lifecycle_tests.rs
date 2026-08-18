@@ -76,7 +76,7 @@ fn fixture_command(
 
 fn foreground_command() -> &'static str {
     if cfg!(windows) {
-        "ping -t 127.0.0.1 >NUL"
+        "\"%SystemRoot%\\System32\\ping.exe\" -t 127.0.0.1"
     } else {
         "while :; do sleep 1; done"
     }
@@ -168,7 +168,11 @@ async fn ctrl_c_interrupts_foreground_command_and_keeps_fixture_shell_usable_rep
     // When
     for (command, expected_output) in usability_checks() {
         session.write_line(foreground_command());
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        if cfg!(windows) {
+            next_line_containing(&mut stream, "Ping ").await;
+        } else {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
         session.ctrl_c();
         tokio::time::sleep(Duration::from_millis(300)).await;
         session.write_line(command);

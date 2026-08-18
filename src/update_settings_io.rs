@@ -102,6 +102,7 @@ impl App {
         match result {
             Ok(()) => {
                 self.has_key = false;
+                self.models_request_generation = self.models_request_generation.saturating_add(1);
                 self.models.clear();
                 self.model_ids.clear();
                 self.selected_model = None;

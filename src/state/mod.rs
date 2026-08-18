@@ -47,6 +47,7 @@ pub(crate) struct App {
     pub(crate) window_width: f32,
     pub(crate) models: Vec<OpenRouterModel>,
     pub(crate) model_ids: Vec<String>,
+    pub(crate) models_request_generation: u64,
     pub(crate) selected_model: Option<String>,
     pub(crate) selected_model_provider: Option<LlmProvider>,
     pub(crate) blocks: Vec<Block>,

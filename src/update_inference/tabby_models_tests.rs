@@ -103,7 +103,10 @@ fn saved_shared_model_prefers_tabby_when_tabby_url_is_set() {
     app.tabby_url_input = "http://localhost:5000".into();
     app.model_options = vec![or_opt("shared-model")];
 
-    let _ = app.update(Message::TabbyModelsLoaded(Ok(vec!["shared-model".into()])));
+    let _ = app.update(Message::TabbyModelsLoaded {
+        generation: 0,
+        result: Ok(vec!["shared-model".into()]),
+    });
 
     assert_eq!(app.selected_model_provider, Some(LlmProvider::OpenAICompat));
 }
@@ -115,10 +118,10 @@ fn tabby_models_loaded_selects_first_local_model() {
     app.selected_model = Some("openrouter-model".into());
     app.openai_compat_label = "TabbyAPI".into();
 
-    let _ = app.update(Message::TabbyModelsLoaded(Ok(vec![
-        "tabby-a".into(),
-        "tabby-b".into(),
-    ])));
+    let _ = app.update(Message::TabbyModelsLoaded {
+        generation: 0,
+        result: Ok(vec!["tabby-a".into(), "tabby-b".into()]),
+    });
 
     assert_eq!(app.selected_model.as_deref(), Some("tabby-a"));
     assert!(
@@ -144,12 +147,15 @@ fn openrouter_models_loaded_preserves_existing_tabby_selection() {
     app.selected_model = Some("tabby-a".into());
     app.tabby_url_input = "http://localhost:5000".into();
 
-    let _ = app.update(Message::ModelsLoaded(Ok(vec![OpenRouterModel {
-        id: "openrouter-a".into(),
-        name: None,
-        context_length: None,
-        pricing: None,
-    }])));
+    let _ = app.update(Message::ModelsLoaded {
+        generation: 0,
+        result: Ok(vec![OpenRouterModel {
+            id: "openrouter-a".into(),
+            name: None,
+            context_length: None,
+            pricing: None,
+        }]),
+    });
 
     assert_eq!(app.selected_model.as_deref(), Some("tabby-a"));
     assert!(
@@ -166,12 +172,15 @@ fn openrouter_models_loaded_waits_for_tabby_when_saved_selection_not_loaded_yet(
     app.selected_model = Some("tabby-a".into());
     app.tabby_url_input = "http://localhost:5000".into();
 
-    let _ = app.update(Message::ModelsLoaded(Ok(vec![OpenRouterModel {
-        id: "openrouter-a".into(),
-        name: None,
-        context_length: None,
-        pricing: None,
-    }])));
+    let _ = app.update(Message::ModelsLoaded {
+        generation: 0,
+        result: Ok(vec![OpenRouterModel {
+            id: "openrouter-a".into(),
+            name: None,
+            context_length: None,
+            pricing: None,
+        }]),
+    });
 
     assert_eq!(app.selected_model.as_deref(), Some("tabby-a"));
 }

@@ -59,6 +59,8 @@ impl App {
         Task::none()
     }
     pub(crate) fn fetch_models_cmd(&mut self) -> Task<Message> {
+        self.models_request_generation = self.models_request_generation.saturating_add(1);
+        let generation = self.models_request_generation;
         let key = match keystore::read_api_key() {
             Ok(k) => k,
             Err(e) => {
@@ -68,12 +70,18 @@ impl App {
         };
         self.busy = true;
         self.status = "모델 리스트 가져오는 중…".into();
-        Task::perform(openrouter::list_models(key), Message::ModelsLoaded)
+        Task::perform(openrouter::list_models(key), move |result| {
+            Message::ModelsLoaded { generation, result }
+        })
     }
     pub(crate) fn on_models_loaded(
         &mut self,
+        generation: u64,
         result: Result<Vec<openrouter::OpenRouterModel>, String>,
     ) -> Task<Message> {
+        if generation != self.models_request_generation {
+            return Task::none();
+        }
         self.busy = false;
         match result {
             Ok(models) => {

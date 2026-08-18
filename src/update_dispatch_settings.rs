@@ -35,7 +35,9 @@ impl App {
             Message::ClearTabby => Some(self.clear_tabby_settings()),
             Message::FetchTabbyModels => Some(self.fetch_tabby_models()),
             Message::FetchTabbyModelsRetry(generation) => Some(self.retry_fetch_tabby_models(*generation)),
-            Message::TabbyModelsLoaded(r) => Some(self.on_tabby_models_loaded(r.clone())),
+            Message::TabbyModelsLoaded { generation, result } => {
+                Some(self.on_tabby_models_loaded(*generation, result.clone()))
+            }
             _ => None,
         }
     }

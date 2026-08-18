@@ -37,7 +37,9 @@ impl App {
             )),
             Message::GenerationLoaded(r) => Some(self.on_generation_loaded(r.clone())),
             Message::FetchModels => Some(self.fetch_models_cmd()),
-            Message::ModelsLoaded(r) => Some(self.on_models_loaded(r.clone())),
+            Message::ModelsLoaded { generation, result } => {
+                Some(self.on_models_loaded(*generation, result.clone()))
+            }
             Message::SelectModel(opt) => Some(self.select_model(opt.clone())),
             Message::FetchAccount => Some(App::fetch_account_cmd()),
             Message::AccountLoaded(r) => Some(self.on_account_loaded(r.clone())),

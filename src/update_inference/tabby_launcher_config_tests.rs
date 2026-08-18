@@ -65,9 +65,10 @@ fn tabby_models_loaded_error_decrements_auto_retry_while_runtime_alive() {
     app.tabby_url_input = "http://localhost:5000".into();
     app.tabby_connect_retry_left = 2;
 
-    let _ = app.update(Message::TabbyModelsLoaded(
-        Err("operation timed out".into()),
-    ));
+    let _ = app.update(Message::TabbyModelsLoaded {
+        generation: 0,
+        result: Err("operation timed out".into()),
+    });
 
     assert_eq!(app.tabby_connect_retry_left, 1);
     assert!(app.status.contains("자동 재시도"), "got: {}", app.status);
@@ -83,9 +84,10 @@ fn tabby_models_loaded_error_without_retry_budget_reports_failure() {
     app.tabby_url_input = "http://localhost:5000".into();
     app.tabby_connect_retry_left = 0;
 
-    let _ = app.update(Message::TabbyModelsLoaded(
-        Err("operation timed out".into()),
-    ));
+    let _ = app.update(Message::TabbyModelsLoaded {
+        generation: 0,
+        result: Err("operation timed out".into()),
+    });
 
     assert_eq!(app.tabby_connect_retry_left, 0);
     assert!(app.status.contains("연결 실패"), "got: {}", app.status);

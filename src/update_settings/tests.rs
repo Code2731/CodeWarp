@@ -64,3 +64,39 @@ fn clear_tabby_invalidates_retry_generation() {
     assert!(app.tabby_url_input.is_empty());
     assert!(app.tabby_token_input.is_empty());
 }
+
+#[test]
+fn stale_tabby_models_response_is_ignored_after_settings_change() {
+    let (mut app, _) = App::new();
+    app.tabby_retry_generation = 4;
+    app.status = "keep".into();
+
+    let _ = app.update(Message::TabbyModelsLoaded {
+        generation: 3,
+        result: Ok(vec!["old-model".into()]),
+    });
+
+    assert_eq!(app.status, "keep");
+    assert!(app.model_options.is_empty());
+}
+
+#[test]
+fn stale_openrouter_models_response_is_ignored_after_new_fetch() {
+    let (mut app, _) = App::new();
+    app.models_request_generation = 2;
+    app.status = "keep".into();
+
+    let _ = app.update(Message::ModelsLoaded {
+        generation: 1,
+        result: Ok(vec![OpenRouterModel {
+            id: "old-model".into(),
+            name: None,
+            context_length: None,
+            pricing: None,
+        }]),
+    });
+
+    assert_eq!(app.status, "keep");
+    assert!(app.models.is_empty());
+    assert!(app.model_options.is_empty());
+}

@@ -46,6 +46,7 @@ impl App {
             window_width: 1280.0,
             models: Vec::new(),
             model_ids: Vec::new(),
+            models_request_generation: 0,
             selected_model: saved_model,
             selected_model_provider: None,
             blocks: Vec::new(),

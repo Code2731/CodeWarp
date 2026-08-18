@@ -13,13 +13,16 @@ impl App {
             self.tabby_status = Some(Err("URL 비어있음".into()));
             return Task::none();
         }
+        let generation = self.tabby_retry_generation;
         let token = if self.tabby_token_input.trim().is_empty() {
             None
         } else {
             Some(self.tabby_token_input.clone())
         };
         self.status = "Tabby 모델 가져오는 중…".into();
-        Task::perform(tabby::list_models(url, token), Message::TabbyModelsLoaded)
+        Task::perform(tabby::list_models(url, token), move |result| {
+            Message::TabbyModelsLoaded { generation, result }
+        })
     }
     pub(crate) fn retry_fetch_tabby_models(&mut self, generation: u64) -> Task<Message> {
         if generation != self.tabby_retry_generation {
@@ -30,18 +33,28 @@ impl App {
             self.tabby_status = Some(Err("URL 비어있음".into()));
             return Task::none();
         }
+        let current_generation = self.tabby_retry_generation;
         let token = if self.tabby_token_input.trim().is_empty() {
             None
         } else {
             Some(self.tabby_token_input.clone())
         };
         self.status = "Tabby 모델 재시도 중…".into();
-        Task::perform(tabby::list_models(url, token), Message::TabbyModelsLoaded)
+        Task::perform(tabby::list_models(url, token), move |result| {
+            Message::TabbyModelsLoaded {
+                generation: current_generation,
+                result,
+            }
+        })
     }
     pub(crate) fn on_tabby_models_loaded(
         &mut self,
+        generation: u64,
         result: Result<Vec<String>, String>,
     ) -> Task<Message> {
+        if generation != self.tabby_retry_generation {
+            return Task::none();
+        }
         self.model_options
             .retain(|o| o.provider != LlmProvider::OpenAICompat);
         match result {

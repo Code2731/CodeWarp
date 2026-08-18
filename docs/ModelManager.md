@@ -35,14 +35,14 @@ The selector text is formatted by provider:
 #### OpenRouter models
 
 1. `Message::FetchModels` calls `openrouter::list_models`.
-2. `Message::ModelsLoaded(Ok(models))` removes old OpenRouter options and repopulates `model_options` with fresh OpenRouter entries.
+2. `Message::ModelsLoaded { generation, result: Ok(models) }` removes old OpenRouter options and repopulates `model_options` with fresh OpenRouter entries only when the request generation is still current.
 3. Pricing/context are mapped into `ModelOption`.
 4. `refresh_model_combo()` rebuilds combo-box state using active filters/sort.
 
 #### OpenAI-compatible endpoint models (Tabby-style/local endpoint)
 
 1. `Message::FetchTabbyModels` / `FetchTabbyModelsRetry` calls `tabby::list_models(base_url, token)`.
-2. `Message::TabbyModelsLoaded(Ok(ids))` removes previous OpenAICompat options and inserts current IDs as OpenAICompat entries.
+2. `Message::TabbyModelsLoaded { generation, result: Ok(ids) }` removes previous OpenAICompat options and inserts current IDs as OpenAICompat entries only when the request generation is still current.
 3. Those entries are marked as `free` (`prompt_per_million = 0`, `completion_per_million = 0`).
 4. Provider tag comes from `openai_compat_label` (`[TabbyAPI]`, `[TabbyML]`, etc.).
 5. `refresh_model_combo()` rebuilds the visible selector list.
@@ -169,7 +169,7 @@ Runtime orchestration is handled in `src/update.rs` with `InferenceEngine::Tabby
    - If temporarily unreachable, retry loop runs (generation-safe retries with delay/count guard).
 
 7. **Endpoint ready**
-   - On `TabbyModelsLoaded(Ok(ids))`, OpenAICompat model options are populated and selector is refreshed.
+   - On a current-generation `TabbyModelsLoaded { result: Ok(ids), .. }`, OpenAICompat model options are populated and selector is refreshed; stale responses are ignored after URL/token changes.
    - Status becomes connected, and a local model may become selected if current selection is not local.
 
 ### `tabby::list_models` endpoint compatibility

@@ -71,7 +71,10 @@ pub(crate) enum Message {
     ClearKey,
     KeyCleared(Result<(), String>),
     FetchModels,
-    ModelsLoaded(Result<Vec<OpenRouterModel>, String>),
+    ModelsLoaded {
+        generation: u64,
+        result: Result<Vec<OpenRouterModel>, String>,
+    },
     SelectModel(ModelOption),
     AccountLoaded(Result<AuthKeyData, String>),
     FetchAccount,
@@ -147,7 +150,10 @@ pub(crate) enum Message {
     ClearTabby,
     FetchTabbyModels,
     FetchTabbyModelsRetry(u64),
-    TabbyModelsLoaded(Result<Vec<String>, String>),
+    TabbyModelsLoaded {
+        generation: u64,
+        result: Result<Vec<String>, String>,
+    },
     HfTokenChanged(String),
     ToggleHfTokenVisible,
     SaveHfToken,

@@ -11,17 +11,34 @@ use crate::test_support::process_fixture::{
 const TEST_DEADLINES: PtyDeadlines =
     PtyDeadlines::new(Duration::from_millis(300), Duration::from_millis(300));
 
-async fn next_line_containing(
+async fn next_output_containing(
     stream: &mut (impl Stream<Item = PtyEvent> + Unpin),
     needle: &str,
 ) -> String {
     let mut seen = Vec::new();
+    let mut pending = String::new();
+    let keep_chars = needle.chars().count().max(1);
     let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
     loop {
         tokio::select! {
             event = stream.next() => match event {
-                Some(PtyEvent::Line(line)) if line.contains(needle) => return line,
-                Some(PtyEvent::Line(line)) => seen.push(line),
+                Some(PtyEvent::Line(line)) => {
+                    pending.push_str(&line);
+                    if pending.contains(needle) {
+                        return pending;
+                    }
+                    if pending.chars().count() > keep_chars.saturating_mul(2).max(256) {
+                        pending = pending
+                            .chars()
+                            .rev()
+                            .take(keep_chars)
+                            .collect::<String>()
+                            .chars()
+                            .rev()
+                            .collect();
+                    }
+                    seen.push(line);
+                }
                 Some(PtyEvent::Exited) => {
                     panic!("PTY exited before output contained {needle}; output: {seen:?}")
                 }
@@ -76,7 +93,7 @@ fn fixture_command(
 
 fn foreground_command() -> &'static str {
     if cfg!(windows) {
-        "\"%SystemRoot%\\System32\\ping.exe\" -t 127.0.0.1"
+        "echo CODEWARP_FOREGROUND_READY & \"%SystemRoot%\\System32\\ping.exe\" -t 127.0.0.1"
     } else {
         "while :; do sleep 1; done"
     }
@@ -159,13 +176,13 @@ async fn ctrl_c_interrupts_foreground_command_and_keeps_fixture_shell_usable_rep
         .expect("spawn interactive PTY fixture");
     let owned_pid = session.pid().expect("owned PTY PID");
     futures_util::pin_mut!(stream);
-    next_line_containing(&mut stream, "fixture-shell-ready").await;
+    next_output_containing(&mut stream, "fixture-shell-ready").await;
 
     // When
     for (command, expected_output) in usability_checks() {
         session.write_line(foreground_command());
         if cfg!(windows) {
-            next_line_containing(&mut stream, "Ping ").await;
+            next_output_containing(&mut stream, "CODEWARP_FOREGROUND_READY").await;
         } else {
             tokio::time::sleep(Duration::from_millis(150)).await;
         }
@@ -174,7 +191,7 @@ async fn ctrl_c_interrupts_foreground_command_and_keeps_fixture_shell_usable_rep
         session.write_line(command);
 
         // Then
-        next_line_containing(&mut stream, expected_output).await;
+        next_output_containing(&mut stream, expected_output).await;
     }
 
     let receipt = session.shutdown().await.expect("close interactive PTY");
@@ -211,7 +228,7 @@ async fn ignored_graceful_shutdown_is_force_reaped_after_production_deadline() {
     futures_util::pin_mut!(stream);
     wait_for_fixture_pid(&pid_path, owned_pid).await;
     #[cfg(not(windows))]
-    next_line_containing(&mut stream, "FIXTURE_READY mode=ignore-shutdown").await;
+    next_output_containing(&mut stream, "FIXTURE_READY mode=ignore-shutdown").await;
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert!(
         process_is_running(owned_pid),
@@ -258,7 +275,7 @@ async fn normal_exit_is_reaped_and_a_new_fixture_can_restart() {
     let (first, first_stream) = spawn_pty_command(root.path(), first_command, TEST_DEADLINES)
         .expect("spawn first PTY fixture");
     futures_util::pin_mut!(first_stream);
-    next_line_containing(&mut first_stream, "fixture-shell-ready").await;
+    next_output_containing(&mut first_stream, "fixture-shell-ready").await;
 
     // When
     let (exit_command, final_output) = final_output_and_exit_command();
@@ -270,7 +287,7 @@ async fn normal_exit_is_reaped_and_a_new_fixture_can_restart() {
     let (second, second_stream) = spawn_pty_command(root.path(), second_command, TEST_DEADLINES)
         .expect("restart PTY fixture");
     futures_util::pin_mut!(second_stream);
-    next_line_containing(&mut second_stream, "fixture-shell-ready").await;
+    next_output_containing(&mut second_stream, "fixture-shell-ready").await;
     let second_receipt = second
         .shutdown()
         .await

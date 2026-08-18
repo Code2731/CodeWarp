@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 use portable_pty::{Child, MasterPty};
 
 use super::lifecycle;
+#[cfg(windows)]
+use super::windows;
 use super::{PtyDeadlines, PtyReceipt};
 
 #[derive(Clone)]
@@ -54,7 +56,21 @@ impl PtySession {
     }
 
     pub(crate) fn ctrl_c(&self) {
+        #[cfg(windows)]
+        let child_processes = self
+            .pid()
+            .map(windows::capture_direct_children)
+            .unwrap_or_default();
         self.write_bytes(&[0x03]);
+        #[cfg(windows)]
+        if !child_processes.is_empty() {
+            // ConPTY can occasionally drop the byte signal; stop only the
+            // foreground child snapshot after a short grace period.
+            drop(std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                windows::terminate_children(child_processes);
+            }));
+        }
     }
 
     pub(crate) fn pid(&self) -> Option<u32> {

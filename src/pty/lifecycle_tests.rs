@@ -146,10 +146,6 @@ fn fixture_pid(mode: ProcessFixtureMode, pid_path: &std::path::Path, owned_pid: 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[cfg_attr(
-    windows,
-    ignore = "ConPTY Ctrl+C delivery is not reliable with portable-pty on this Windows runtime"
-)]
-#[cfg_attr(
     target_os = "linux",
     ignore = "POSIX PTY Ctrl+C and process-group delivery is not reliable on the CI runner"
 )]

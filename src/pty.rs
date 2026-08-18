@@ -9,6 +9,8 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 mod lifecycle;
 mod output;
 mod session;
+#[cfg(windows)]
+mod windows;
 
 pub(crate) use lifecycle::{PRODUCTION_DEADLINES, PtyDeadlines, PtyReceipt};
 pub(crate) use session::{PtySession, PtyShutdownFailure};

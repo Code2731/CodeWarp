@@ -117,7 +117,7 @@ The GitHub Actions workflow now uses this harness:
 
 The test process is intentionally single-threaded because the Windows ConPTY and external-process fixtures are not safe to run concurrently. This keeps local and CI behavior aligned through a shared execution path.
 
-The Windows ConPTY Ctrl+C end-to-end case is intentionally ignored in automated runs because `portable-pty` does not reliably deliver the signal on the current runtime. Graceful force-reap and PTY restart remain automated; interactive Ctrl+C delivery is a manual QA item until the runtime behavior is stable.
+The Windows ConPTY and Linux POSIX PTY Ctrl+C end-to-end case is intentionally ignored in automated runs because `portable-pty` does not reliably deliver the signal or process-group cleanup on the current runtimes. Graceful force-reap and PTY restart remain automated; interactive Ctrl+C delivery is a manual QA item until the runtime behavior is stable.
 
 ### Manual release acceptance
 
@@ -128,7 +128,7 @@ Run the packaged Windows binary and record the result for each item before calli
 - Start a compare request, switch sessions, create a new chat, delete the current session, and stop the request; verify no stale placeholder or diff remains.
 - Start an MCP/PTY-backed action, cancel it, restart it, and close the window; verify owned processes are reaped and the next run can start cleanly.
 - After an unclean close, relaunch and verify session recovery status, backup fallback behavior, and the persisted conversation.
-- On the current Windows runtime, test interactive PTY Ctrl+C separately and record it as manual QA until `portable-pty` delivers the signal reliably.
+- On the current Windows and Linux runtimes, test interactive PTY Ctrl+C separately and record it as manual QA until `portable-pty` delivers the signal and process-group cleanup reliably.
 
 ## Git Hooks (Recommended)
 

@@ -12,6 +12,7 @@ jobs:
   harness:
     name: verified harness (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -38,6 +39,7 @@ jobs:
   clippy:
     name: harness clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux system deps
@@ -56,6 +58,7 @@ jobs:
     name: release smoke (${{ matrix.os }})
     needs: [harness, clippy]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

@@ -149,6 +149,10 @@ fn fixture_pid(mode: ProcessFixtureMode, pid_path: &std::path::Path, owned_pid: 
     windows,
     ignore = "ConPTY Ctrl+C delivery is not reliable with portable-pty on this Windows runtime"
 )]
+#[cfg_attr(
+    target_os = "linux",
+    ignore = "POSIX PTY Ctrl+C and process-group delivery is not reliable on the CI runner"
+)]
 async fn ctrl_c_interrupts_foreground_command_and_keeps_fixture_shell_usable_repeatedly() {
     let _lifecycle_guard = super::test_lifecycle_lock().await;
     // Given

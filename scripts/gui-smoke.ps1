@@ -36,7 +36,22 @@ public static class CodeWarpGuiSmokeNative {
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
+    public static extern IntPtr SetFocus(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    public static extern bool AttachThreadInput(uint attach, uint attachTo, bool attachState);
+
+    [DllImport("user32.dll")]
+    public static extern bool BringWindowToTop(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int command);
@@ -67,6 +82,22 @@ public static class CodeWarpGuiSmokeNative {
         mouse_event(2, 0, 0, 0, UIntPtr.Zero);
         mouse_event(4, 0, 0, 0, UIntPtr.Zero);
     }
+
+    public static bool FocusWindow(IntPtr hWnd) {
+        var currentThread = GetCurrentThreadId();
+        var foreground = GetForegroundWindow();
+        var foregroundThread = GetWindowThreadProcessId(foreground, IntPtr.Zero);
+        var attached = foregroundThread != 0 && foregroundThread != currentThread
+            && AttachThreadInput(currentThread, foregroundThread, true);
+        ShowWindow(hWnd, 9);
+        BringWindowToTop(hWnd);
+        SetForegroundWindow(hWnd);
+        SetFocus(hWnd);
+        if (attached) {
+            AttachThreadInput(currentThread, foregroundThread, false);
+        }
+        return GetForegroundWindow() == hWnd;
+    }
 }
 "@
 }
@@ -90,8 +121,7 @@ try {
         throw "CodeWarp window bounds could not be read"
     }
 
-    [CodeWarpGuiSmokeNative]::ShowWindow($handle, 9) | Out-Null
-    [CodeWarpGuiSmokeNative]::SetForegroundWindow($handle) | Out-Null
+    [CodeWarpGuiSmokeNative]::FocusWindow($handle) | Out-Null
     Start-Sleep -Milliseconds 300
     if ([CodeWarpGuiSmokeNative]::GetForegroundWindow() -ne $handle) {
         throw "CodeWarp window is not foreground; run this smoke test on an interactive Windows desktop"

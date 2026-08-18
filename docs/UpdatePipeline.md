@@ -81,18 +81,23 @@ Message::KeySaved(result) => {
 
 ### Stream Pattern
 
-Chat streams use `Task::run` for continuous token delivery:
+Chat streams use `Task::run` for continuous token delivery. Each task captures
+the assistant block ID it owns so late events from a stopped or replaced stream
+cannot mutate the current conversation:
 
 ```rust
 Message::Send => {
     // ... setup conversation, blocks ...
     Task::run(
         provider.chat_stream(conversation, model, tools),
-        Message::ChatChunk,
+        move |event| Message::ChatChunk { block_id, event },
     )
 }
 
-Message::ChatChunk(event) => {
+Message::ChatChunk { block_id, event } => {
+    if self.streaming_block_id != Some(block_id) {
+        return Task::none();
+    }
     match event {
         ChatEvent::Token(text) => { /* append to assistant block */ }
         ChatEvent::Done => { /* finalize */ }

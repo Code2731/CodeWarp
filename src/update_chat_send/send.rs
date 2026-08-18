@@ -56,7 +56,10 @@ impl App {
                 messages,
                 self.tool_definitions_for_selected_model(),
             ),
-            Message::ChatChunk,
+            move |event| Message::ChatChunk {
+                block_id: ai_id,
+                event,
+            },
         )
         .abortable();
         self.abort_handle = Some(handle);
@@ -156,7 +159,10 @@ impl App {
                 messages,
                 self.tool_definitions_for_selected_model(),
             ),
-            Message::ChatChunk,
+            move |event| Message::ChatChunk {
+                block_id: ai_id,
+                event,
+            },
         )
         .abortable();
         self.abort_handle = Some(handle);

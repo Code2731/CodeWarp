@@ -65,7 +65,9 @@ CodeWarp는 Tokio 런타임을 사용하며, Iced의 `Task` 추상화와 통합�
 - `Task::perform(async_fn, msg_fn)` — 비동기 함수 실행 후 결과를 Message로 변환
 - `Task::run(stream, msg_fn)` — 스트림에서 이벤트를 수신하여 Message로 변환
 
-채팅 스트림은 `Task::run`으로 SSE 이벤트를 수신하고 `Message::ChatChunk`로 토큰을 전달합니다.
+채팅 스트림은 `Task::run`으로 SSE 이벤트를 수신하고, 소유 assistant block ID를 포함한
+`Message::ChatChunk`로 토큰을 전달합니다. 중지·세션 전환 뒤 늦게 도착한 이전 스트림
+이벤트는 현재 block ID와 일치하지 않으면 폐기합니다.
 
 ## Update Pipeline
 

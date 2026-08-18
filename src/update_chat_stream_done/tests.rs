@@ -18,10 +18,13 @@ fn chat_chunk_done_builds_content_from_streaming_raw() {
     });
     app.streaming_raw = "hello world".into();
 
-    let _ = app.update(Message::ChatChunk(ChatEvent::Done {
-        finish_reason: Some("stop".into()),
-        generation_id: None,
-    }));
+    let _ = app.update(Message::ChatChunk {
+        block_id: 42,
+        event: ChatEvent::Done {
+            finish_reason: Some("stop".into()),
+            generation_id: None,
+        },
+    });
 
     assert_eq!(app.blocks[0].body.to_text(), "hello world");
     assert!(!app.blocks[0].md_items.is_empty());
@@ -48,10 +51,13 @@ fn chat_chunk_done_empty_streaming_raw_shows_warning() {
     });
     app.streaming_raw = String::new();
 
-    let _ = app.update(Message::ChatChunk(ChatEvent::Done {
-        finish_reason: Some("stop".into()),
-        generation_id: None,
-    }));
+    let _ = app.update(Message::ChatChunk {
+        block_id: 42,
+        event: ChatEvent::Done {
+            finish_reason: Some("stop".into()),
+            generation_id: None,
+        },
+    });
 
     assert_eq!(app.blocks[0].body.to_text(), "[WARN] empty response");
     assert!(app.conversation.is_empty());
@@ -75,7 +81,10 @@ fn chat_chunk_error_appends_to_streaming_raw() {
     app.streaming_raw = "partial text".into();
     app.mid_stream_retries = MAX_MID_STREAM_RETRIES;
 
-    let _ = app.update(Message::ChatChunk(ChatEvent::Error("server error".into())));
+    let _ = app.update(Message::ChatChunk {
+        block_id: 42,
+        event: ChatEvent::Error("server error".into()),
+    });
 
     assert!(app.blocks[0].body.to_text().contains("partial text"));
     assert!(
@@ -103,7 +112,10 @@ fn chat_chunk_error_empty_streaming_raw() {
         apply_candidates: Vec::new(),
     });
 
-    let _ = app.update(Message::ChatChunk(ChatEvent::Error("server error".into())));
+    let _ = app.update(Message::ChatChunk {
+        block_id: 42,
+        event: ChatEvent::Error("server error".into()),
+    });
 
     assert!(
         app.blocks[0]
@@ -132,9 +144,10 @@ fn mid_stream_error_triggers_retry() {
     app.streaming_raw = "partial text".into();
     app.mid_stream_retries = 0;
 
-    let _ = app.update(Message::ChatChunk(ChatEvent::Error(
-        "connection dropped".into(),
-    )));
+    let _ = app.update(Message::ChatChunk {
+        block_id: 42,
+        event: ChatEvent::Error("connection dropped".into()),
+    });
 
     assert_eq!(app.mid_stream_retries, 1);
     assert!(app.blocks[0].body.to_text().is_empty());
@@ -159,9 +172,10 @@ fn mid_stream_error_retries_exhausted() {
     app.streaming_raw = "partial text".into();
     app.mid_stream_retries = MAX_MID_STREAM_RETRIES;
 
-    let _ = app.update(Message::ChatChunk(ChatEvent::Error(
-        "connection dropped".into(),
-    )));
+    let _ = app.update(Message::ChatChunk {
+        block_id: 42,
+        event: ChatEvent::Error("connection dropped".into()),
+    });
 
     assert!(
         app.blocks[0]
@@ -191,9 +205,10 @@ fn mid_stream_error_401_not_retried() {
     app.streaming_raw = "partial text".into();
     app.mid_stream_retries = 0;
 
-    let _ = app.update(Message::ChatChunk(ChatEvent::Error(
-        "OpenRouter 401 unauthorized".into(),
-    )));
+    let _ = app.update(Message::ChatChunk {
+        block_id: 42,
+        event: ChatEvent::Error("OpenRouter 401 unauthorized".into()),
+    });
 
     assert!(app.blocks[0].body.to_text().contains("[ERROR]"));
     assert_eq!(app.mid_stream_retries, 0);
@@ -229,9 +244,12 @@ fn local_provider_auth_error_is_not_retried_or_labeled_openrouter() {
     app.streaming_raw = "partial text".into();
     app.mid_stream_retries = 0;
 
-    let _ = app.update(Message::ChatChunk(ChatEvent::Error(
-        "OpenAI-compatible provider 401 Unauthorized: token missing".into(),
-    )));
+    let _ = app.update(Message::ChatChunk {
+        block_id: 42,
+        event: ChatEvent::Error(
+            "OpenAI-compatible provider 401 Unauthorized: token missing".into(),
+        ),
+    });
 
     assert_eq!(app.mid_stream_retries, 0);
     assert!(app.status.contains("인증 실패"), "status: {}", app.status);

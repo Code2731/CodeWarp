@@ -3,10 +3,11 @@ use super::{App, ChatEvent, Message, PendingToolCall, snap_to_end};
 use iced::Task;
 
 impl App {
-    pub(crate) fn on_chat_chunk(&mut self, event: ChatEvent) -> Task<Message> {
-        let Some(ai_id) = self.streaming_block_id else {
+    pub(crate) fn on_chat_chunk(&mut self, block_id: u64, event: ChatEvent) -> Task<Message> {
+        if self.streaming_block_id != Some(block_id) {
             return Task::none();
-        };
+        }
+        let ai_id = block_id;
         match event {
             ChatEvent::Token(t) => {
                 self.append_assistant_block_text(ai_id, &t);
@@ -72,8 +73,14 @@ mod tests {
             apply_candidates: Vec::new(),
         });
 
-        let _ = app.update(Message::ChatChunk(ChatEvent::Token("hel".into())));
-        let _ = app.update(Message::ChatChunk(ChatEvent::Token("lo".into())));
+        let _ = app.update(Message::ChatChunk {
+            block_id: 42,
+            event: ChatEvent::Token("hel".into()),
+        });
+        let _ = app.update(Message::ChatChunk {
+            block_id: 42,
+            event: ChatEvent::Token("lo".into()),
+        });
 
         assert_eq!(app.streaming_raw, "hello");
     }
@@ -95,15 +102,21 @@ mod tests {
         });
 
         for token in ["첫 ", "응답 ", "😊\n", "완료"] {
-            let _ = app.update(Message::ChatChunk(ChatEvent::Token(token.into())));
+            let _ = app.update(Message::ChatChunk {
+                block_id: 42,
+                event: ChatEvent::Token(token.into()),
+            });
         }
 
         assert_eq!(app.streaming_raw, "첫 응답 😊\n완료");
 
-        let _ = app.update(Message::ChatChunk(ChatEvent::Done {
-            finish_reason: Some("stop".into()),
-            generation_id: None,
-        }));
+        let _ = app.update(Message::ChatChunk {
+            block_id: 42,
+            event: ChatEvent::Done {
+                finish_reason: Some("stop".into()),
+                generation_id: None,
+            },
+        });
 
         assert_eq!(app.blocks[0].body.to_text(), "첫 응답 😊\n완료");
         assert_eq!(
@@ -130,11 +143,47 @@ mod tests {
             apply_candidates: Vec::new(),
         });
 
-        let _ = app.update(Message::ChatChunk(ChatEvent::Token("**hello**".into())));
+        let _ = app.update(Message::ChatChunk {
+            block_id: 42,
+            event: ChatEvent::Token("**hello**".into()),
+        });
         assert!(
             app.blocks[0].md_items.is_empty(),
             "md_items should stay empty during streaming"
         );
         assert_eq!(app.streaming_raw, "**hello**");
+    }
+
+    #[test]
+    fn stale_chat_chunk_is_ignored_after_stream_switch() {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.streaming_block_id = Some(99);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 99,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+
+        let _ = app.update(Message::ChatChunk {
+            block_id: 42,
+            event: ChatEvent::Token("늦은 이전 응답".into()),
+        });
+        let _ = app.update(Message::ChatChunk {
+            block_id: 42,
+            event: ChatEvent::Done {
+                finish_reason: Some("stop".into()),
+                generation_id: None,
+            },
+        });
+
+        assert!(app.streaming_raw.is_empty());
+        assert_eq!(app.blocks[0].body.to_text(), "");
+        assert_eq!(app.streaming_block_id, Some(99));
     }
 }

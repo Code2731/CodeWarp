@@ -84,6 +84,9 @@ impl App {
         }
     }
     pub(crate) fn kick_chat_stream(&mut self) -> Task<Message> {
+        let Some(block_id) = self.streaming_block_id else {
+            return Task::none();
+        };
         let (base_url, api_key) = match self.resolve_provider() {
             Ok(v) => v,
             Err(e) => {
@@ -107,7 +110,7 @@ impl App {
         }
         let (task, handle) = Task::run(
             openrouter::chat_stream(base_url, api_key, model, messages, tool_defs),
-            Message::ChatChunk,
+            move |event| Message::ChatChunk { block_id, event },
         )
         .abortable();
         self.abort_handle = Some(handle);

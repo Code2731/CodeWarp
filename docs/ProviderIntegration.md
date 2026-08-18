@@ -40,7 +40,8 @@ User sends message
     → determine provider from selected_model_provider
     → if OpenRouter: openrouter::chat_stream(conversation, model, key)
     → if OpenAI-compat: tabby::chat_stream(conversation, model, url, token)
-    → Task::run(stream, Message::ChatChunk)
+    → Task::run(stream, |event| Message::ChatChunk { block_id, event })
+    → discard event when block_id is no longer active
     → on each token: append to assistant block, update view
     → on done: finalize block, save session
 ```

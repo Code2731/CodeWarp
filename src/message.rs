@@ -79,7 +79,10 @@ pub(crate) enum Message {
     InputAction(text_editor::Action),
     Send,
     StopStream,
-    ChatChunk(ChatEvent),
+    ChatChunk {
+        block_id: u64,
+        event: ChatEvent,
+    },
     CompareResponsesLoaded {
         openrouter_block_id: u64,
         tabby_block_id: u64,

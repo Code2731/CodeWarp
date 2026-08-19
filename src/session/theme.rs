@@ -133,7 +133,7 @@ pub(crate) fn read_theme() -> ThemeConfig {
     let Some(path) = theme_path() else {
         return ThemeConfig::default_dark();
     };
-    let Ok(json) = std::fs::read_to_string(&path) else {
+    let Some(json) = super::read_auxiliary_text(&path) else {
         return ThemeConfig::default_dark();
     };
     serde_json::from_str(&json)

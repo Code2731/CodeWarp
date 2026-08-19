@@ -24,7 +24,7 @@ pub(crate) fn load_usage() -> UsageStore {
     let Some(path) = usage_path() else {
         return UsageStore::default();
     };
-    let Ok(json) = std::fs::read_to_string(&path) else {
+    let Some(json) = super::read_auxiliary_text(&path) else {
         return UsageStore::default();
     };
     serde_json::from_str(&json).unwrap_or_default()

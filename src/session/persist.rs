@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -43,6 +43,7 @@ const PRIMARY_NAME: &str = "sessions.json";
 const TMP_NAME: &str = "sessions.json.tmp";
 const BACKUP_NAME: &str = "sessions.json.bak";
 const BACKUP_TMP_NAME: &str = "sessions.json.bak.tmp";
+const MAX_SESSION_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug)]
 pub(crate) enum SessionLoadNotice {
@@ -69,9 +70,35 @@ fn default_sessions() -> PersistedAllSessions {
     }
 }
 
+fn read_text_bounded(path: &Path) -> Result<String, String> {
+    let metadata =
+        std::fs::metadata(path).map_err(|e| format!("{} 읽기 실패: {e}", path.display()))?;
+    if metadata.len() > MAX_SESSION_FILE_BYTES {
+        return Err(format!(
+            "{} 크기가 {} bytes 제한을 초과했습니다",
+            path.display(),
+            MAX_SESSION_FILE_BYTES
+        ));
+    }
+
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("{} 읽기 실패: {e}", path.display()))?;
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(MAX_SESSION_FILE_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("{} 읽기 실패: {e}", path.display()))?;
+    if bytes.len() as u64 > MAX_SESSION_FILE_BYTES {
+        return Err(format!(
+            "{} 크기가 {} bytes 제한을 초과했습니다",
+            path.display(),
+            MAX_SESSION_FILE_BYTES
+        ));
+    }
+    String::from_utf8(bytes).map_err(|e| format!("{} UTF-8 검증 실패: {e}", path.display()))
+}
+
 fn read_valid(path: &Path) -> Result<PersistedAllSessions, String> {
-    let json =
-        std::fs::read_to_string(path).map_err(|e| format!("{} 읽기 실패: {e}", path.display()))?;
+    let json = read_text_bounded(path)?;
     let mut persisted: PersistedAllSessions = serde_json::from_str(&json)
         .map_err(|e| format!("{} JSON 검증 실패: {e}", path.display()))?;
     if persisted.sessions.is_empty() {
@@ -84,8 +111,7 @@ fn read_valid(path: &Path) -> Result<PersistedAllSessions, String> {
 }
 
 fn read_legacy(path: &Path) -> Result<PersistedAllSessions, String> {
-    let json =
-        std::fs::read_to_string(path).map_err(|e| format!("{} 읽기 실패: {e}", path.display()))?;
+    let json = read_text_bounded(path)?;
     let old: OldPersistedSession = serde_json::from_str(&json)
         .map_err(|e| format!("{} JSON 검증 실패: {e}", path.display()))?;
     Ok(PersistedAllSessions {
@@ -250,4 +276,23 @@ pub(crate) fn save_all_at(dir: &Path, persisted: &PersistedAllSessions) -> Resul
         replace_file(&backup_temporary, &backup)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod read_bound_tests {
+    use super::{MAX_SESSION_FILE_BYTES, load_all_at};
+    use tempfile::TempDir;
+
+    #[test]
+    fn oversized_session_file_falls_back_without_reading_contents() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("sessions.json");
+        let file = std::fs::File::create(path).unwrap();
+        file.set_len(MAX_SESSION_FILE_BYTES + 1).unwrap();
+
+        let loaded = load_all_at(Some(tmp.path()));
+
+        assert_eq!(loaded.sessions.len(), 1);
+        assert_eq!(loaded.sessions[0].title, "새 채팅");
+    }
 }

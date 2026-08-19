@@ -20,7 +20,7 @@ pub(crate) fn compute_tldr(
             let full = cwd.join(&cand.path);
             let proposed_lines = cand.content.lines().count();
             let (is_new_file, existing_lines) = if full.is_file() {
-                let existing = std::fs::read_to_string(&full)
+                let existing = crate::tools::read_file(cwd, &cand.path)
                     .map(|s| s.lines().count())
                     .unwrap_or(0);
                 (false, existing)

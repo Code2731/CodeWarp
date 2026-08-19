@@ -12,6 +12,8 @@ CodeWarp를 Windows에서 안정적으로 사용할 수 있는 Rust 기반 AI �
 
 완료 기준은 단위·통합 테스트와 strict clippy, Windows/Linux CI, 릴리스 startup smoke, 검증된 portable archive를 모두 유지하는 것입니다. Windows ConPTY Ctrl+C는 표준 신호와 bounded foreground-child fallback으로 자동 검증하고, 패키지 GUI의 실제 버튼 동작은 릴리스 수동 QA로 확인합니다.
 
+승인된 `run_command` 도구는 UI 스레드를 막지 않는 백그라운드 작업으로 실행되며, stdout/stderr를 bounded 수집하고 300초 timeout 뒤 Windows 프로세스 트리 또는 Unix 프로세스 그룹을 종료합니다.
+
 ## 현재 상태 — Phase 3-C (2026-08)
 
 - [x] **Phase 0** — Tauri 2.0 + React 19로 OpenRouter 단일턴 채팅까지 (커밋 이력에 보존)
@@ -41,7 +43,7 @@ CodeWarp를 Windows에서 안정적으로 사용할 수 있는 Rust 기반 AI �
 - [x] **Phase 3-C** — 안정화/성능: autosave crash recovery, streaming block lookup O(1), markdown streaming 재파싱 최소화, chat_stream retry, mid-stream error auto-retry
 - [x] **Tests (Phase 3-C 당시 기록)** — 회고적 + TDD 누적: 391 unit tests + 1 integration smoke test (`cargo test --all-targets -- --test-threads=1`)
 
-현재 검증 기준은 `cargo test --all-targets -- --test-threads=1`입니다. Windows ConPTY 및 외부 프로세스 fixture의 재현성을 위해 테스트 프로세스는 단일 스레드로 실행합니다. 2026-08-19 검증에서 unit test 681개가 통과하고 11개가 무시되었으며(Linux POSIX PTY Ctrl+C 수동 QA 항목 포함), external integration smoke test 1개가 통과했습니다.
+현재 검증 기준은 `cargo test --all-targets -- --test-threads=1`입니다. Windows ConPTY 및 외부 프로세스 fixture의 재현성을 위해 테스트 프로세스는 단일 스레드로 실행합니다. 2026-08-19 검증에서 unit test 686개가 통과하고 11개가 무시되었으며(Linux POSIX PTY Ctrl+C 수동 QA 항목 포함), external integration smoke test 1개가 통과했습니다.
 
 ## 왜 Iced로 바꿨나
 

@@ -92,6 +92,13 @@ impl App {
     }
 
     pub(crate) fn handle_chat_error(&mut self, ai_id: u64, error: &str) -> Task<Message> {
+        if let Some(handle) = self.mcp_abort_handle.take() {
+            handle.abort();
+        }
+        self.mcp_request_generation = self.mcp_request_generation.saturating_add(1);
+        self.mcp_pending_results = 0;
+        self.mcp_pending_call_ids.clear();
+        self.tool_execution_pending = false;
         if !self.streaming_raw.is_empty()
             && self.mid_stream_retries < MAX_MID_STREAM_RETRIES
             && !contains_http_status(error, 401)

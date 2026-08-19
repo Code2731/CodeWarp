@@ -49,7 +49,7 @@ impl App {
             return Task::none();
         }
         self.mcp_abort_handle.take();
-        if !self.pending_write_calls.is_empty() {
+        if !self.pending_write_calls.is_empty() || self.tool_execution_pending {
             return Task::none();
         }
         self.tool_round += 1;

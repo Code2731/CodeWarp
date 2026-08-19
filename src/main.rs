@@ -67,7 +67,7 @@ use bootstrap::{
     PRETENDARD_SEMIBOLD, build_window_icon,
 };
 pub(crate) use input::on_event;
-pub(crate) use message::{AgentMode, Message, SettingsTab, SortMode};
+pub(crate) use message::{AgentMode, Message, SettingsTab, SortMode, ToolExecutionResult};
 pub(crate) use model::{
     EXL2_PRESETS, InferenceEngine, LlmProvider, MODEL_PRESETS, ModelCategory, ModelOption,
     TABBY_API_DEFAULT_PORT, TABBY_API_REPO_URL, categorize_model, downloaded_exl2_preset_folder,

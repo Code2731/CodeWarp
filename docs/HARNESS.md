@@ -134,6 +134,7 @@ Run the packaged Windows binary and record the result for each item before calli
 - Send a streaming request through OpenRouter and a local OpenAI-compatible endpoint; verify model loading, incremental output order, non-ASCII text, stop, retry, and actionable authentication errors.
 - Start a compare request, switch sessions, create a new chat, delete the current session, and stop the request; verify no stale placeholder or diff remains.
 - Start an MCP/PTY-backed action, cancel it, restart it, and close the window; verify owned processes are reaped and the next run can start cleanly.
+- Approve a `run_command` action that produces output and one that hangs; verify the UI remains responsive, output is bounded, and the hanging process is terminated at the 300-second deadline.
 - After an unclean close, relaunch and verify session recovery status, backup fallback behavior, and the persisted conversation.
 - On Linux, test interactive PTY Ctrl+C separately and record it as manual QA until the POSIX runner is reliable; on Windows, confirm the packaged GUI `^C` button once as release acceptance for the full UI path.
 - On an interactive Windows desktop, run `powershell -ExecutionPolicy Bypass -File scripts/gui-smoke.ps1` against the release executable to verify the real text editor preserves Korean, emoji, multiline paste, and input order.

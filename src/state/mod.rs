@@ -86,6 +86,7 @@ pub(crate) struct App {
     pub(crate) model_options: Vec<ModelOption>,
     pub(crate) account: Option<AuthKeyData>,
     pub(crate) pending_write_calls: Vec<PendingToolCall>,
+    pub(crate) tool_execution_pending: bool,
     pub(crate) model_filter: ModelFilterState,
     pub(crate) agent_mode: AgentMode,
     pub(crate) inactive_sessions: Vec<InactiveSession>,

@@ -6,6 +6,14 @@ use crate::state::CloseReapOutcome;
 use iced::widget::markdown;
 use iced::widget::scrollable::Viewport;
 use iced::widget::text_editor::{self, Action};
+
+#[derive(Debug, Clone)]
+pub(crate) struct ToolExecutionResult {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) arguments: String,
+    pub(crate) result: String,
+}
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,6 +227,10 @@ pub(crate) enum Message {
         generation: u64,
         tool_call_id: String,
         result: String,
+    },
+    ApprovedToolsFinished {
+        generation: u64,
+        result: Result<Vec<ToolExecutionResult>, String>,
     },
     PtyToggle,
     PtyStart,

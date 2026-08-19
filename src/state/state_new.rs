@@ -93,6 +93,7 @@ impl App {
             model_options: Vec::new(),
             account: None,
             pending_write_calls: Vec::new(),
+            tool_execution_pending: false,
             model_filter: ModelFilterState::new(),
             agent_mode: AgentMode::Plan,
             inactive_sessions: Vec::new(),

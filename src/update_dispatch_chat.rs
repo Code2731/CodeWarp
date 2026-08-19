@@ -44,6 +44,10 @@ impl App {
             Message::GenerationLoaded { generation, result } => {
                 Some(self.on_generation_loaded(*generation, result.clone()))
             }
+            Message::ApprovedToolsFinished {
+                generation,
+                result,
+            } => Some(self.on_approved_tools_finished(*generation, result.clone())),
             Message::FetchModels => Some(self.fetch_models_cmd()),
             Message::ModelsLoaded { generation, result } => {
                 Some(self.on_models_loaded(*generation, result.clone()))

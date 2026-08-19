@@ -1,7 +1,7 @@
 // update_chat_tools_writes.rs — Tool write-approval methods (main.rs child module)
 use super::{
-    App, Arc, Block, BlockBody, ChatMessage, MAX_TOOL_ROUNDS, Message, ViewMode,
-    summarize_tool_result, tools,
+    App, Arc, Block, BlockBody, ChatMessage, MAX_TOOL_ROUNDS, Message, ToolExecutionResult,
+    ViewMode, summarize_tool_result, tools,
 };
 use iced::Task;
 
@@ -54,17 +54,11 @@ impl App {
         self.ui.show_write_confirm = false;
 
         if approved {
-            let mut names: Vec<String> = Vec::with_capacity(calls.len());
-            for tc in &calls {
-                names.push(tc.name.clone());
-                let result = tools::dispatch(&tc.name, &tc.arguments, &self.cwd);
-                let (summary, success) = summarize_tool_result(&tc.name, &tc.arguments, &result);
-                self.push_tool_result_block(&tc.name, &summary, success);
-                Arc::make_mut(&mut self.conversation)
-                    .push(ChatMessage::tool_result(&tc.id, result));
-            }
-            self.status = format!("실행 완료: {}", names.join(", "));
+            self.tool_execution_pending = true;
+            self.status = "도구 실행 중…".into();
+            return self.execute_approved_tools(calls);
         } else {
+            self.tool_execution_pending = false;
             for tc in &calls {
                 self.push_tool_result_block(&tc.name, "denied", false);
                 Arc::make_mut(&mut self.conversation).push(ChatMessage::tool_result(
@@ -86,6 +80,76 @@ impl App {
         );
         self.kick_chat_stream()
     }
+
+    fn execute_approved_tools(&mut self, calls: Vec<super::PendingToolCall>) -> Task<Message> {
+        let cwd = self.cwd.clone();
+        let generation = self.stream_generation;
+        let task = Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    calls
+                        .into_iter()
+                        .map(|call| ToolExecutionResult {
+                            id: call.id.clone(),
+                            name: call.name.clone(),
+                            arguments: call.arguments.clone(),
+                            result: tools::dispatch(&call.name, &call.arguments, &cwd),
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await
+                .map_err(|error| format!("도구 실행 작업 실패: {error}"))
+            },
+            move |result| Message::ApprovedToolsFinished { generation, result },
+        );
+        let (task, handle) = task.abortable();
+        self.abort_handle = Some(handle);
+        task
+    }
+
+    pub(crate) fn on_approved_tools_finished(
+        &mut self,
+        generation: u64,
+        result: Result<Vec<ToolExecutionResult>, String>,
+    ) -> Task<Message> {
+        if generation != self.stream_generation || self.streaming_block_id.is_none() {
+            return Task::none();
+        }
+        self.tool_execution_pending = false;
+        self.abort_handle = None;
+
+        let results = match result {
+            Ok(results) => results,
+            Err(error) => {
+                let Some(block_id) = self.streaming_block_id else {
+                    return Task::none();
+                };
+                return self.handle_chat_error(block_id, &error);
+            }
+        };
+        let mut names = Vec::with_capacity(results.len());
+        for tool in results {
+            names.push(tool.name.clone());
+            let (summary, success) =
+                summarize_tool_result(&tool.name, &tool.arguments, &tool.result);
+            self.push_tool_result_block(&tool.name, &summary, success);
+            Arc::make_mut(&mut self.conversation)
+                .push(ChatMessage::tool_result(&tool.id, tool.result));
+        }
+        self.status = format!("실행 완료: {}", names.join(", "));
+
+        if self.mcp_pending_results > 0 {
+            self.status = "MCP tool 실행 중…".into();
+            return Task::none();
+        }
+        self.tool_round += 1;
+        self.status = format!(
+            "응답 생성 중… (도구 라운드 {}/{})",
+            self.tool_round, MAX_TOOL_ROUNDS
+        );
+        self.kick_chat_stream()
+    }
+
     pub(crate) fn apply_change(&mut self, block_id: u64, idx: usize) -> Task<Message> {
         let snapshot = self
             .blocks
@@ -122,5 +186,107 @@ impl App {
             result
         };
         Task::none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::PendingToolCall;
+
+    fn app_with_streaming_block() -> App {
+        let (mut app, _) = App::new();
+        Arc::make_mut(&mut app.conversation).clear();
+        app.blocks.clear();
+        app.stream_generation = 4;
+        app.streaming_block_id = Some(42);
+        app.streaming_block_idx = Some(0);
+        app.blocks.push(Block {
+            id: 42,
+            body: BlockBody::Assistant(iced::widget::text_editor::Content::new()),
+            view_mode: ViewMode::Raw,
+            md_items: Vec::new(),
+            model: None,
+            apply_candidates: Vec::new(),
+        });
+        app
+    }
+
+    #[test]
+    fn approved_tool_execution_is_scheduled_off_the_update_path() {
+        let mut app = app_with_streaming_block();
+        app.pending_write_calls = vec![PendingToolCall {
+            id: "call-1".into(),
+            name: "run_command".into(),
+            arguments: r#"{"command":"echo ready"}"#.into(),
+        }];
+
+        let _task = app.continue_after_writes(true);
+
+        assert!(app.tool_execution_pending);
+        assert!(app.conversation.is_empty());
+        assert!(app.blocks[0].body.to_text().is_empty());
+    }
+
+    #[test]
+    fn approved_tool_results_wait_for_mcp_before_starting_next_stream() {
+        let mut app = app_with_streaming_block();
+        app.tool_execution_pending = true;
+        app.mcp_pending_results = 1;
+
+        let _task = app.on_approved_tools_finished(
+            4,
+            Ok(vec![ToolExecutionResult {
+                id: "call-1".into(),
+                name: "run_command".into(),
+                arguments: r#"{"command":"echo ready"}"#.into(),
+                result: "ready".into(),
+            }]),
+        );
+
+        assert!(!app.tool_execution_pending);
+        assert_eq!(app.mcp_pending_results, 1);
+        assert_eq!(app.tool_round, 0);
+        assert_eq!(app.conversation.len(), 1);
+        assert!(app.blocks.iter().any(|block| matches!(
+            block.body,
+            BlockBody::ToolResult { ref name, .. } if name == "run_command"
+        )));
+    }
+
+    #[test]
+    fn stale_approved_tool_results_are_ignored_after_stream_switch() {
+        let mut app = app_with_streaming_block();
+        app.tool_execution_pending = true;
+
+        let _task = app.on_approved_tools_finished(
+            3,
+            Ok(vec![ToolExecutionResult {
+                id: "late".into(),
+                name: "run_command".into(),
+                arguments: "{}".into(),
+                result: "late result".into(),
+            }]),
+        );
+
+        assert!(app.tool_execution_pending);
+        assert!(app.conversation.is_empty());
+        assert_eq!(app.blocks.len(), 1);
+    }
+
+    #[test]
+    fn failed_approved_tool_execution_invalidates_mcp_results() {
+        let mut app = app_with_streaming_block();
+        app.tool_execution_pending = true;
+        app.mcp_request_generation = 2;
+        app.mcp_pending_results = 1;
+        app.mcp_pending_call_ids.insert("mcp-call".into());
+
+        let _task = app.on_approved_tools_finished(4, Err("worker failed".into()));
+
+        assert!(!app.tool_execution_pending);
+        assert_eq!(app.mcp_pending_results, 0);
+        assert!(app.mcp_pending_call_ids.is_empty());
+        assert!(app.blocks[0].body.to_text().contains("[ERROR]"));
     }
 }

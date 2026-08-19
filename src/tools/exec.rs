@@ -2,9 +2,11 @@ use std::fmt::Write;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 const MAX_READ_BYTES: u64 = 1_000_000;
 const MAX_CMD_OUTPUT: usize = 100_000;
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 
 fn bounded_prefix(value: &str, max_bytes: usize) -> (&str, usize) {
     if value.len() <= max_bytes {
@@ -118,6 +120,10 @@ pub(super) fn grep_files(
 }
 
 pub(super) fn run_command(cwd: &Path, command: &str) -> String {
+    run_command_with_timeout(cwd, command, COMMAND_TIMEOUT)
+}
+
+fn run_command_with_timeout(cwd: &Path, command: &str, timeout: Duration) -> String {
     use std::process::Command;
 
     let mut run_cmd;
@@ -130,6 +136,11 @@ pub(super) fn run_command(cwd: &Path, command: &str) -> String {
     {
         run_cmd = Command::new("sh");
         run_cmd.args(["-c", command]);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        run_cmd.process_group(0);
     }
     run_cmd.current_dir(cwd);
 
@@ -148,7 +159,22 @@ pub(super) fn run_command(cwd: &Path, command: &str) -> String {
         .stderr
         .take()
         .map(|stderr| std::thread::spawn(move || drain_command_stream(stderr)));
-    let status = child.wait();
+    let started_at = Instant::now();
+    let (status, timed_out) = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break (Ok(status), false),
+            Ok(None) if started_at.elapsed() >= timeout => {
+                terminate_command(&mut child);
+                break (child.wait(), true);
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(error) => {
+                terminate_command(&mut child);
+                let _ = child.wait();
+                break (Err(error), false);
+            }
+        }
+    };
     let (stdout, stdout_discarded) = stdout_thread
         .and_then(|thread| thread.join().ok())
         .unwrap_or_default();
@@ -164,6 +190,13 @@ pub(super) fn run_command(cwd: &Path, command: &str) -> String {
     let code = status.code().unwrap_or(-1);
     let _ = writeln!(result, "$ {command}");
     let _ = writeln!(result, "exit code: {code}");
+    if timed_out {
+        let _ = writeln!(
+            result,
+            "[timeout] command exceeded {:.1} seconds and was terminated",
+            timeout.as_secs_f64()
+        );
+    }
 
     let stdout = String::from_utf8_lossy(&stdout);
     if !stdout.trim().is_empty() {
@@ -189,6 +222,28 @@ pub(super) fn run_command(cwd: &Path, command: &str) -> String {
         }
     }
     result
+}
+
+fn terminate_command(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let group = format!("-{}", child.id());
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", &group])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    #[cfg(windows)]
+    {
+        let pid = child.id().to_string();
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid, "/T", "/F"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
 }
 
 pub(super) fn write_file(cwd: &Path, rel_path: &str, content: &str) -> Result<(), String> {
@@ -268,7 +323,8 @@ pub(crate) fn read_file(cwd: &Path, rel_path: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_CMD_OUTPUT, bounded_prefix, run_command};
+    use super::{MAX_CMD_OUTPUT, bounded_prefix, run_command, run_command_with_timeout};
+    use std::time::{Duration, Instant};
 
     #[test]
     fn bounded_prefix_never_splits_utf8() {
@@ -296,5 +352,24 @@ mod tests {
             "large output must be marked: {result}"
         );
         assert!(result.len() <= MAX_CMD_OUTPUT + 256);
+    }
+
+    #[test]
+    fn run_command_timeout_terminates_a_hanging_process() {
+        let command = if cfg!(windows) {
+            "for /L %i in (1,1,1000000000) do @rem"
+        } else {
+            "sleep 5"
+        };
+        let started_at = Instant::now();
+
+        let result = run_command_with_timeout(
+            std::path::Path::new("."),
+            command,
+            Duration::from_millis(100),
+        );
+
+        assert!(started_at.elapsed() < Duration::from_secs(3));
+        assert!(result.contains("[timeout]"), "result: {result}");
     }
 }

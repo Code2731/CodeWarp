@@ -1,23 +1,54 @@
 use super::{App, MAX_ATTACH_BYTES, Message, fmt_bytes, fuzzy_match_paths};
 use iced::Task;
+use tokio::io::AsyncReadExt;
+
+async fn read_attachment_text(path: &std::path::Path) -> Result<String, String> {
+    let metadata = tokio::fs::metadata(path)
+        .await
+        .map_err(|e| format!("File read failed: {e}"))?;
+    if metadata.len() > MAX_ATTACH_BYTES {
+        return Err("attachment exceeds configured size limit".into());
+    }
+    let capacity = usize::try_from(metadata.len())
+        .map_err(|_| "attachment size cannot be represented on this platform".to_string())?;
+    let mut bytes = Vec::with_capacity(capacity);
+    let file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| format!("File read failed: {e}"))?;
+    file.take(MAX_ATTACH_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|e| format!("File read failed: {e}"))?;
+    if bytes.len() as u64 > MAX_ATTACH_BYTES {
+        return Err("attachment exceeds configured size limit".into());
+    }
+    String::from_utf8(bytes).map_err(|e| format!("File is not valid UTF-8: {e}"))
+}
 
 async fn read_and_validate_attachment(
     read_path: std::path::PathBuf,
     display_path: std::path::PathBuf,
     existing_total: u64,
 ) -> Result<(std::path::PathBuf, String), String> {
-    let content = tokio::fs::read_to_string(&read_path)
-        .await
-        .map_err(|e| format!("File read failed: {e}"))?;
-    #[allow(clippy::cast_possible_truncation)]
-    if content.len() > MAX_ATTACH_BYTES as usize {
+    let content = match read_attachment_text(&read_path).await {
+        Ok(content) => content,
+        Err(_error) if _error.contains("exceeds configured size limit") => {
+            return Err(format!(
+                "Attachment too large (max {}): {}",
+                fmt_bytes(MAX_ATTACH_BYTES),
+                display_path.display()
+            ));
+        }
+        Err(error) => return Err(error),
+    };
+    if content.len() as u64 > MAX_ATTACH_BYTES {
         return Err(format!(
             "Attachment too large (max {}): {}",
             fmt_bytes(MAX_ATTACH_BYTES),
             display_path.display()
         ));
     }
-    let next_total = existing_total + content.len() as u64;
+    let next_total = existing_total.saturating_add(content.len() as u64);
     if next_total > MAX_ATTACH_BYTES {
         return Err(format!(
             "Attachment limit exceeded: {} / {}",
@@ -101,5 +132,26 @@ impl App {
             read_and_validate_attachment(path.clone(), path, existing_total),
             attach_result_mapper,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_and_validate_attachment;
+    use crate::MAX_ATTACH_BYTES;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn oversized_attachment_is_rejected_before_full_read() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("large.txt");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_ATTACH_BYTES + 1).unwrap();
+
+        let error = read_and_validate_attachment(path.clone(), path, 0)
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("Attachment too large"), "error: {error}");
     }
 }

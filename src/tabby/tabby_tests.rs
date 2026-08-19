@@ -1,4 +1,6 @@
 use super::*;
+use crate::openrouter::MAX_PROVIDER_RESPONSE_BYTES;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -211,4 +213,34 @@ async fn list_models_round_trips_to_openai_compatible_endpoint() {
     server.await.expect("model server must finish");
 
     assert_eq!(result.unwrap(), vec!["local-a", "local-b"]);
+}
+
+#[tokio::test]
+async fn list_models_rejects_oversized_response_before_body_read() {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind oversized model server");
+    let address = listener
+        .local_addr()
+        .expect("oversized model server address");
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept oversized request");
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    MAX_PROVIDER_RESPONSE_BYTES + 1
+                )
+                .as_bytes(),
+            )
+            .await
+            .expect("write oversized model headers");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    });
+
+    let result = list_models(format!("http://{address}"), None).await;
+
+    server.await.expect("oversized model server must finish");
+    let error = result.expect_err("oversized model response must fail");
+    assert!(error.contains("exceeds"), "error: {error}");
 }

@@ -1,5 +1,6 @@
 use std::fmt::Write;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const MAX_READ_BYTES: u64 = 1_000_000;
@@ -14,6 +15,43 @@ fn bounded_prefix(value: &str, max_bytes: usize) -> (&str, usize) {
         end -= 1;
     }
     (&value[..end], value.len() - end)
+}
+
+fn drain_command_stream(mut reader: impl Read) -> (Vec<u8>, usize) {
+    let mut kept = Vec::with_capacity(MAX_CMD_OUTPUT);
+    let mut discarded = 0_usize;
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let Ok(read) = reader.read(&mut buffer) else {
+            break;
+        };
+        if read == 0 {
+            break;
+        }
+        let remaining = MAX_CMD_OUTPUT.saturating_sub(kept.len());
+        let keep = read.min(remaining);
+        kept.extend_from_slice(&buffer[..keep]);
+        discarded = discarded.saturating_add(read - keep);
+    }
+    (kept, discarded)
+}
+
+fn read_text_bounded(path: &Path, max_bytes: u64) -> Result<String, String> {
+    let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+    if metadata.len() > max_bytes {
+        return Err(format!("file exceeds {max_bytes} bytes"));
+    }
+    let capacity = usize::try_from(metadata.len()).map_err(|_| "file is too large".to_string())?;
+    let mut bytes = Vec::with_capacity(capacity);
+    fs::File::open(path)
+        .map_err(|e| e.to_string())?
+        .take(max_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(format!("file exceeds {max_bytes} bytes"));
+    }
+    String::from_utf8(bytes).map_err(|e| e.to_string())
 }
 
 pub(super) fn glob_files(
@@ -58,7 +96,7 @@ pub(super) fn grep_files(
         let Ok(rel) = entry.path().strip_prefix(cwd) else {
             continue;
         };
-        let Ok(content) = fs::read_to_string(entry.path()) else {
+        let Ok(content) = read_text_bounded(entry.path(), MAX_READ_BYTES) else {
             continue;
         };
         let rel_str = rel.display().to_string().replace('\\', "/");
@@ -95,20 +133,43 @@ pub(super) fn run_command(cwd: &Path, command: &str) -> String {
     }
     run_cmd.current_dir(cwd);
 
-    let output = match run_cmd.output() {
-        Ok(o) => o,
+    run_cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = match run_cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => return format!("[error] 명령 실행 실패: {e}"),
+    };
+    let stdout_thread = child
+        .stdout
+        .take()
+        .map(|stdout| std::thread::spawn(move || drain_command_stream(stdout)));
+    let stderr_thread = child
+        .stderr
+        .take()
+        .map(|stderr| std::thread::spawn(move || drain_command_stream(stderr)));
+    let status = child.wait();
+    let (stdout, stdout_discarded) = stdout_thread
+        .and_then(|thread| thread.join().ok())
+        .unwrap_or_default();
+    let (stderr, stderr_discarded) = stderr_thread
+        .and_then(|thread| thread.join().ok())
+        .unwrap_or_default();
+    let status = match status {
+        Ok(status) => status,
         Err(e) => return format!("[error] 명령 실행 실패: {e}"),
     };
 
     let mut result = String::new();
-    let code = output.status.code().unwrap_or(-1);
+    let code = status.code().unwrap_or(-1);
     let _ = writeln!(result, "$ {command}");
     let _ = writeln!(result, "exit code: {code}");
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&stdout);
     if !stdout.trim().is_empty() {
         result.push_str("--- stdout ---\n");
         let (prefix, omitted) = bounded_prefix(&stdout, MAX_CMD_OUTPUT);
+        let omitted = omitted.saturating_add(stdout_discarded);
         result.push_str(prefix);
         if omitted > 0 {
             let _ = write!(result, "\n…(stdout {omitted} bytes 잘림)\n");
@@ -117,10 +178,11 @@ pub(super) fn run_command(cwd: &Path, command: &str) -> String {
             result.push('\n');
         }
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = String::from_utf8_lossy(&stderr);
     if !stderr.trim().is_empty() {
         result.push_str("--- stderr ---\n");
         let (prefix, omitted) = bounded_prefix(&stderr, MAX_CMD_OUTPUT);
+        let omitted = omitted.saturating_add(stderr_discarded);
         result.push_str(prefix);
         if omitted > 0 {
             let _ = write!(result, "\n…(stderr {omitted} bytes 잘림)");
@@ -201,12 +263,12 @@ pub(super) fn read_file(cwd: &Path, rel_path: &str) -> Result<String, String> {
             MAX_READ_BYTES
         ));
     }
-    fs::read_to_string(&canonical).map_err(|e| e.to_string())
+    read_text_bounded(&canonical, MAX_READ_BYTES)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::bounded_prefix;
+    use super::{MAX_CMD_OUTPUT, bounded_prefix, run_command};
 
     #[test]
     fn bounded_prefix_never_splits_utf8() {
@@ -217,5 +279,22 @@ mod tests {
         assert!(prefix.len() <= 100_000);
         assert!(prefix.is_char_boundary(prefix.len()));
         assert_eq!(prefix.len() + omitted, value.len());
+    }
+
+    #[test]
+    fn run_command_drains_large_output_with_bounded_result() {
+        let command = if cfg!(windows) {
+            "for /L %i in (1,1,200000) do @echo x"
+        } else {
+            "yes x | head -n 200000"
+        };
+
+        let result = run_command(std::path::Path::new("."), command);
+
+        assert!(
+            result.contains("잘림"),
+            "large output must be marked: {result}"
+        );
+        assert!(result.len() <= MAX_CMD_OUTPUT + 256);
     }
 }

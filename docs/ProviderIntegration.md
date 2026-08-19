@@ -52,7 +52,7 @@ User sends message
 - **Model Listing**: `GET /api/v1/models` 호출, 가격/태그 정보 파싱
 - **Chat Stream**: SSE 기반 스트리밍, 토큰 단위로 `ChatEvent` 전달
 - **Error Handling**: 401, 402, 404, 429, 5xx 등에 대한 한국어 에러 메시지
-- **Response Bound**: REST/fallback 본문과 전체 SSE 스트림은 4 MiB로 제한되어 비정상적으로 큰 응답이 메모리를 고갈시키지 않도록 보호
+- **Response Bound**: REST/fallback 본문과 전체 SSE 스트림, OpenAI-compatible local `/v1/models` 본문은 4 MiB로 제한되어 비정상적으로 큰 응답이 메모리를 고갈시키지 않도록 보호
 
 ## OpenAI-Compat Integration (`src/tabby.rs`)
 

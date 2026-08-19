@@ -8,7 +8,7 @@ use super::types::ChatMessage;
 pub(super) const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub(super) const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub(super) const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
-pub(super) const MAX_PROVIDER_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_PROVIDER_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct AuthKeyData {
@@ -65,7 +65,7 @@ pub(super) fn apply_compat_auth_headers(
     req
 }
 
-pub(super) async fn read_response_text_bounded(
+pub(crate) async fn read_response_text_bounded(
     response: reqwest::Response,
 ) -> Result<String, String> {
     if response

@@ -1,3 +1,8 @@
+use std::io::Read;
+use std::path::Path;
+
+const MAX_MCP_CONFIG_BYTES: u64 = 1024 * 1024;
+
 /// User-configured MCP server entry.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct McpServer {
@@ -61,12 +66,40 @@ pub(crate) fn save_servers(servers: &[McpServer]) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_string_pretty(servers).map_err(|e| e.to_string())?;
+    if json.len() as u64 > MAX_MCP_CONFIG_BYTES {
+        return Err(format!(
+            "MCP 설정이 {} bytes 제한을 초과했습니다",
+            MAX_MCP_CONFIG_BYTES
+        ));
+    }
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
 
 pub(crate) fn load_servers() -> Vec<McpServer> {
-    let path = servers_path();
-    let Ok(data) = std::fs::read_to_string(&path) else {
+    load_servers_at(&servers_path())
+}
+
+fn load_servers_at(path: &Path) -> Vec<McpServer> {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return Vec::new();
+    };
+    if metadata.len() > MAX_MCP_CONFIG_BYTES {
+        return Vec::new();
+    }
+    let Ok(file) = std::fs::File::open(path) else {
+        return Vec::new();
+    };
+    let capacity = usize::try_from(metadata.len()).unwrap_or(0);
+    let mut bytes = Vec::with_capacity(capacity);
+    if file
+        .take(MAX_MCP_CONFIG_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .is_err()
+        || bytes.len() as u64 > MAX_MCP_CONFIG_BYTES
+    {
+        return Vec::new();
+    }
+    let Ok(data) = String::from_utf8(bytes) else {
         return Vec::new();
     };
     serde_json::from_str(&data).unwrap_or_default()
@@ -152,5 +185,15 @@ mod tests {
     fn load_servers_returns_empty_on_missing_file() {
         let result = std::panic::catch_unwind(load_servers);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn oversized_server_config_is_ignored_without_reading_contents() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("mcp_servers.json");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_MCP_CONFIG_BYTES + 1).unwrap();
+
+        assert!(load_servers_at(&path).is_empty());
     }
 }

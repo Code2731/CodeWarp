@@ -70,6 +70,17 @@ fn read_file_size_limit() {
 }
 
 #[test]
+fn grep_skips_files_over_the_read_limit() {
+    let tmp = TempDir::new().unwrap();
+    let file = fs::File::create(tmp.path().join("big.txt")).unwrap();
+    file.set_len(1_000_001).unwrap();
+
+    let result = dispatch("grep", r#"{"pattern":"needle"}"#, tmp.path());
+
+    assert!(result.contains("0 matches"), "got: {}", result);
+}
+
+#[test]
 fn write_file_absolute_path_rejected() {
     let tmp = TempDir::new().unwrap();
     let abs_path = if cfg!(windows) {

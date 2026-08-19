@@ -4,6 +4,8 @@
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::openrouter::read_response_text_bounded;
+
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(concat!("CodeWarp/", env!("CARGO_PKG_VERSION")))
@@ -149,7 +151,7 @@ pub(crate) async fn list_models(
     let req = apply_token_headers(client.get(&url), token_ref);
     let resp = req.send().await.map_err(|e| e.to_string())?;
     if resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
+        let body = read_response_text_bounded(resp).await?;
         return parse_model_ids(&body);
     }
 
@@ -159,17 +161,21 @@ pub(crate) async fn list_models(
         let legacy_req = apply_token_headers(client.get(&legacy_url), token_ref);
         let legacy_resp = legacy_req.send().await.map_err(|e| e.to_string())?;
         if legacy_resp.status().is_success() {
-            let body = legacy_resp.text().await.unwrap_or_default();
+            let body = read_response_text_bounded(legacy_resp).await?;
             return parse_model_ids(&body);
         }
         let status = legacy_resp.status();
-        let body = legacy_resp.text().await.unwrap_or_default();
+        let body = read_response_text_bounded(legacy_resp)
+            .await
+            .unwrap_or_else(|error| format!("[{error}]"));
         return Err(format!("Tabby {status}: {body}"));
     }
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
+        let body = read_response_text_bounded(resp)
+            .await
+            .unwrap_or_else(|error| format!("[{error}]"));
         // KEEP IN SYNC: humanize_error가 "Tabby {status}" prefix를 매칭함
         return Err(format!("Tabby {status}: {body}"));
     }

@@ -26,7 +26,9 @@ mod types_flexible;
 mod types_flexible_tests;
 
 pub(crate) use api::{get_account_info, get_generation, list_models};
-pub(crate) use api_types::{AuthKeyData, GenerationData};
+#[cfg(test)]
+pub(crate) use api_types::MAX_PROVIDER_RESPONSE_BYTES;
+pub(crate) use api_types::{AuthKeyData, GenerationData, read_response_text_bounded};
 pub(crate) use chat_stream::chat_stream;
 pub(crate) use humanize::humanize_error;
 pub(crate) use types::{BASE_URL, ChatEvent, ChatMessage, OpenRouterModel};

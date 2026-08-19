@@ -2,6 +2,44 @@
 use crate::hf::encoding::{model_info_url, model_tree_url};
 use crate::hf::revision::{annotate_revision_not_found_error, choose_revision_fallback};
 use crate::hf::types::{HF_BASE, ModelInfo, RepoRefs, Sibling, TreeEntry};
+use futures_util::StreamExt;
+use serde::de::DeserializeOwned;
+
+pub(super) const MAX_HF_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
+pub(super) async fn read_hf_response_text_bounded(
+    response: reqwest::Response,
+) -> Result<String, String> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_HF_RESPONSE_BYTES as u64)
+    {
+        return Err(format!(
+            "HF response exceeds {} bytes",
+            MAX_HF_RESPONSE_BYTES
+        ));
+    }
+
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| format!("HF response read failed: {error}"))?;
+        if body.len().saturating_add(chunk.len()) > MAX_HF_RESPONSE_BYTES {
+            return Err(format!(
+                "HF response exceeds {} bytes",
+                MAX_HF_RESPONSE_BYTES
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    String::from_utf8(body).map_err(|error| format!("HF response is not valid UTF-8: {error}"))
+}
+
+async fn read_hf_json<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, String> {
+    let body = read_hf_response_text_bounded(response).await?;
+    serde_json::from_str(&body).map_err(|error| error.to_string())
+}
 
 pub(super) async fn fetch_repo_branches(
     client: &reqwest::Client,
@@ -17,7 +55,7 @@ pub(super) async fn fetch_repo_branches(
     if !resp.status().is_success() {
         return None;
     }
-    let refs: RepoRefs = resp.json().await.ok()?;
+    let refs: RepoRefs = read_hf_json(resp).await.ok()?;
     let out: Vec<String> = refs
         .branches
         .into_iter()
@@ -41,11 +79,12 @@ pub(super) async fn fetch_model_tree(
     let resp = request.send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
+        let body = read_hf_response_text_bounded(resp)
+            .await
+            .unwrap_or_else(|error| format!("[{error}]"));
         return Err(format!("HF tree {status}: {body}"));
     }
-    let entries: Vec<TreeEntry> = resp
-        .json()
+    let entries: Vec<TreeEntry> = read_hf_json(resp)
         .await
         .map_err(|e| format!("repo tree parsing failed: {e}"))?;
     let siblings = entries
@@ -79,10 +118,12 @@ pub(super) async fn fetch_model_info(
     let resp = request.send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
+        let body = read_hf_response_text_bounded(resp)
+            .await
+            .unwrap_or_else(|error| format!("[{error}]"));
         return Err(format!("HF {status}: {body}"));
     }
-    resp.json()
+    read_hf_json(resp)
         .await
         .map_err(|e| format!("repo info 파싱 실패: {e}"))
 }

@@ -234,7 +234,7 @@ pub(super) fn write_file(cwd: &Path, rel_path: &str, content: &str) -> Result<()
     fs::write(&joined, content).map_err(|e| e.to_string())
 }
 
-pub(super) fn read_file(cwd: &Path, rel_path: &str) -> Result<String, String> {
+pub(crate) fn read_file(cwd: &Path, rel_path: &str) -> Result<String, String> {
     let candidate = PathBuf::from(rel_path);
     if candidate.is_absolute() {
         return Err("절대 경로는 허용되지 않습니다".into());

@@ -41,7 +41,7 @@ CodeWarp를 Windows에서 안정적으로 사용할 수 있는 Rust 기반 AI �
 - [x] **Phase 3-C** — 안정화/성능: autosave crash recovery, streaming block lookup O(1), markdown streaming 재파싱 최소화, chat_stream retry, mid-stream error auto-retry
 - [x] **Tests (Phase 3-C 당시 기록)** — 회고적 + TDD 누적: 391 unit tests + 1 integration smoke test (`cargo test --all-targets -- --test-threads=1`)
 
-현재 검증 기준은 `cargo test --all-targets -- --test-threads=1`입니다. Windows ConPTY 및 외부 프로세스 fixture의 재현성을 위해 테스트 프로세스는 단일 스레드로 실행합니다. 2026-08-19 검증에서 unit test 679개가 통과하고 11개가 무시되었으며(Linux POSIX PTY Ctrl+C 수동 QA 항목 포함), external integration smoke test 1개가 통과했습니다.
+현재 검증 기준은 `cargo test --all-targets -- --test-threads=1`입니다. Windows ConPTY 및 외부 프로세스 fixture의 재현성을 위해 테스트 프로세스는 단일 스레드로 실행합니다. 2026-08-19 검증에서 unit test 680개가 통과하고 11개가 무시되었으며(Linux POSIX PTY Ctrl+C 수동 QA 항목 포함), external integration smoke test 1개가 통과했습니다.
 
 ## 왜 Iced로 바꿨나
 
@@ -162,7 +162,7 @@ Quality harness is now part of the default workflow.
 - Verified CI platforms: Windows and Linux; both run the harness' fmt, check, and test gates
 - Release smoke CI: Windows and Linux build, validate, package, and upload portable archives; Windows also runs a 5-second startup smoke
 - Interactive GUI smoke: dispatch the `CI` workflow manually with `run_gui_smoke` enabled on a Windows desktop runner to verify cursor editing, Korean/emoji paste, multiline input, and text order
-- Bounded input paths: provider REST/SSE and local `/v1/models` responses are capped at 4 MiB, attachments at 512 KiB, MCP config at 1 MiB, and workspace tool reads at 1 MiB
+- Bounded input paths: provider REST/SSE, local `/v1/models`, and Hugging Face metadata/error responses are capped at 4 MiB, attachments at 512 KiB, MCP config at 1 MiB, and workspace tool reads at 1 MiB
 - macOS remains experimental and has no CI verification until equivalent automation exists
 - Recommended hooks:
   - `pre-commit`: `cargo fmt -- --check` (only when Rust-related files are staged)

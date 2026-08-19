@@ -7,6 +7,7 @@ mod tests;
 
 pub(crate) use args::{RunCommandArgs, WriteFileArgs};
 pub(crate) use dispatch::dispatch;
+pub(crate) use exec::read_file;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolKind {

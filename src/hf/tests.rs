@@ -1,9 +1,13 @@
 use super::encoding::{model_info_url, model_tree_url};
+use super::fetch::{MAX_HF_RESPONSE_BYTES, read_hf_response_text_bounded};
 use super::revision::{
     annotate_revision_not_found_error, choose_revision_fallback, extract_bpw_value,
     format_branch_suggestions, normalize_revision_name,
 };
 use super::{contains_status, encode_path_segment, encode_repo_file_path, humanize_error};
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 #[test]
 fn humanize_auth() {
@@ -147,4 +151,40 @@ fn model_info_url_keeps_main_on_base_model_endpoint() {
         model_info_url("owner/repo", "main"),
         "https://huggingface.co/api/models/owner/repo"
     );
+}
+
+#[tokio::test]
+async fn hf_response_rejects_oversized_body_before_read() {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind oversized HF server");
+    let address = listener.local_addr().expect("oversized HF server address");
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept oversized request");
+        let mut request = [0_u8; 1024];
+        let _ = socket.read(&mut request).await;
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    MAX_HF_RESPONSE_BYTES + 1
+                )
+                .as_bytes(),
+            )
+            .await
+            .expect("write oversized HF headers");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    });
+
+    let response = reqwest::Client::new()
+        .get(format!("http://{address}"))
+        .send()
+        .await
+        .expect("send oversized HF request");
+    let error = read_hf_response_text_bounded(response)
+        .await
+        .expect_err("oversized HF response must fail");
+
+    server.await.expect("oversized HF server must finish");
+    assert!(error.contains("exceeds"), "error: {error}");
 }

@@ -55,8 +55,14 @@ impl App {
                             args.content.len()
                         );
                         let expanded = if is_expanded {
-                            let old = std::fs::read_to_string(&abs_path).unwrap_or_default();
-                            Some(render_diff(&old, &args.content))
+                            match tools::read_file(&self.cwd, &args.path) {
+                                Ok(old) => Some(render_diff(&old, &args.content)),
+                                Err(error) => Some(
+                                    text(format!("미리보기 불가: {error}"))
+                                        .size(FS_LABEL)
+                                        .into(),
+                                ),
+                            }
                         } else {
                             None
                         };

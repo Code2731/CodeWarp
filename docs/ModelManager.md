@@ -258,7 +258,7 @@ Current preset families include Llama 3.2/3.1 and Gemma EXL2 variants with VRAM 
 ## 8) Practical summary
 
 - CodeWarp’s model selector is a merged view of OpenRouter + OpenAI-compatible endpoint models.
-- HF downloads are stream-driven with robust revision fallback logic and EXL2-aware folder targeting.
+- HF metadata and error responses are capped at 4 MiB before parsing, while model files remain streamed to disk; revision fallback and EXL2-aware folder targeting stay bounded separately.
 - TabbyAPI runtime is validated, configured, spawned, and health-checked before model IDs are surfaced in the selector.
 - EXL2 presets are not just labels: they encode revision (`bpw`) and folder naming used downstream for model path resolution.
 - Persistence is split between keystore (settings/selection) and session storage (conversation/UI state).

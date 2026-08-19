@@ -12,7 +12,9 @@ use encoding::{encode_path_segment, encode_repo_file_path};
 mod revision;
 
 mod fetch;
-use fetch::{fetch_model_info_with_fallback, fetch_model_tree, http_client};
+use fetch::{
+    fetch_model_info_with_fallback, fetch_model_tree, http_client, read_hf_response_text_bounded,
+};
 
 #[cfg(test)]
 mod tests;
@@ -98,7 +100,9 @@ pub(crate) fn download_repo(
             };
             if !resp.status().is_success() {
                 let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
+                let body = read_hf_response_text_bounded(resp)
+                    .await
+                    .unwrap_or_else(|error| format!("[{error}]"));
                 yield DownloadEvent::Error(format!("HF {status} ({filename}): {body}"));
                 return;
             }
